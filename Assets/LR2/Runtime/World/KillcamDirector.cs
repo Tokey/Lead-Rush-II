@@ -28,6 +28,8 @@ namespace LR2.World
     {
         public static KillcamDirector Instance { get; private set; }
         public static bool IsPlaying => Instance != null && Instance._playing;
+        public bool UsesThemeFonts => _title != null && _info != null && _title.font != null && _info.font != null &&
+            (_title.font.name.Contains("LR2") || _title.font.name.Contains("Barlow") || _title.font.name.Contains("Bebas"));
 
         [SerializeField] private bool killcamEnabled = true;
         [Tooltip("Seconds of death cam before cutting to the killcam replay.")]
@@ -111,6 +113,10 @@ namespace LR2.World
         {
             public Transform root;
             public Transform[] bones;
+            /// <summary>B136: bone paths relative to the root (robot only; the SWAT visual keeps index order).</summary>
+            public string[] paths;
+            /// <summary>B136: paths of the live gun objects inside the robot's body, removed from its puppet copy.</summary>
+            public string[] itemPaths;
             public PoseSample[] ring;
             public int head, count;
         }
@@ -308,7 +314,44 @@ namespace LR2.World
         private static Transform VisualRoot(SoldierController sc)
         {
             var proxy = sc.GetComponent<RetargetProxy>();
-            return proxy != null && proxy.Visual != null ? proxy.Visual.transform : null;
+            if (proxy != null && proxy.Visual != null) return proxy.Visual.transform;
+            // B136: Kinemation's robot is its own visible body (no hidden driver)
+            return sc.GetComponent<LR2BoneMap>() != null ? sc.transform : null;
+        }
+
+        /// <summary>B136: the robot's body transforms (root first, then depth first), without its guns and camera.</summary>
+        private static void CollectBody(Transform root, List<Transform> into, List<Transform> items)
+        {
+            into.Add(root);
+            for (int i = 0; i < root.childCount; i++) Walk(root.GetChild(i));
+            void Walk(Transform t)
+            {
+                if (t.GetComponent<LR2.Weapons.LR2Item>() != null) { items.Add(t); return; }
+                if (t.GetComponent<Camera>() != null) return;
+                into.Add(t);
+                for (int i = 0; i < t.childCount; i++) Walk(t.GetChild(i));
+            }
+        }
+
+        private static bool IsRequiredByOther(Component c)
+        {
+            foreach (var other in c.GetComponents<Component>())
+            {
+                if (other == null || other == c) continue;
+                foreach (RequireComponent rc in other.GetType().GetCustomAttributes(typeof(RequireComponent), true))
+                    if ((rc.m_Type0 != null && rc.m_Type0.IsInstanceOfType(c)) || (rc.m_Type1 != null && rc.m_Type1.IsInstanceOfType(c)) ||
+                        (rc.m_Type2 != null && rc.m_Type2.IsInstanceOfType(c)))
+                        return true;
+            }
+            return false;
+        }
+
+        private static Transform[] MapByPaths(Transform puppetRoot, string[] paths)
+        {
+            var map = new Transform[paths.Length];
+            for (int i = 0; i < paths.Length; i++)
+                map[i] = paths[i].Length == 0 ? puppetRoot : puppetRoot.Find(paths[i]);
+            return map;
         }
 
         private void RecordPose(SoldierController sc)
@@ -317,7 +360,19 @@ namespace LR2.World
             {
                 var root = VisualRoot(sc);
                 if (root == null) return;
-                track = new PoseTrack { root = root, bones = root.GetComponentsInChildren<Transform>(true), ring = new PoseSample[MaxSamplesPerSoldier] };
+                track = new PoseTrack { root = root, ring = new PoseSample[MaxSamplesPerSoldier] };
+                if (root == sc.transform)
+                {
+                    var body = new List<Transform>(128);
+                    var items = new List<Transform>(8);
+                    CollectBody(root, body, items);
+                    track.bones = body.ToArray();
+                    track.paths = new string[track.bones.Length];
+                    for (int i = 0; i < track.bones.Length; i++) track.paths[i] = RelativePath(root, track.bones[i]) ?? string.Empty;
+                    track.itemPaths = new string[items.Count];
+                    for (int i = 0; i < items.Count; i++) track.itemPaths[i] = RelativePath(root, items[i]) ?? string.Empty;
+                }
+                else track.bones = root.GetComponentsInChildren<Transform>(true);
                 for (int i = 0; i < track.ring.Length; i++)
                     track.ring[i] = new PoseSample { localPos = new Vector3[track.bones.Length], localRot = new Quaternion[track.bones.Length] };
                 _poses[sc] = track;
@@ -601,13 +656,14 @@ namespace LR2.World
         {
             if (root == null) return null;
             var anim = root.GetComponentInChildren<Animator>();
-            if (anim != null && anim.isHuman)
+            if (anim != null)
             {
-                var h = anim.GetBoneTransform(HumanBodyBones.Head);
+                var h = LR2Bones.Get(anim, HumanBodyBones.Head); // B136: generic robot too
                 if (h != null) return h;
             }
+            // B136: skip renderer objects (the robot's first-person "Head" mesh sits at the root, at the feet)
             foreach (var t in root.GetComponentsInChildren<Transform>())
-                if (t.name.EndsWith("Head", System.StringComparison.OrdinalIgnoreCase)) return t;
+                if (t.name.EndsWith("Head", System.StringComparison.OrdinalIgnoreCase) && t.GetComponent<Renderer>() == null) return t;
             return null;
         }
 
@@ -972,16 +1028,27 @@ namespace LR2.World
             var p = Instantiate(source, holder.transform);
             p.name = name;
             bool hasWeaponLaser = source.GetComponentInChildren<WeaponLaser>(true) != null;
-            foreach (var mb in p.GetComponentsInChildren<MonoBehaviour>(true))
+            // B136: the robot puppet copies the whole soldier, whose scripts require each other (BotController -> SoldierController
+            // -> SoldierMovement -> CharacterController): strip in passes, never a component another one still requires
+            for (int pass = 0; pass < 6; pass++)
             {
-                if (keepMuzzleFlash && mb is MuzzleFlash) continue;
-                DestroyImmediate(mb);
+                bool removed = false;
+                foreach (var mb in p.GetComponentsInChildren<MonoBehaviour>(true))
+                {
+                    if (mb == null || (keepMuzzleFlash && mb is MuzzleFlash) || IsRequiredByOther(mb)) continue;
+                    DestroyImmediate(mb);
+                    removed = true;
+                }
+                if (!removed) break;
             }
             foreach (var j in p.GetComponentsInChildren<Joint>(true)) DestroyImmediate(j);
             foreach (var rb in p.GetComponentsInChildren<Rigidbody>(true)) DestroyImmediate(rb);
             foreach (var c in p.GetComponentsInChildren<Collider>(true)) DestroyImmediate(c);
             foreach (var an in p.GetComponentsInChildren<Animator>(true)) DestroyImmediate(an);
             foreach (var au in p.GetComponentsInChildren<AudioSource>(true)) DestroyImmediate(au);
+            // B136: the robot puppet is a copy of the whole soldier: no second listener, no navmesh agent on a render copy
+            foreach (var al in p.GetComponentsInChildren<AudioListener>(true)) DestroyImmediate(al);
+            foreach (var ag in p.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>(true)) DestroyImmediate(ag);
             // scope cameras on the copied gun (MK18 has four) must not render a second picture-in-picture
             foreach (var cam in p.GetComponentsInChildren<Camera>(true)) { cam.enabled = false; cam.targetTexture = null; }
             if (!keepMuzzleFlash)
@@ -1020,7 +1087,10 @@ namespace LR2.World
             {
                 Transform muzzle = null;
                 foreach (var t in p.GetComponentsInChildren<Transform>(true))
-                    if (t.name == "Muzzle") { muzzle = t; break; }
+                {
+                    if (t.name == "LaserEmitter") { muzzle = t; break; } // B136: the laser device
+                    if (t.name == "Muzzle" && muzzle == null) muzzle = t;
+                }
                 if (muzzle != null)
                 {
                     var wl = p.AddComponent<WeaponLaser>();
@@ -1044,8 +1114,8 @@ namespace LR2.World
             var kProxy = _killer.GetComponent<RetargetProxy>();
             _kArm = kProxy != null ? MapArmBones(kProxy.Visual, kRoot, _killerPuppet.transform) : null;
             _killerBodyBack = kProxy != null ? kProxy.FirstPersonBodyBack : 0.02f;
-            _killerPuppetBones = _killerPuppet.GetComponentsInChildren<Transform>(true);
-            _victimPuppetBones = _victimPuppet.GetComponentsInChildren<Transform>(true);
+            _killerPuppetBones = PuppetBones(_killer, _killerPuppet);
+            _victimPuppetBones = PuppetBones(_victim, _victimPuppet);
             var kGun = _killer.ActiveFirearm;
             var vGun = _victim.ActiveFirearm;
             _killerGunDef = kGun != null ? kGun.Definition : null;
@@ -1080,6 +1150,24 @@ namespace LR2.World
                 foreach (var wl in sc.GetComponentsInChildren<WeaponLaser>(true))
                     if (wl.enabled) { wl.enabled = false; _pausedLasers.Add(wl); }
             _puppets = true;
+        }
+
+        /// <summary>B136: robot puppets map bones by path (their copied guns are removed first); SWAT puppets keep index order.</summary>
+        private Transform[] PuppetBones(SoldierController sc, GameObject puppet)
+        {
+            if (puppet == null) return null;
+            if (sc != null && _poses.TryGetValue(sc, out var track) && track.paths != null)
+            {
+                if (track.itemPaths != null)
+                    foreach (var ip in track.itemPaths)
+                    {
+                        var copy = ip.Length > 0 ? puppet.transform.Find(ip) : null;
+                        if (copy != null) DestroyImmediate(copy.gameObject);
+                    }
+                foreach (var cam in puppet.GetComponentsInChildren<Camera>(true)) DestroyImmediate(cam.gameObject);
+                return MapByPaths(puppet.transform, track.paths);
+            }
+            return puppet.GetComponentsInChildren<Transform>(true);
         }
 
         private void DestroyPuppets()
@@ -1225,7 +1313,11 @@ namespace LR2.World
             }
             Bar(0f, 0.09f);
             Bar(0.91f, 1f);
-            TMP_Text Label(string n, float y, float size, Color c)
+            var theme = Resources.Load<UITheme>("LR2/UITheme");
+            TMP_FontAsset titleFont = theme != null ? (theme.headingFont ?? theme.bodyFont) : null;
+            TMP_FontAsset infoFont = theme != null ? (theme.bodyFont ?? theme.headingFont) : null;
+
+            TMP_Text Label(string n, float y, float size, Color c, TMP_FontAsset font, float spacing)
             {
                 var t = new GameObject(n, typeof(RectTransform)).AddComponent<TextMeshProUGUI>();
                 t.transform.SetParent(go.transform, false);
@@ -1234,16 +1326,17 @@ namespace LR2.World
                 rt.anchorMax = new Vector2(1f, y);
                 rt.sizeDelta = new Vector2(0f, size * 1.6f);
                 t.alignment = TextAlignmentOptions.Center;
+                if (font != null) t.font = font;
+                t.fontStyle = FontStyles.Normal;
                 t.fontSize = size;
                 t.color = c;
-                t.characterSpacing = 8f;
+                t.characterSpacing = spacing;
                 t.raycastTarget = false;
                 return t;
             }
-            _title = Label("Title", 0.955f, 46f, new Color(1f, 0.32f, 0.26f));
+            _title = Label("Title", 0.955f, 36f, new Color(0.95f, 0.30f, 0.24f, 0.96f), titleFont, 5f);
             _title.text = "KILLCAM";
-            _title.fontStyle = FontStyles.Bold;
-            _info = Label("Info", 0.045f, 30f, Color.white);
+            _info = Label("Info", 0.045f, 21f, new Color(0.94f, 0.95f, 0.96f, 0.92f), infoFont, 1.5f);
             _canvas.enabled = false;
         }
     }

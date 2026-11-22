@@ -272,6 +272,15 @@ namespace LR2.UI
             if (minimapIconTemplate != null) minimapIconTemplate.gameObject.SetActive(false);
             if (hitmarker != null) hitmarker.color = new Color(1f, 1f, 1f, 0f);
             if (medalGroup != null) medalGroup.alpha = 0f;
+            // B136j: Keep weapon name + grenade badge well above the large magazine readout even on un-rebuilt scenes.
+            if (weaponName != null && magText != null)
+            {
+                var wrt = weaponName.rectTransform;
+                var ap = wrt.anchoredPosition;
+                if (ap.y < 118f) wrt.anchoredPosition = new Vector2(ap.x, 118f);
+                var sd = wrt.sizeDelta;
+                if (sd.x < 480f) wrt.sizeDelta = new Vector2(480f, Mathf.Max(30f, sd.y));
+            }
             BuildCompass();
             BuildFlagHud();
             TacticalChatSystem.Mount(hudGroup != null ? hudGroup.transform : transform);
@@ -475,19 +484,23 @@ namespace LR2.UI
         {
             var gun = _soldier != null ? _soldier.ActiveFirearm : null;
             bool show = gun != null && !_soldier.IsDead;
+            // B136: the knife and the torch have no ammo, but their name (and the frag count) still show
+            var item = _soldier != null && !_soldier.IsDead ? _soldier.ActiveItem : null;
+            string frags = _soldier != null && _soldier.GrenadesLeft > 0 ? $"   FRAG x{_soldier.GrenadesLeft}" : "";
             if (magText != null) magText.enabled = show;
             if (reserveText != null) reserveText.enabled = show;
-            if (weaponName != null) weaponName.enabled = show;
+            if (weaponName != null) weaponName.enabled = show || item != null;
             if (fireModeText != null) fireModeText.enabled = show;
             if (!show)
             {
+                if (weaponName != null && item != null) weaponName.text = item.DisplayName.ToUpperInvariant() + frags;
                 if (reloadPrompt != null) reloadPrompt.text = "";
                 if (reloadBarRoot != null) reloadBarRoot.gameObject.SetActive(false);
                 return;
             }
 
             float ratio = (float)gun.AmmoInMagazine / Mathf.Max(1, gun.MagazineSize);
-            if (weaponName != null) weaponName.text = gun.DisplayName.ToUpperInvariant();
+            if (weaponName != null) weaponName.text = gun.DisplayName.ToUpperInvariant() + (gun.IsSuppressed ? " (S)" : "") + frags;
             if (magText != null)
             {
                 magText.text = gun.AmmoInMagazine.ToString();
@@ -647,10 +660,39 @@ namespace LR2.UI
             }
             if (alive && low > 0.45f && Time.unscaledTime >= _nextHeartbeat && !AudioListener.pause)
             {
-                _nextHeartbeat = Time.unscaledTime + Mathf.Lerp(1.25f, 0.75f, low);
-                var s = LR2CommonSounds.Instance;
-                if (s != null) LR2Audio.Play2D(s.lowHealthLoop, 0.5f + low * 0.5f);
+                _nextHeartbeat = Time.unscaledTime + Mathf.Lerp(1.15f, 0.68f, low);
+                PlayLowHealthHeartbeat(Mathf.Lerp(0.35f, 0.72f, low));
             }
+        }
+
+        private static AudioClip _heartbeatClip;
+
+        private static void PlayLowHealthHeartbeat(float volume)
+        {
+            if (_heartbeatClip == null) _heartbeatClip = CreateHeartbeatClip();
+            if (_heartbeatClip != null)
+                LR2Audio.PlayClip(_heartbeatClip, Vector3.zero, volume, 1f, 1f, 500f, 0f, AudioCategory.Sfx, 40, 0f, null, true);
+        }
+
+        private static AudioClip CreateHeartbeatClip()
+        {
+            const int sr = 44100;
+            const float dur = 0.46f;
+            int n = Mathf.RoundToInt(sr * dur);
+            var data = new float[n];
+            float lp = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)sr;
+                float lub = Mathf.Clamp01(t / 0.012f) * Mathf.Exp(-t * 22f) * Mathf.Sin(2f * Mathf.PI * 52f * t) * 0.78f;
+                float t2 = t - 0.16f;
+                float dub = t2 > 0f ? Mathf.Clamp01(t2 / 0.012f) * Mathf.Exp(-t2 * 26f) * Mathf.Sin(2f * Mathf.PI * 42f * t2) * 0.62f : 0f;
+                lp += 0.14f * ((lub + dub) - lp);
+                data[i] = Mathf.Clamp(lp * 0.90f, -0.88f, 0.88f);
+            }
+            var c = AudioClip.Create("LR2_LowHealthHeartbeat", n, 1, sr, false);
+            c.SetData(data, 0);
+            return c;
         }
 
         // ------------------------------------------------------------------ damage direction

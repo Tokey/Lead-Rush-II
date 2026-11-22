@@ -449,12 +449,15 @@ namespace LR2.EditorTools
             CardBacking(t, "RightColCard", new Vector2(0.5f, 1f), new Vector2(420f, -476f), new Vector2(720f, 598f), accent);
 
             var s = group.gameObject.AddComponent<SettingsPanel>();
-            string[] tabTitles = { "GRAPHICS", "CONTROLS", "KEYBINDS", "AUDIO & HUD" };
+            // B136 (user 11-22: "settings in the skirmish and in the settings panel are conflicting ... add tabs? remove
+            // redundancies"): bot difficulty and bot team mode lived here AND in the Skirmish lobby (per bot, plus ALL BOTS);
+            // the lobby now owns every match option. Settings are player preferences only, in five tabs.
+            string[] tabTitles = { "GAMEPLAY", "GRAPHICS", "CONTROLS", "KEYBINDS", "AUDIO" };
             s.tabButtons = new Button[tabTitles.Length];
             s.tabPanels = new GameObject[tabTitles.Length];
             for (int ti = 0; ti < tabTitles.Length; ti++)
             {
-                float tx = -420f + ti * 280f;
+                float tx = -560f + ti * 280f;
                 var tb = Btn(tabTitles[ti], t, new Vector2(tx, 412f), new Vector2(256f, 42f));
                 var tLbl = tb.GetComponentInChildren<TMP_Text>();
                 if (tLbl != null)
@@ -480,17 +483,31 @@ namespace LR2.EditorTools
                 ((RectTransform)h.transform).pivot = new Vector2(0f, 0.5f);
             }
 
-            // Tab 0: GRAPHICS (P5 + B43 + B48)
-            var gfxTab = s.tabPanels[0].transform;
-            AddSectionHeader(gfxTab, "GfxLeft", "CAMERA & POST-PROCESSING", leftCol);
+            // Tab 0: GAMEPLAY (feedback and HUD preferences)
+            var playTab = s.tabPanels[0].transform;
+            AddSectionHeader(playTab, "PlayLeft", "COMBAT FEEDBACK", leftCol);
             float y = startY;
+            SelectorColRow(playTab, "HITMARKER PALETTE", leftCol, y, out s.colorBlindPrev, out s.colorBlindNext, out s.colorBlindValue); y -= step;
+            s.laserSight = ToggleColRow(playTab, "LASER SIGHT [L]", leftCol, y); y -= step;
+            s.minimapBottom = ToggleColRow(playTab, "MINIMAP ABOVE HEALTH (OFF: TOP-LEFT)", leftCol, y); // B96
+            AddSectionHeader(playTab, "PlayRight", "MATCH OPTIONS", rightCol);
+            var matchHint = Txt("MatchHint", playTab, "Mode, map, bots (difficulty and team per bot), score and time limits are set in SKIRMISH, " +
+                "so a match always plays exactly as its lobby shows.", 20f, TextAlignmentOptions.TopLeft, new Vector2(0.5f, 1f),
+                new Vector2(rightCol, startY + 12f), new Vector2(620f, 180f), false, dim);
+            matchHint.textWrappingMode = TextWrappingModes.Normal;
+            matchHint.overflowMode = TextOverflowModes.Truncate;
+            ((RectTransform)matchHint.transform).pivot = new Vector2(0f, 1f);
+
+            // Tab 1: GRAPHICS (P5 + B43 + B48)
+            var gfxTab = s.tabPanels[1].transform;
+            AddSectionHeader(gfxTab, "GfxLeft", "CAMERA & POST-PROCESSING", leftCol);
+            y = startY;
             s.fieldOfView = SliderColRow(gfxTab, "FOV (HORIZONTAL)", leftCol, y, out s.fovValue); y -= step;
             s.cameraShake = SliderColRow(gfxTab, "CAMERA SHAKE", leftCol, y, out s.cameraShakeValue); y -= step;
             s.bodycamMotion = SliderColRow(gfxTab, "BODYCAM MOTION", leftCol, y, out s.bodycamMotionValue); y -= step;
             s.bodycamLook = ToggleColRow(gfxTab, "BODYCAM LENS LOOK", leftCol, y); y -= step;
             s.motionBlur = ToggleColRow(gfxTab, "MOTION BLUR", leftCol, y); y -= step;
-            s.filmGrain = ToggleColRow(gfxTab, "FILM GRAIN", leftCol, y); y -= step;
-            s.minimapBottom = ToggleColRow(gfxTab, "MINIMAP ABOVE HEALTH (OFF: TOP-LEFT)", leftCol, y); // B96
+            s.filmGrain = ToggleColRow(gfxTab, "FILM GRAIN", leftCol, y);
 
             AddSectionHeader(gfxTab, "GfxRight", "QUALITY, UPSCALER & DISPLAY", rightCol);
             y = startY;
@@ -504,33 +521,60 @@ namespace LR2.EditorTools
             s.upscalerStatusNote = Txt("UpscalerStatusNote", gfxTab, "", 16f, TextAlignmentOptions.MidlineLeft, new Vector2(0.5f, 1f), new Vector2(rightCol, y), new Vector2(640f, 26f), false, dim);
             ((RectTransform)s.upscalerStatusNote.transform).pivot = new Vector2(0f, 0.5f);
 
-            // Tab 1: CONTROLS
-            var ctrlTab = s.tabPanels[1].transform;
-            AddSectionHeader(ctrlTab, "CtrlLeft", "AIMING & WEAPON CONTROLS", leftCol);
+            // Tab 2: CONTROLS (B136q: complete aiming/sprint toggles + full tactical key legend)
+            var ctrlTab = s.tabPanels[2].transform;
+            AddSectionHeader(ctrlTab, "CtrlLeft", "AIMING & INPUT BEHAVIOUR", leftCol);
             y = startY;
             s.sensitivity = SliderColRow(ctrlTab, "MOUSE SENSITIVITY", leftCol, y, out s.sensitivityValue); y -= step;
             s.adsSensitivity = SliderColRow(ctrlTab, "ADS SENSITIVITY", leftCol, y, out s.adsSensitivityValue); y -= step;
             s.invertY = ToggleColRow(ctrlTab, "INVERT Y AXIS", leftCol, y); y -= step;
-            s.laserSight = ToggleColRow(ctrlTab, "LASER SIGHT [L]", leftCol, y);
-            AddSectionHeader(ctrlTab, "CtrlRight", "INPUT & BINDINGS", rightCol);
-            var ctrlHint = Txt("CtrlHint", ctrlTab, "All primary keyboard & mouse actions are remappable under KEYBINDS and persisted via Unity Input System overrides.", 20f, TextAlignmentOptions.TopLeft, new Vector2(0.5f, 1f), new Vector2(rightCol, startY + 12f), new Vector2(620f, 180f), false, dim);
+            s.toggleAim = ToggleColRow(ctrlTab, "TOGGLE AIM (OFF: HOLD)", leftCol, y); y -= step;
+            s.toggleSprint = ToggleColRow(ctrlTab, "TOGGLE SPRINT (OFF: HOLD)", leftCol, y); y -= step;
+            s.autoSprint = ToggleColRow(ctrlTab, "AUTO SPRINT FORWARD", leftCol, y);
+
+            AddSectionHeader(ctrlTab, "CtrlRight", "COMPLETE CONTROLS REFERENCE", rightCol);
+            string controlsLegend =
+                "MOVEMENT:  WASD Move · SHIFT Sprint · SPACE Jump / Mantle\n\n" +
+                "STANCES:  C / CTRL Crouch · X Hold Crouch · XX Slide · Z Prone\n\n" +
+                "COMBAT:  LMB Fire · RMB Aim (ADS) · R Reload · G Frag Grenade\n\n" +
+                "TACTICAL:  Q Lean Left · E Lean Right · L Laser · F Resupply\n\n" +
+                "LOADOUT:  1 Primary · 2 Sidearm · 3 Knife · 4 Torch · SCROLL Swap\n\n" +
+                "OPTICS & MODS:  B Fire Mode · V Switch Sight (ADS) · I Inspect (1/2/3)\n\n" +
+                "SQUAD & MATCH:  T Squad Chat Orders · TAB Scoreboard · ESC Pause\n\n" +
+                "All movement, stance and gear keys can be remapped under KEYBINDS.";
+            var ctrlHint = Txt("CtrlHint", ctrlTab, controlsLegend, 18f,
+                TextAlignmentOptions.TopLeft, new Vector2(0.5f, 1f), new Vector2(rightCol, startY + 12f), new Vector2(640f, 470f), false, dim);
+            ctrlHint.textWrappingMode = TextWrappingModes.Normal;
+            ctrlHint.overflowMode = TextOverflowModes.Truncate;
             ((RectTransform)ctrlHint.transform).pivot = new Vector2(0f, 1f);
 
-            // Tab 2: KEYBINDS (LR2Bindings B44)
-            var bindTab = s.tabPanels[2].transform;
+            // Tab 3: KEYBINDS (LR2Bindings B44 + B136/B136q complete action set)
+            var bindTab = s.tabPanels[3].transform;
             AddSectionHeader(bindTab, "BindLeft", "MOVEMENT & COMBAT", leftCol);
-            AddSectionHeader(bindTab, "BindRight", "UTILITY & STANCES", rightCol);
-            (string action, string label)[] leftBinds = { ("Move", "MOVE FORWARD"), ("Fire", "FIRE WEAPON"), ("Aim", "AIM DOWN SIGHTS"), ("Sprint", "SPRINT"), ("Jump", "JUMP / MANTLE"), ("Reload", "RELOAD") };
-            (string action, string label)[] rightBinds = { ("Crouch", "CROUCH (TOGGLE)"), ("CrouchHold", "CROUCH (HOLD) · TAP TWICE: SLIDE"), ("Prone", "PRONE"), ("LeanLeft", "LEAN LEFT"), ("LeanRight", "LEAN RIGHT"), ("Interact", "INTERACT / RESUPPLY"), ("Laser", "TOGGLE LASER") };
+            AddSectionHeader(bindTab, "BindRight", "STANCES, GEAR & LOADOUT", rightCol);
+            (string action, string label)[] leftBinds = {
+                ("Move", "MOVE FORWARD"), ("Fire", "FIRE WEAPON"), ("Aim", "AIM DOWN SIGHTS"),
+                ("Sprint", "SPRINT"), ("Jump", "JUMP / MANTLE"), ("Reload", "RELOAD"),
+                ("Grenade", "THROW GRENADE"), ("FireMode", "FIRE MODE"), ("CycleScope", "SWITCH SIGHT (ADS)"),
+                ("Slot1", "PRIMARY WEAPON"), ("Slot2", "SIDEARM")
+            };
+            (string action, string label)[] rightBinds = {
+                ("Crouch", "CROUCH (TOGGLE)"), ("CrouchHold", "CROUCH HOLD · XX SLIDE"), ("Prone", "PRONE"),
+                ("LeanLeft", "LEAN LEFT"), ("LeanRight", "LEAN RIGHT"), ("Interact", "INTERACT / RESUPPLY"),
+                ("Laser", "TOGGLE LASER"), ("Inspect", "INSPECT / MODS"),
+                ("Slot3", "KNIFE"), ("Slot4", "TORCH")
+            };
+            const float bindStep = 43f;
+            const float bindStartY = -236f;
             for (int bi = 0; bi < leftBinds.Length; bi++)
-                s.keybindSlots.Add(KeybindColRow(bindTab, leftBinds[bi].action, leftBinds[bi].label, leftCol, startY - bi * step));
+                s.keybindSlots.Add(KeybindColRow(bindTab, leftBinds[bi].action, leftBinds[bi].label, leftCol, bindStartY - bi * bindStep));
             for (int bi = 0; bi < rightBinds.Length; bi++)
-                s.keybindSlots.Add(KeybindColRow(bindTab, rightBinds[bi].action, rightBinds[bi].label, rightCol, startY - bi * step));
-            s.rebindStatusText = Txt("RebindStatus", bindTab, "CLICK ANY ACTION TO REBIND (ESC TO CANCEL)", 18f, TextAlignmentOptions.Center, new Vector2(0.5f, 1f), new Vector2(0f, -640f), new Vector2(900f, 30f), false, accent);
-            s.resetBindingsButton = Btn("Reset Keybinds", bindTab, new Vector2(0f, -692f), new Vector2(280f, 44f));
+                s.keybindSlots.Add(KeybindColRow(bindTab, rightBinds[bi].action, rightBinds[bi].label, rightCol, bindStartY - bi * bindStep));
+            s.rebindStatusText = Txt("RebindStatus", bindTab, "CLICK ANY ACTION TO REBIND (ESC TO CANCEL)", 17f, TextAlignmentOptions.Center, new Vector2(0.5f, 1f), new Vector2(0f, -736f), new Vector2(900f, 28f), false, accent);
+            s.resetBindingsButton = Btn("Reset Keybinds", bindTab, new Vector2(0f, -248f), new Vector2(280f, 40f));
 
-            // Tab 3: AUDIO & HUD (B5, P4, B44)
-            var audioTab = s.tabPanels[3].transform;
+            // Tab 4: AUDIO (B5, P4)
+            var audioTab = s.tabPanels[4].transform;
             AddSectionHeader(audioTab, "AudioLeft", "AUDIO CHANNELS", leftCol);
             y = startY;
             s.masterVolume = SliderColRow(audioTab, "MASTER VOLUME", leftCol, y, out s.masterVolumeValue); y -= step;
@@ -538,12 +582,6 @@ namespace LR2.EditorTools
             s.musicVolume = SliderColRow(audioTab, "MUSIC VOLUME", leftCol, y, out s.musicVolumeValue); y -= step;
             s.uiVolume = SliderColRow(audioTab, "UI VOLUME", leftCol, y, out s.uiVolumeValue); y -= step;
             s.hitmarkerSound = ToggleColRow(audioTab, "HITMARKER SOUND", leftCol, y);
-
-            AddSectionHeader(audioTab, "AudioRight", "COMBAT HUD & BOTS", rightCol);
-            y = startY;
-            SelectorColRow(audioTab, "HITMARKER PALETTE", rightCol, y, out s.colorBlindPrev, out s.colorBlindNext, out s.colorBlindValue); y -= step;
-            SelectorColRow(audioTab, "BOT DIFFICULTY", rightCol, y, out s.botDifficultyPrev, out s.botDifficultyNext, out s.botDifficultyValue); y -= step;
-            SelectorColRow(audioTab, "BOT TEAM MODE", rightCol, y, out s.botTeamModePrev, out s.botTeamModeNext, out s.botTeamModeValue);
 
             s.resetDefaultsButton = Btn("Reset Defaults", t, new Vector2(-190f, -446f), new Vector2(310f, 54f));
             back = Btn("Back", t, new Vector2(190f, -446f), new Vector2(310f, 54f));
@@ -594,15 +632,15 @@ namespace LR2.EditorTools
             arc.rectTransform.pivot = new Vector2(0.5f, -2.3f);
             hud.damageIndicatorTemplate = arc;
 
-            // Ammo (bottom-right)
-            var ammo = Rect("Ammo", hudRoot, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-70f, 60f), new Vector2(380f, 120f), new Vector2(1f, 0f));
-            hud.magText = AddShadow(Txt("Mag", ammo, "30", 86f, TextAlignmentOptions.BottomRight, new Vector2(1f, 0f), new Vector2(-105f, 6f), new Vector2(200f, 90f), true));
+            // Ammo (bottom-right, B136j: generous separation between weaponName + grenade readout and magText)
+            var ammo = Rect("Ammo", hudRoot, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-70f, 60f), new Vector2(500f, 152f), new Vector2(1f, 0f));
+            hud.magText = AddShadow(Txt("Mag", ammo, "30", 82f, TextAlignmentOptions.BottomRight, new Vector2(1f, 0f), new Vector2(-105f, 8f), new Vector2(200f, 88f), true));
             ((RectTransform)hud.magText.transform).pivot = new Vector2(1f, 0f);
             hud.reserveText = AddShadow(Txt("Reserve", ammo, "120", 36f, TextAlignmentOptions.BottomLeft, new Vector2(1f, 0f), new Vector2(-92f, 14f), new Vector2(100f, 50f), true, dim));
             ((RectTransform)hud.reserveText.transform).pivot = new Vector2(0f, 0f);
-            hud.weaponName = AddShadow(Txt("WeaponName", ammo, "AK-12", 26f, TextAlignmentOptions.BottomRight, new Vector2(1f, 0f), new Vector2(0f, 96f), new Vector2(360f, 30f), false, dim));
+            hud.weaponName = AddShadow(Txt("WeaponName", ammo, "AK-12", 22f, TextAlignmentOptions.BottomRight, new Vector2(1f, 0f), new Vector2(0f, 118f), new Vector2(480f, 30f), false, dim));
             ((RectTransform)hud.weaponName.transform).pivot = new Vector2(1f, 0f);
-            hud.fireModeText = AddShadow(Txt("FireMode", ammo, "AUTO", 20f, TextAlignmentOptions.BottomRight, new Vector2(1f, 0f), new Vector2(0f, -18f), new Vector2(200f, 24f), false, accent));
+            hud.fireModeText = AddShadow(Txt("FireMode", ammo, "AUTO", 20f, TextAlignmentOptions.BottomRight, new Vector2(1f, 0f), new Vector2(0f, -18f), new Vector2(320f, 24f), false, accent));
             ((RectTransform)hud.fireModeText.transform).pivot = new Vector2(1f, 0f);
 
             // Health (bottom-left)
@@ -817,17 +855,30 @@ namespace LR2.EditorTools
             var settings = BuildSettings(root, out var back);
             mm.settingsPanel = settings.GetComponent<CanvasGroup>();
             mm.settingsBackButton = back;
-            mm.loadingPanel = Panel("Loading", root, new Color(0.015f, 0.02f, 0.026f, 0.96f));
-            var spinnerImg = Img("Spinner", mm.loadingPanel.transform, _arc, accent, mid, new Vector2(0f, 88f), new Vector2(96f, 96f));
-            mm.loadingSpinner = spinnerImg.rectTransform;
-            Txt("LoadingText", mm.loadingPanel.transform, "LOADING", 56f, TextAlignmentOptions.Center, mid, new Vector2(0f, 0f), new Vector2(900f, 70f), true, Color.white);
-            Img("BarTrack", mm.loadingPanel.transform, _white, new Color(1f, 1f, 1f, 0.14f), mid, new Vector2(0f, -56f), new Vector2(520f, 8f));
-            var barFill = Img("BarFill", mm.loadingPanel.transform, _white, accent, mid, new Vector2(0f, -56f), new Vector2(520f, 8f));
+            mm.loadingPanel = Panel("Loading", root, new Color(0.035f, 0.042f, 0.055f, 1f));
+            var lBrand = Txt("BrandWordmark", mm.loadingPanel.transform, "LEADRUSH II", 13f, TextAlignmentOptions.Left,
+                new Vector2(0f, 1f), new Vector2(48f, -42f), new Vector2(320f, 26f), true, new Color(1f, 1f, 1f, 0.34f));
+            lBrand.rectTransform.pivot = new Vector2(0f, 1f);
+            lBrand.characterSpacing = 6f;
+            var lEye = Txt("LoadingEyebrow", mm.loadingPanel.transform, "SECTOR DEPLOYMENT", 12f, TextAlignmentOptions.Center,
+                mid, new Vector2(0f, 84f), new Vector2(760f, 26f), true, new Color(0.79f, 0.60f, 0.31f, 0.92f));
+            lEye.characterSpacing = 8f;
+            lEye.textWrappingMode = TextWrappingModes.NoWrap;
+            var lTitle = Txt("LoadingText", mm.loadingPanel.transform, "DEPLOYING", 44f, TextAlignmentOptions.Center,
+                mid, new Vector2(0f, 30f), new Vector2(860f, 66f), true, new Color(0.95f, 0.96f, 0.97f, 1f));
+            lTitle.characterSpacing = 5f;
+            lTitle.textWrappingMode = TextWrappingModes.NoWrap;
+            Img("BarTrack", mm.loadingPanel.transform, _white, new Color(1f, 1f, 1f, 0.11f), mid, new Vector2(0f, -24f), new Vector2(420f, 2f));
+            var barFill = Img("BarFill", mm.loadingPanel.transform, _white, new Color(0.89f, 0.66f, 0.29f, 1f), mid, new Vector2(0f, -24f), new Vector2(420f, 2f));
             barFill.type = Image.Type.Filled;
             barFill.fillMethod = Image.FillMethod.Horizontal;
             barFill.fillAmount = 0f;
+            mm.loadingSpinner = null;
             mm.loadingBarFill = barFill;
-            mm.loadingStatusText = Txt("LoadingStatus", mm.loadingPanel.transform, "INITIALIZING...", 22f, TextAlignmentOptions.Center, mid, new Vector2(0f, -92f), new Vector2(900f, 34f), false, dim);
+            mm.loadingStatusText = Txt("LoadingStatus", mm.loadingPanel.transform, "PREPARING ARENA  \u00b7  0%", 13f, TextAlignmentOptions.Center,
+                mid, new Vector2(0f, -56f), new Vector2(820f, 26f), false, new Color(0.58f, 0.62f, 0.66f, 0.95f));
+            mm.loadingStatusText.characterSpacing = 3f;
+            mm.loadingStatusText.textWrappingMode = TextWrappingModes.NoWrap;
 
             mm.duelSettings = AssetDatabase.LoadAssetAtPath<MatchSettings>("Assets/LR2/Data/Game/MatchSettings_Duel.asset");
             mm.ctfSettings = AssetDatabase.LoadAssetAtPath<MatchSettings>("Assets/LR2/Data/Game/MatchSettings_CTF.asset");

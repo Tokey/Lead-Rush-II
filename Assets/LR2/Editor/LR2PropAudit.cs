@@ -52,6 +52,7 @@ namespace LR2.EditorTools
                 Thin(sb);
                 Squashed(sb);
                 Clipping(sb);
+                Floating(sb);
                 Spawns(sb);
             }
             string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Logs", "LR2_PropAudit"));
@@ -141,6 +142,46 @@ namespace LR2.EditorTools
             sb.AppendLine($"CLIPPING ({hits.Count} prop pairs sunk more than {ClipDepth * 100f:0} cm into each other; deepest first):");
             foreach (var h in hits.OrderByDescending(h => h.depth).Take(40))
                 sb.AppendLine($"  {h.depth * 100f:0} cm  {h.a}  <->  {h.b}");
+        }
+
+        private static void Floating(StringBuilder sb)
+        {
+            var propsGo = GameObject.Find("Environment/Props");
+            var hits = new List<(float gap, string path)>();
+            if (propsGo != null)
+            {
+                Transform pt = propsGo.transform;
+                for (int i = 0; i < pt.childCount; i++)
+                {
+                    var ch = pt.GetChild(i);
+                    if (ch.GetComponent<ParticleSystem>() != null || ch.GetComponent<Light>() != null) continue;
+                    var rs = ch.GetComponentsInChildren<Renderer>(true);
+                    if (rs.Length == 0) continue;
+                    Bounds b = default;
+                    bool hasB = false;
+                    foreach (var r in rs)
+                    {
+                        if (r is ParticleSystemRenderer || r is LineRenderer) continue;
+                        if (!hasB) { b = r.bounds; hasB = true; }
+                        else b.Encapsulate(r.bounds);
+                    }
+                    if (!hasB) continue;
+                    var selfCols = new HashSet<Collider>(ch.GetComponentsInChildren<Collider>(true));
+                    Vector3 origin = new Vector3(b.center.x, b.min.y + 0.25f, b.center.z);
+                    var rayHits = Physics.RaycastAll(origin, Vector3.down, 4.0f, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore);
+                    float bestFloorY = float.NegativeInfinity;
+                    foreach (var h in rayHits)
+                    {
+                        if (selfCols.Contains(h.collider) || h.normal.y < 0.55f) continue;
+                        if (h.point.y > bestFloorY) bestFloorY = h.point.y;
+                    }
+                    float gap = float.IsNegativeInfinity(bestFloorY) ? 9.99f : (b.min.y - bestFloorY);
+                    if (gap > 0.08f) hits.Add((gap, PathOf(ch)));
+                }
+            }
+            sb.AppendLine($"FLOATING ({hits.Count} movable props > 8 cm above static floor):");
+            foreach (var h in hits.OrderByDescending(x => x.gap).Take(40))
+                sb.AppendLine($"  +{h.gap * 100f:0.0} cm  {h.path}");
         }
 
         private static void Spawns(StringBuilder sb)

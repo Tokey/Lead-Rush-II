@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: LR2_SoldierSettings
   m_EditorClassIdentifier: 
   rigAsset: {fileID: 11400000, guid: 20c86149126a2b24cb88e9fc185cbd50, type: 2}
-  unarmedController: {fileID: 0}
+  unarmedController: {fileID: 22100000, guid: 7b30ccb51858b794d9b2dc1c824e9fc9, type: 2}
   aimingMotion: {fileID: 11400000, guid: 2951c90938854f24c935627d36bbc3cd, type: 2}
   crouchingMotion: {fileID: 11400000, guid: fa23e63ff38a3bb4f9f7bca500ced7ce, type: 2}
   jumpingMotion: {fileID: 11400000, guid: 93be04a77e31740498d5c7d7e8286ab5, type: 2}
@@ -33,3 +33,5 @@ MonoBehaviour:
   - {fileID: 1711597703121779645, guid: 7426d7d346c71ae49acded4005c27ef3, type: 3}
   - {fileID: 4162073670658945821, guid: c647d94ea5b7c884e91a40f3808b77ae, type: 3}
   - {fileID: 9067424349527152674, guid: 20693bcee220de349a4f4a93646d1b44, type: 3}
+  - {fileID: 5189516229206445210, guid: 681a6d4d06a8644418374523920e37ab, type: 3}
+  - {fileID: 156228321115004248, guid: def4c568fdaa1da4288a358678dd105b, type: 3}

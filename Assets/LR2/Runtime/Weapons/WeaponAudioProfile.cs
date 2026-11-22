@@ -19,7 +19,14 @@ namespace LR2.Weapons
         [Tooltip("Tail used when the shooter is under a roof (warehouse, interiors).")]
         public SoundSet fireTailInterior = new SoundSet(AudioCategory.Weapons, 0.75f, 80f, 0.35f);
 
+        [Header("Suppressed Modular Layer (B136m)")]
+        public SoundSet firePlayerSuppressed = new SoundSet(AudioCategory.Weapons, 0.92f, 25f, 0.15f);
+        public SoundSet fireNpcSuppressed = new SoundSet(AudioCategory.Weapons, 0.82f, 35f, 1f);
+        public SoundSet fireTailSuppressed = new SoundSet(AudioCategory.Weapons, 0.42f, 45f, 0.35f);
+        public SoundSet fireTailInteriorSuppressed = new SoundSet(AudioCategory.Weapons, 0.48f, 35f, 0.35f);
+
         public SoundSet TailFor(bool indoors) => indoors && fireTailInterior.IsValid ? fireTailInterior : fireTail;
+        public SoundSet SuppressedTailFor(bool indoors) => indoors && fireTailInteriorSuppressed.IsValid ? fireTailInteriorSuppressed : fireTailSuppressed;
 
         [Header("Others (3D, by distance)")]
         public SoundSet fireNpcClose = new SoundSet(AudioCategory.Weapons, 1f, 45f, 1f);
@@ -39,9 +46,11 @@ namespace LR2.Weapons
         public SoundSet shellCasings = new SoundSet(AudioCategory.Sfx, 0.35f, 10f, 1f);
 
         [Header("Reload timing (normalised 0..1 of the reload)")]
-        [Range(0f, 1f)] public float magOutAt = 0.18f;
-        [Range(0f, 1f)] public float magInAt = 0.55f;
-        [Range(0f, 1f)] public float boltAt = 0.8f;
+        [Range(0f, 1f)] public float magOutAt = 0.13f;
+        [Range(0f, 1f)] public float magInAt = 0.43f;
+        [Range(0f, 1f)] public float boltAt = 0.63f;
+        [Tooltip("Normalized end point for empty reloads so we blend back cleanly right after bolt rack before tail gun rotation (B136k).")]
+        [Range(0.55f, 1f)] public float emptyReloadEndAt = 0.82f;
 
         public SoundSet NpcShotForDistance(float distance)
         {

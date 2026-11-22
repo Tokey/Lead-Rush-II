@@ -192,8 +192,8 @@ namespace LR2.World
             if (devRaw < 0f) return;
             if (!_bb.TryGetValue(c, out var b)) _bb[c] = b = new BBTrack();
             var ik = item.parent;
-            var head = sc.Animator != null ? sc.Animator.GetBoneTransform(HumanBodyBones.Head) : null;
-            var hand = sc.Animator != null ? sc.Animator.GetBoneTransform(HumanBodyBones.RightHand) : null;
+            var head = LR2.Characters.LR2Bones.Get(sc.Animator, HumanBodyBones.Head); // B136: generic robot too
+            var hand = LR2.Characters.LR2Bones.Get(sc.Animator, HumanBodyBones.RightHand);
             Vector3 le = ik != null && head != null ? (Quaternion.Inverse(head.rotation) * ik.rotation).eulerAngles : Vector3.zero;
             Vector3 lp = ik != null && head != null ? head.InverseTransformPoint(ik.position) * 100f : Vector3.zero;
             float handDev = hand != null ? Quaternion.Angle(aimRot, hand.rotation) : -1f;
@@ -275,7 +275,7 @@ namespace LR2.World
             }
             if (k.hand == null && sc.Animator != null)
             {
-                k.hand = sc.Animator.GetBoneTransform(HumanBodyBones.RightHand);
+                k.hand = LR2.Characters.LR2Bones.Get(sc.Animator, HumanBodyBones.RightHand);
                 if (k.hand != null) foreach (Transform ch in k.hand) if (ch.name == "IK WeaponBoneRight") k.wbRight = ch;
             }
             float calib = 0f, calibCm = 0f;

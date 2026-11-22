@@ -14,6 +14,9 @@ namespace LR2.UI
         public Slider sensitivity;
         public Slider adsSensitivity;
         public Toggle invertY;
+        public Toggle toggleAim;
+        public Toggle toggleSprint;
+        public Toggle autoSprint;
 
         [Header("View")]
         public Slider fieldOfView;
@@ -120,6 +123,9 @@ namespace LR2.UI
             Set(musicVolume, 0f, 1f, LR2Settings.MusicVolume);
             Set(uiVolume, 0f, 1f, LR2Settings.UiVolume);
             if (invertY != null) invertY.isOn = LR2Settings.InvertY;
+            if (toggleAim != null) toggleAim.isOn = LR2Settings.ToggleAim;
+            if (toggleSprint != null) toggleSprint.isOn = LR2Settings.ToggleSprint;
+            if (autoSprint != null) autoSprint.isOn = LR2Settings.AutoSprint;
             if (bodycamLook != null) bodycamLook.isOn = LR2Settings.BodycamLook;
             if (motionBlur != null) motionBlur.isOn = LR2Settings.MotionBlur;
             if (filmGrain != null) filmGrain.isOn = LR2Settings.FilmGrain;
@@ -158,6 +164,9 @@ namespace LR2.UI
             Hook(musicVolume, v => LR2Settings.MusicVolume = v);
             Hook(uiVolume, v => LR2Settings.UiVolume = v);
             Hook(invertY, v => LR2Settings.InvertY = v);
+            Hook(toggleAim, v => LR2Settings.ToggleAim = v);
+            Hook(toggleSprint, v => LR2Settings.ToggleSprint = v);
+            Hook(autoSprint, v => LR2Settings.AutoSprint = v);
             Hook(bodycamLook, v => LR2Settings.BodycamLook = v);
             Hook(motionBlur, v => LR2Settings.MotionBlur = v);
             Hook(filmGrain, v => LR2Settings.FilmGrain = v);

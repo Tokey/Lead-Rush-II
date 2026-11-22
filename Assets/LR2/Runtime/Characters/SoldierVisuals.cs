@@ -24,7 +24,20 @@ namespace LR2.Characters
         [SerializeField] private Material faceMask;
         [Tooltip("Distinct face mask for hostile forces (dark red Marauder visor/balaclava).")]
         [SerializeField] private Material enemyFaceMask;
+        [Tooltip("B136 (Kinemation robot): a body material whose name contains the key becomes the friendly or enemy tint. " +
+                 "When set, these replace the SWAT uniform / mask swap above.")]
+        [SerializeField] private TeamMaterialSwap[] teamSwaps = System.Array.Empty<TeamMaterialSwap>();
         private bool _uniformApplied;
+
+        [System.Serializable]
+        public struct TeamMaterialSwap
+        {
+            public string key;
+            public Material friendly;
+            public Material enemy;
+        }
+
+        public void SetTeamSwaps(TeamMaterialSwap[] swaps) => teamSwaps = swaps ?? System.Array.Empty<TeamMaterialSwap>();
 
         public Material FriendlyMarkerMaterial { get => friendlyMarkerMaterial; set => friendlyMarkerMaterial = value; }
         public void SetGear(Material friendly, Material enemy, Material mask, Material enemyMask = null)
@@ -49,7 +62,35 @@ namespace LR2.Characters
         /// <summary>Applies baked uniform materials immediately (used both in prefab build and pre-reveal warmup).</summary>
         public void ApplyMaterialsNow(bool friendly)
         {
+            if (teamSwaps != null && teamSwaps.Length > 0) { ApplySwaps(friendly, null); return; }
             ApplySet(friendly ? friendlyUniform : enemyUniform, friendly ? faceMask : (enemyFaceMask != null ? enemyFaceMask : faceMask));
+        }
+
+        /// <summary>B136: robot body/arms/legs to the team tint (weapons keep their own materials).</summary>
+        private void ApplySwaps(bool friendly, TeamId? tint)
+        {
+            foreach (var r in GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (r.GetComponentInParent<LR2.Weapons.LR2Item>(true) != null) continue;
+                var mats = r.sharedMaterials;
+                bool changed = false;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] == null) continue;
+                    string n = mats[i].name.ToLowerInvariant();
+                    foreach (var s in teamSwaps)
+                    {
+                        if (string.IsNullOrEmpty(s.key) || !n.Contains(s.key)) continue;
+                        var m = friendly ? s.friendly : s.enemy;
+                        if (m == null) break;
+                        mats[i] = tint.HasValue ? Tint(m, tint.Value) : m;
+                        changed = true;
+                        break;
+                    }
+                }
+                if (changed) r.sharedMaterials = mats;
+            }
+            _uniformApplied = true;
         }
 
         private void ApplySet(Material uniform, Material mask)
@@ -85,6 +126,13 @@ namespace LR2.Characters
         private void ApplyUniform(Combatant local)
         {
             var team = TeamUtil.ColorTeam(local, _combatant);
+            if (teamSwaps != null && teamSwaps.Length > 0)
+            {
+                bool tinted = team == TeamId.Charlie || team == TeamId.Delta;
+                ApplySwaps(team == TeamId.Charlie || (!tinted && (team == TeamId.Alpha || (_combatant != null && _combatant.IsLocalPlayer))),
+                    tinted ? team : (TeamId?)null);
+                return;
+            }
             if (team == TeamId.Charlie || team == TeamId.Delta)
             {
                 var mask = team == TeamId.Charlie ? faceMask : (enemyFaceMask != null ? enemyFaceMask : faceMask);

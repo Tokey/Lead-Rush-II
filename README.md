@@ -20,20 +20,17 @@ LeadRush 2 pairs full-body procedural first-person weapon & locomotion animation
 
 ### By the numbers
 
-As of 2026-11-20 13:00 (after the 11-20 player build). Prompts are counted from [PROMPTS.md](Docs/AI_Collaboration/PROMPTS.md), tasks and defects
+As of 2026-11-22 15:48 (build `11.22.26.1`). Prompts are counted from [PROMPTS.md](Docs/AI_Collaboration/PROMPTS.md), tasks and defects
 from the [ledgers](Docs/AI_Collaboration/data), board items from [AGENT_COORDINATION.md](AGENT_COORDINATION.md).
 
-| Developer prompts | Tasks delivered | Defects logged | Board items | Commits | C# code |
+| Developer prompts | Tasks delivered | Defects logged | Board items | Commits | C# code (`Assets/LR2`) |
 |---:|---:|---:|---:|---:|---:|
-| **268** | **208** | **87** | **151** | **153** | **42,810** lines in 134 files |
+| **268** (plus 11-22 follow-ups) | **225** (`227` rows) | **100** | **165+** | **158+** | **46,995** lines in **141** files |
 
-- **Prompts by agent:** Claude Code 165, Antigravity ("Gemini") 91, GitHub Copilot 1, plus 11 quoted from summaries of prompts sent to several agents. The list is built from the Claude Code
-  session logs and the Antigravity conversation database, so prompts given to Codex and Copilot inside their own apps are not in it.
-- **Tasks by agent:** Claude 104, Gemini 52, Copilot 35, Codex 17. **Defects:** 87 logged; the developer reported 39, the agents caught 48 (reviews and self-checks: Claude 24, Gemini 6, Copilot 6, Codex 2; automated runtime and QA-bot checks 9; a push check 1).
-- **Scope:** 5 days of development (2026-11-16 to 11-20), 4 AI agents, 4 combat maps, up to 20 bots per match in 2 to 4 teams.
+- **Tasks by agent:** Claude `112`, Gemini `59`, Copilot `35`, Codex `19`. **Defects:** `100` logged; `45` developer-reported, `55` caught by agents/reviews/QA (`Claude` 28, `Gemini` 7, `Copilot` 6, `Codex` 4, automated QA/runtime 9, push check 1).
+- **Scope:** 7 days of development (`2026-11-16` to `11-22`), 4 AI agents, 4 combat maps, up to 20 bots per match in 2 to 4 teams.
 
-What changed most recently: [What's new on 2026-11-20](Docs/Updates/2026-11-20.md) (weapon flips fixed at the root, drone blast sound,
-LLM squad commander, the who-decided-what study) · earlier: [2026-11-19](Docs/Updates/2026-11-19.md).
+What changed most recently: **[What's new on 2026-11-22 (`11.22.26.1`)](Docs/Updates/2026-11-22.md)** (OG Kinemation Generic robot rig `B136`, circular `LR2/PipScope` sights, grenade throw fix, `PainVoice` death impact + health-replenished + self/target armor-break SFX, 19-stem per-map music, minimalistic obsidian loading screen, `UITheme` Killcam font, Controls/Keybinds update, 0-blocked-spawn / 0-floating prop pass) · earlier: [2026-11-20](Docs/Updates/2026-11-20.md), [2026-11-19](Docs/Updates/2026-11-19.md).
 
 ### Who built what
 
@@ -84,21 +81,25 @@ b-roll shots of your soldier: the gun, a pan across the mask, a low angle, the p
 
 More from this build, with what changed: [What's new on 2026-11-19](Docs/Updates/2026-11-19.md).
 
-In-game captures, 1920 x 1080, build 11.18.26.4 (2026-11-18).
+In-game captures, 1920 x 1080, build **`11.22.26.1` (`2026-11-22`)**.
 
-### Gameplay Clips (`11.18.26.4`)
+### Gameplay Clips & `11.22.26.1` Highlights
 
-| Live Combat (Saltworks MK18 & Tracers) | Gunfight & Hitmarkers |
+| Live Combat (Saltworks MK18, Tracers & `KILLCAM` Font) | Circular PiP Scope ADS (`AK-12`) |
 |---|---|
-| ![Live combat in Saltworks with MK18 iron sights, green/red lasers, armour HUD, and tracers](Docs/Media/gameplay_combat.gif) | ![First-person gunfight with hitmarkers and tracers](Docs/Media/gifs/gunfight.gif) |
+| ![Live combat in Saltworks with MK18 iron sights, green/red lasers, armour HUD, and tracers](Docs/Media/gameplay_combat.gif) | ![AK-12 circular clipped PiP scope ADS](Docs/Media/ak12_pip_scope_ads.png) |
 
-| Tactical & Empty Reloads | Locomotion & Sprint Transition |
+| Minimalistic Obsidian Loading Screen | Updated `CONTROLS` Tab & Key Reference |
 |---|---|
-| ![First-person MK18 reload sequence](Docs/Media/gifs/reload.gif) | ![First-person sprint cadence and locomotion transition](Docs/Media/gifs/sprint.gif) |
+| ![Minimalistic matte obsidian sector loading screen](Docs/Media/loading_screen.png) | ![Settings Controls tab with Toggle Aim, Toggle Sprint, Auto Sprint, and Controls Reference](Docs/Media/settings_controls.png) |
 
-| Ragdoll Death & Killcam Transition |
-|---|
-| ![Elimination vignette transitioning into the killer killcam](Docs/Media/gifs/death_and_killcam.gif) |
+| Gunfight & Hitmarkers (`11.18.26.4`) | Locomotion & Sprint Transition |
+|---|---|
+| ![First-person gunfight with hitmarkers and tracers](Docs/Media/gifs/gunfight.gif) | ![First-person sprint cadence and locomotion transition](Docs/Media/gifs/sprint.gif) |
+
+| Tactical & Empty Reloads | Ragdoll Death & Killcam Transition |
+|---|---|
+| ![First-person MK18 reload sequence](Docs/Media/gifs/reload.gif) | ![Elimination vignette transitioning into the killer killcam](Docs/Media/gifs/death_and_killcam.gif) |
 
 | Armour HUD: 100 health + 50 armour | MK18 iron sights |
 |---|---|
@@ -120,9 +121,9 @@ In-game captures, 1920 x 1080, build 11.18.26.4 (2026-11-18).
 |---|---|
 | ![Killcam replay through the killer's iron sights](Docs/Media/killcam_ads_replay.png) | ![Killcam end with the victim's ragdoll on the floor](Docs/Media/killcam_victim_down.png) |
 
-| Deploy screen | Settings |
+| Deploy screen | Graphics Settings (`11.22.26.1`) |
 |---|---|
-| ![Deploy screen with loadout, map and bot team mode](Docs/Media/menu_deploy.png) | ![Graphics & HDRP upscaler settings page](Docs/Media/settings_graphics.png) |
+| ![Deploy screen with loadout, map and bot team mode](Docs/Media/menu_deploy.png) | ![Graphics & HDRP upscaler settings page](Docs/Media/settings_graphics_v2.png) |
 
 ### How the bots behave
 
@@ -152,9 +153,9 @@ was built (agent ledgers, protocol results, research specs). All eight scenarios
 
 ## Features
 
-- **Full-Body First-Person Rig (`Assets/LR2/Runtime/Characters/`):** Kinemation humanoid FPS driver (`FPSAnimator`) retargeted onto a full-body SWAT operator mesh (`RetargetProxy.cs`) with eye-locked camera alignment, leg IK foot planting, procedural weapon reload replay (`ReloadMotionBridge.cs`), wall anti-clipping (`WeaponAntiClip.cs`), standing/crouch/slide/prone/mantle stances (`SoldierMovement.cs`), and optional bodycam optics & motion (`BodycamRig.cs`). `LR2PlayablesController.cs` decides when the arms follow the body animation (sprint, prone, slide), so walking, walls and respawns keep the weapon hold; a COD-style wall tuck replaces the demo's sideways swing (11.18.26.5).
-- **Weapons, Overheat & Ballistics (`Assets/LR2/Runtime/Weapons/`, `Combat/`):** The default local loadout carries the **MK18** (`5.56x45` carbine from `LeadRushHDRP` with built-in iron sights) and **MK23** suppressed sidearm (12-round mag); selectable primary rifles also keep **AK-12**, **AK-74N** (clean iron sights), and **FAL** (`LR2ContentBuilder.cs`, `LR2Session.SelectedPrimaryWeapon`). Sustained fire heats the barrel (`LR2Firearm.BarrelHeat`) causing cherry-red pipe glow, rising smoke wisps, and harsher overgassed gunfire audio; toggleable weapon lasers render **green** for player/friendly units and **red** for enemies (`WeaponLaser.cs`); tracers are **orange/yellow** for your side and **red** for enemies (`Tracer.cs`). Physical projectile ballistics (`Ballistics.cs`), range damage dropoff, penetration & destructible glass/props (`DestructibleProp.cs`), directional impact audio, and shell ejection (`ShellEjector.cs`).
-- **Tactile Combat Feedback & Killcams:** 100 HP + 50 armour layer (`Health.cs` with overflow, procedural plate-shatter audio, and ammo-station refill), Battlefield-inspired hit/headshot/armour/kill markers with CoD-style vibration (`HitFeedbackHUD.cs`), dynamic `+50 HEADSHOT` / `+100 KILL` score popups & kill feed (`HUDController.cs`), Cobalt-Navy SWAT vs Desert-Crimson Marauder faction uniforms & masks (`SoldierVisuals.cs`), 3D blood droplets that trickle across weapon meshes (`GunBloodFX.cs`), directional damage arcs, and eye-socket first-person killer-perspective killcam replays (`KillcamDirector.cs`).
+- **OG Kinemation Full-Body Rig & Mechanics (`Assets/LR2/Runtime/Characters/`):** Kinemation's OG Generic robot rig (`FPSGenericPlayer`, `LR2ContentBuilder.Robot.cs` — zero grip/finger drift `0.000m`, crisp `AA_LR2_GrenadeThrow`, upright `LR2_Torch`, left-handed `Q/E` lean, rest-pose respawn restoration) alongside `RetargetProxy.cs`, `ReloadMotionBridge.cs`, `SoldierMovement.cs`, and `BodycamRig.cs`. Includes a research spec for 1-flag BF6-style soldier visuals ([`B136g_BF6_Soldier_Candidates.md`](Docs/AI_Collaboration/specs/B136g_BF6_Soldier_Candidates.md)).
+- **Weapons, Circular PiP Sights, Overheat & Audio (`Assets/LR2/Runtime/Weapons/`, `Combat/`, `Audio/`):** **MK18**, **AK-12**, **AK-74N**, **FAL**, and suppressed **MK23** with circular clipped HDRP `LR2/PipScope` optics (`M_Acog`, `M_1P29`, `M_LongRangeScope`), suppressed fire & indoor/outdoor tails (`FAL -> FAL`), 23 silence-trimmed reload clips synced to `.anim` curves (`emptyReloadEndAt`), physical-impact `PainVoice` death sub-drop (`LR2_PlayerDeathImpact`), `HealthReplenished` chime, distinct self vs target armor-break SFX (`LR2_HF_SelfArmorBreak` / `LR2_HF_TargetArmorBreak`), 19-stem per-map adaptive music (`Overdrive` climax & Win/Lose stingers), frame-0 visible team tracers, and top-of-weapon `GunBloodFX`.
+- **Tactile Combat Feedback, UI & Killcams:** 100 HP + 50 armour layer (`Health.cs`), Battlefield-inspired hit/headshot/armour/kill markers (`HitFeedbackHUD.cs`), unified opaque obsidian loading screen (`LR2LoadingIntro.cs`), `UITheme`-styled `"KILLCAM"` replay overlays (`KillcamDirector.cs`), non-overlapping bottom-right weapon/ammo HUD (`HUDController.cs`), and 5-tab Settings (`GAMEPLAY`, `GRAPHICS`, `CONTROLS` w/ `ToggleAim`/`ToggleSprint`/`AutoSprint`, `KEYBINDS` w/ `Slot1`/`Slot2`, `AUDIO`).
 - **Game Modes & Persistent Custom Rules (`Assets/LR2/Runtime/Game/`):** **Duel (1v1)**, **Free For All**, **Team Deathmatch**, and **Rotating Capture the Flag** (`FlagZoneController.cs` BF6-inspired proximity-weighted capture speed across 5 `BotTeamAlignment` modes including **Half & Half 50/50 split**, Squads, FFA, Pack, and Co-op) plus live **Tactical Bot Chat** (`[T]` keyword directives & delayed banter in `TacticalChatSystem.cs`). Horizontal FOV slider (`65–120`), Master/Effects/Music/UI audio sliders, `< VALUE >` stepper controls for graphics quality, **HDRP 17.5 multi-upscaler backend (`NATIVE`, `STP`, `TAAU`, `FSR 1.0`, `DLSS`, `FSR 2` in `UpscalerBackend.cs`)**, anti-aliasing (`None`, `FXAA`, `SMAA`, `TAA`), frame rate limit, bot difficulty, live keybind rebinding (`LR2Bindings.cs` -> `PlayerInputSource.cs`), and FPS counter persist via `PlayerPrefs` (`LR2Settings.cs`, `SettingsPanel.cs`, `MainMenuController.cs`).
 - **Four-Map Optimization & Automated Telemetry (`Assets/LR2/Runtime/World/PerformanceFrameTelemetry.cs`, `specs/P3_Report.md`):** Quality-aware shadow tiers, camera-distance light culling (`fadeDistance`/`shadowFadeDistance`), single-light burning barrels, time-sliced arena reflection probes, throttled `WeatherSystem` & `FoliageSway`, and spawn-to-spawn cover safety across all four maps bring steady 1080p frame times to `6.8–9.6 ms` avg (`15.7–19.1 ms` p99, `0` QA failures across all 5 scenes).
 - **War-Torn Procedural Arenas (`Assets/LR2/Editor/LR2MapBuilder*.cs`, `Assets/LR2/Meshes/Procedural/`):** Leartes/ScansFactory pack props preserving tactical cover heights (`B75`), tileable `_DetailMap` wear, HDRP `SSAO` + `ContactShadows`, per-map `ShadowsMidtonesHighlights` colour grading, ground-level `AtmosphereFX` fog, `FireHazard` burning barrels (`heat haze`), destructible thin-refraction `M_LR2_Glass_*` panes (`B30`), and tuned HDRP lighting across all four combat maps (`B1`/`B72`).
@@ -175,14 +176,19 @@ was built (agent ledgers, protocol results, research specs). All eight scenarios
 | `R` | `X` (West) | Reload |
 | `Left Shift` | `L3` | Sprint |
 | `Space` | `A` (South) | Jump / Mantle / Stand Up |
-| `C` / `Left Ctrl` | `B` (East) | Crouch (Slide while sprinting) |
+| `C` / `Left Ctrl` / `X` | `B` (East) | Crouch (`X` Hold Crouch / `XX` Slide) |
 | `Z` | `D-Pad Down` | Toggle Prone |
 | `Q` / `E` | — | Lean Left / Right |
-| `1` / `2` / `Scroll` | `Y` (North) | Switch Weapon (Primary / Sidearm) |
+| `1` / `2` / `3` / `4` / `Scroll` | `Y` (North) | Switch Loadout (Primary / Sidearm / Knife / Torch / Scroll Swap) |
+| `G` | `RB` | Frag Grenade |
+| `L` | — | Toggle Tactical Laser |
+| `B` / `V` / `I` | — | Fire Mode / Cycle Optic (ADS) / Inspect (`1`/`2`/`3`) |
 | `F` | — | Interact (Ammo Crates) |
 | `Tab` | — | Scoreboard |
 | `Esc` | — | Pause / Back |
 | `T`, type, `Enter` | - | Squad orders by chat (team modes, no LLM needed): **flank left** / **flank right**, **hold**, **push** / **flag**, **regroup** / **on me**. Every teammate bot obeys for 12 s. |
+
+*(Toggle Aim, Toggle Sprint, Auto Sprint Forward, and full keybind remapping live under **SETTINGS > CONTROLS** and **KEYBINDS**.)*
 
 ---
 

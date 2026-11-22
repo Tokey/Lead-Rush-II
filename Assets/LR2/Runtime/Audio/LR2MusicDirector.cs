@@ -8,11 +8,11 @@ using UnityEngine.SceneManagement;
 namespace LR2.Audio
 {
     /// <summary>
-    /// Adaptive, progressively layered music system:
-    /// - Menu: calm atmospheric tactical briefing score (<c>Resources/LR2/Music/Music_Menu</c>).
-    /// - Gameplay: 3 sample-locked synchronized stems (<c>Music_Calm</c>, <c>Music_Tension</c>, <c>Music_Combat</c>)
-    ///   that surge organically during firefights, close encounters, hits, and low-health moments, then ebb back to
-    ///   calm stealth during quiet traversal — while preserving crisp spectral &amp; gain headroom so footsteps remain audible.
+    /// Adaptive, progressively escalating music system (B136o revamped):
+    /// - Menu: distinct tactical dossier theme (<c>Resources/LR2/Music/Music_Menu</c>).
+    /// - Gameplay: per-map 3-stem adaptive loops (<c>Music_{Map}_{Calm,Tension,Combat}</c> with fallback) plus
+    ///   <c>Music_Overdrive</c> layer that starts super mild early in the match and escalates relentlessly into an
+    ///   insane endgame/sudden-death climax, followed by distinct Winning vs Losing stingers when the match ends.
     /// </summary>
     public class LR2MusicDirector : MonoBehaviour
     {
@@ -20,20 +20,26 @@ namespace LR2.Audio
 
         [Header("Headroom caps (multiplied by LR2Settings.MusicVolume)")]
         [SerializeField, Range(0f, 1f)] private float menuCeiling = 0.24f;
-        [SerializeField, Range(0f, 1f)] private float calmCeiling = 0.15f;
-        [SerializeField, Range(0f, 1f)] private float tensionCeiling = 0.26f;
-        [SerializeField, Range(0f, 1f)] private float combatCeiling = 0.38f;
+        [SerializeField, Range(0f, 1f)] private float calmCeiling = 0.14f;
+        [SerializeField, Range(0f, 1f)] private float tensionCeiling = 0.28f;
+        [SerializeField, Range(0f, 1f)] private float combatCeiling = 0.44f;
+        [SerializeField, Range(0f, 1f)] private float overdriveCeiling = 0.42f;
+        [SerializeField, Range(0f, 1f)] private float outcomeCeiling = 0.56f;
 
         private AudioSource _menuSrc;
         private AudioSource _calmSrc;
         private AudioSource _tensionSrc;
         private AudioSource _combatSrc;
+        private AudioSource _overdriveSrc;
+        private AudioSource _outcomeSrc;
         private AudioSource _drumrollSrc;
         private AudioSource _brassSurgeSrc;
-        private AudioLowPassFilter _calmLpf, _tensionLpf, _combatLpf;
+        private AudioLowPassFilter _calmLpf, _tensionLpf, _combatLpf, _overdriveLpf;
 
-        private AudioClip _menuClip, _calmClip, _tensionClip, _combatClip, _drumrollClip, _brassSurgeClip;
+        private AudioClip _menuClip, _calmClip, _tensionClip, _combatClip, _overdriveClip, _winClip, _loseClip;
+        private AudioClip _drumrollClip, _brassSurgeClip;
         private bool _isMenuScene;
+        private bool _outcomeTriggered;
         private float _intensity;
         private float _targetIntensity;
         private float _combatHoldUntil;
@@ -45,27 +51,41 @@ namespace LR2.Audio
 
         /// <summary>Current smoothed combat intensity 0..1.</summary>
         public float Intensity => _intensity;
-        /// <summary>Target raw intensity 0..1 driven by live events.</summary>
+        /// <summary>Target raw intensity 0..1 driven by live events and match progression.</summary>
         public float TargetIntensity => _targetIntensity;
         public bool IsMenuMode => _isMenuScene;
-        public string StateLabel => _isMenuScene ? "Menu" : _intensity >= 0.65f ? "Combat" : _intensity >= 0.28f ? "Tension" : "Calm";
+        public string ActiveMapTheme { get; private set; } = "Default";
+        public float MatchProgress { get; private set; }
+        public float OverdriveWeight { get; private set; }
+        public string LastOutcomePlayed { get; private set; } = "None";
+        public bool HasMenuClip => _menuClip != null;
+        public bool HasOverdriveClip => _overdriveClip != null;
+        public bool HasOutcomeClips => _winClip != null && _loseClip != null;
+        public string StateLabel => _isMenuScene
+            ? "Menu"
+            : _outcomeTriggered
+                ? $"End ({LastOutcomePlayed})"
+                : OverdriveWeight >= 0.45f ? "Overdrive" : _intensity >= 0.65f ? "Combat" : _intensity >= 0.28f ? "Tension" : "Calm";
         public float CalmVolume => _calmSrc != null ? _calmSrc.volume : 0f;
         public float TensionVolume => _tensionSrc != null ? _tensionSrc.volume : 0f;
         public float CombatVolume => _combatSrc != null ? _combatSrc.volume : 0f;
+        public float OverdriveVolume => _overdriveSrc != null ? _overdriveSrc.volume : 0f;
         public float LastDrumrollTime { get; private set; } = -10f;
         public float LastBrassSurgeTime { get; private set; } = -10f;
         public bool HasWarTornBrassCue => _brassSurgeClip != null && _brassSurgeSrc != null;
         public float MenuVolume => _menuSrc != null ? _menuSrc.volume : 0f;
-        public float EffectiveTotalGain => _isMenuScene ? MenuVolume : (CalmVolume + TensionVolume * 0.75f + CombatVolume * 0.85f);
+        public float EffectiveTotalGain => _isMenuScene ? MenuVolume : (CalmVolume + TensionVolume * 0.75f + CombatVolume * 0.85f + OverdriveVolume * 0.85f);
         public AudioSource[] MusicSources
         {
             get
             {
-                var list = new System.Collections.Generic.List<AudioSource>(6);
+                var list = new System.Collections.Generic.List<AudioSource>(8);
                 if (_menuSrc != null) list.Add(_menuSrc);
                 if (_calmSrc != null) list.Add(_calmSrc);
                 if (_tensionSrc != null) list.Add(_tensionSrc);
                 if (_combatSrc != null) list.Add(_combatSrc);
+                if (_overdriveSrc != null) list.Add(_overdriveSrc);
+                if (_outcomeSrc != null) list.Add(_outcomeSrc);
                 if (_drumrollSrc != null) list.Add(_drumrollSrc);
                 if (_brassSurgeSrc != null) list.Add(_brassSurgeSrc);
                 return list.ToArray();
@@ -103,13 +123,13 @@ namespace LR2.Audio
             Instance = this;
             DontDestroyOnLoad(gameObject);
 
-            // B58: Upgrade serialized headroom floors so legacy scenes never mute combat music during gunplay.
             menuCeiling = Mathf.Clamp(menuCeiling, 0.20f, 0.32f);
-            calmCeiling = Mathf.Clamp(calmCeiling, 0.13f, 0.20f);
-            tensionCeiling = Mathf.Clamp(tensionCeiling, 0.22f, 0.34f);
-            combatCeiling = Mathf.Clamp(combatCeiling, 0.34f, 0.48f);
+            calmCeiling = Mathf.Clamp(calmCeiling, 0.12f, 0.20f);
+            tensionCeiling = Mathf.Clamp(tensionCeiling, 0.24f, 0.36f);
+            combatCeiling = Mathf.Clamp(combatCeiling, 0.36f, 0.52f);
+            overdriveCeiling = Mathf.Clamp(overdriveCeiling, 0.34f, 0.50f);
 
-            LoadClips();
+            LoadSharedClips();
             BuildSources();
 
             SceneManager.sceneLoaded += OnSceneLoaded;
@@ -131,12 +151,45 @@ namespace LR2.Audio
             GameEvents.Noise -= OnNoise;
         }
 
-        private void LoadClips()
+        private void LoadSharedClips()
         {
             _menuClip = Resources.Load<AudioClip>("LR2/Music/Music_Menu");
-            _calmClip = Resources.Load<AudioClip>("LR2/Music/Music_Calm");
-            _tensionClip = Resources.Load<AudioClip>("LR2/Music/Music_Tension");
-            _combatClip = Resources.Load<AudioClip>("LR2/Music/Music_Combat");
+            _overdriveClip = Resources.Load<AudioClip>("LR2/Music/Music_Overdrive");
+            _winClip = Resources.Load<AudioClip>("LR2/Music/Music_MatchWin");
+            _loseClip = Resources.Load<AudioClip>("LR2/Music/Music_MatchLose");
+            LoadMapStems("Default");
+        }
+
+        private static string ResolveMapTheme(string sceneName)
+        {
+            if (string.IsNullOrEmpty(sceneName)) return "Default";
+            if (sceneName.IndexOf("Deadsector", System.StringComparison.OrdinalIgnoreCase) >= 0) return "Deadsector";
+            if (sceneName.IndexOf("Foundry", System.StringComparison.OrdinalIgnoreCase) >= 0) return "Foundry";
+            if (sceneName.IndexOf("TestRange", System.StringComparison.OrdinalIgnoreCase) >= 0) return "TestRange";
+            if (sceneName.IndexOf("Saltworks", System.StringComparison.OrdinalIgnoreCase) >= 0) return "Saltworks";
+            return "Default";
+        }
+
+        private void LoadMapStems(string themeKey)
+        {
+            ActiveMapTheme = themeKey;
+            AudioClip LoadStem(string role)
+            {
+                if (themeKey != "Default")
+                {
+                    var specific = Resources.Load<AudioClip>($"LR2/Music/Music_{themeKey}_{role}");
+                    if (specific != null) return specific;
+                }
+                return Resources.Load<AudioClip>($"LR2/Music/Music_{role}");
+            }
+
+            _calmClip = LoadStem("Calm");
+            _tensionClip = LoadStem("Tension");
+            _combatClip = LoadStem("Combat");
+
+            if (_calmSrc != null) _calmSrc.clip = _calmClip;
+            if (_tensionSrc != null) _tensionSrc.clip = _tensionClip;
+            if (_combatSrc != null) _combatSrc.clip = _combatClip;
         }
 
         private AudioSource CreateMusicSource(string srcName, out AudioLowPassFilter lpf)
@@ -147,12 +200,11 @@ namespace LR2.Audio
             s.loop = true;
             s.spatialBlend = 0f;
             s.playOnAwake = false;
-            // B58: Music must never be voice-stolen by LR2Audio's 72 gunfire/impact voices (priority 128..175).
             s.priority = 8;
             s.bypassEffects = true;
             s.bypassListenerEffects = true;
             s.bypassReverbZones = true;
-            s.ignoreListenerPause = true; // handle pause ducking smoothly rather than hard-cutting music
+            s.ignoreListenerPause = true;
             s.volume = 0f;
             lpf = child.AddComponent<AudioLowPassFilter>();
             lpf.cutoffFrequency = 18000f;
@@ -169,10 +221,16 @@ namespace LR2.Audio
             _calmSrc = CreateMusicSource("Stem_Calm", out _calmLpf);
             _tensionSrc = CreateMusicSource("Stem_Tension", out _tensionLpf);
             _combatSrc = CreateMusicSource("Stem_Combat", out _combatLpf);
+            _overdriveSrc = CreateMusicSource("Stem_Overdrive", out _overdriveLpf);
 
             _calmSrc.clip = _calmClip;
             _tensionSrc.clip = _tensionClip;
             _combatSrc.clip = _combatClip;
+            _overdriveSrc.clip = _overdriveClip;
+
+            _outcomeSrc = CreateMusicSource("Music_MatchOutcome", out _);
+            _outcomeSrc.loop = false;
+            _outcomeSrc.priority = 6;
 
             _drumrollSrc = CreateMusicSource("Music_FirefightDrumroll", out var drumLpf);
             _drumrollSrc.loop = false;
@@ -196,7 +254,6 @@ namespace LR2.Audio
             float[] data = new float[n];
             float lp = 0f;
             float lpAlpha = Mathf.Clamp01(2f * Mathf.PI * 820f / sr);
-            // D2 (73.42 Hz) + A2 (110 Hz) + Phrygian b2 Eb3 (155.56 Hz) gritty bowed brass power swell + sub boom
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)sr;
@@ -252,26 +309,31 @@ namespace LR2.Audio
         private void ConfigureForScene(string sceneName)
         {
             _player = null;
-            _intensity = 0.05f;
-            _targetIntensity = 0.08f;
+            _intensity = 0.04f;
+            _targetIntensity = 0.05f;
             _combatHoldUntil = 0f;
             _proximityFloor = 0f;
+            _outcomeTriggered = false;
+            MatchProgress = 0f;
+            OverdriveWeight = 0f;
 
-            _isMenuScene = string.IsNullOrEmpty(sceneName) || sceneName.Contains("MainMenu") || Combatant.FindLocalPlayer() == null && FindAnyObjectByType<MatchManager>() == null;
+            if (_outcomeSrc != null && _outcomeSrc.isPlaying) _outcomeSrc.Stop();
+
+            _isMenuScene = string.IsNullOrEmpty(sceneName) || sceneName.Contains("MainMenu") || (Combatant.FindLocalPlayer() == null && FindAnyObjectByType<MatchManager>() == null);
 
             if (_isMenuScene)
             {
+                ActiveMapTheme = "Menu";
                 StopStem(_calmSrc);
                 StopStem(_tensionSrc);
                 StopStem(_combatSrc);
-                if (_menuSrc != null && _menuClip != null)
-                {
-                    if (!_menuSrc.isPlaying) _menuSrc.Play();
-                }
+                StopStem(_overdriveSrc);
+                if (_menuSrc != null && _menuClip != null && !_menuSrc.isPlaying) _menuSrc.Play();
             }
             else
             {
                 StopStem(_menuSrc);
+                LoadMapStems(ResolveMapTheme(sceneName));
                 StartSynchronizedGameplayStems();
             }
         }
@@ -282,11 +344,13 @@ namespace LR2.Audio
             StopStem(_calmSrc);
             StopStem(_tensionSrc);
             StopStem(_combatSrc);
+            StopStem(_overdriveSrc);
 
             double dspStart = AudioSettings.dspTime + 0.06;
             if (_calmClip != null) _calmSrc.PlayScheduled(dspStart);
             if (_tensionClip != null) _tensionSrc.PlayScheduled(dspStart);
             if (_combatClip != null) _combatSrc.PlayScheduled(dspStart);
+            if (_overdriveSrc != null && _overdriveClip != null) _overdriveSrc.PlayScheduled(dspStart);
         }
 
         private static void StopStem(AudioSource s)
@@ -294,23 +358,27 @@ namespace LR2.Audio
             if (s == null) return;
             if (s.isPlaying) s.Stop();
             s.volume = 0f;
+            s.pitch = 1f;
         }
 
-        /// <summary>Resets dynamic intensity smoothly back to quiet stealth floor (used on spawn / QA resets).</summary>
+        /// <summary>Resets dynamic intensity smoothly back to quiet opening stealth floor.</summary>
         public void ResetToCalm()
         {
-            _intensity = 0.05f;
-            _targetIntensity = 0.05f;
+            _intensity = 0.04f;
+            _targetIntensity = 0.04f;
             _combatHoldUntil = 0f;
             _proximityFloor = 0f;
+            OverdriveWeight = 0f;
+            MatchProgress = 0f;
         }
 
         /// <summary>Allows runtime gameplay or QA tests to nudge combat intensity cleanly.</summary>
         public void NotifyCombatEvent(float impulse, float holdSeconds)
         {
-            if (_isMenuScene) return;
+            if (_isMenuScene || _outcomeTriggered) return;
             float prevTarget = _targetIntensity;
-            _targetIntensity = Mathf.Clamp01(Mathf.Max(_targetIntensity + impulse * 0.65f, Mathf.Min(1f, _intensity + impulse)));
+            float progScale = Mathf.Lerp(0.65f, 1.15f, MatchProgress);
+            _targetIntensity = Mathf.Clamp01(Mathf.Max(_targetIntensity + impulse * 0.65f * progScale, Mathf.Min(1f, _intensity + impulse * progScale)));
             _combatHoldUntil = Mathf.Max(_combatHoldUntil, Time.unscaledTime + Mathf.Clamp(holdSeconds, 1.5f, 4.2f));
             if (_drumrollSrc != null && _drumrollClip != null && Time.unscaledTime >= _nextDrumrollAt &&
                 ((_targetIntensity >= 0.48f && prevTarget < 0.48f) || impulse >= 0.30f))
@@ -361,7 +429,7 @@ namespace LR2.Audio
             BindPlayer();
             if (_player == null) return;
             if (e.killer == _player) NotifyCombatEvent(0.50f, 3.2f);
-            else if (e.victim == _player) _targetIntensity = Mathf.Min(_targetIntensity, 0.25f);
+            else if (e.victim == _player) _targetIntensity = Mathf.Min(_targetIntensity, 0.28f);
         }
 
         private void OnNoise(NoiseEvent e)
@@ -375,6 +443,50 @@ namespace LR2.Audio
         private void BindPlayer()
         {
             if (_player == null) _player = Combatant.FindLocalPlayer();
+        }
+
+        private float ComputeMatchProgress(MatchManager mm, out bool winning, out bool losing)
+        {
+            winning = false;
+            losing = false;
+            if (mm == null || mm.Settings == null) return 0f;
+
+            float timeProg = mm.Settings.timeLimitSeconds > 1f
+                ? Mathf.Clamp01(1f - mm.TimeRemaining / mm.Settings.timeLimitSeconds)
+                : 0f;
+
+            float scoreProg = 0f;
+            if (_player != null)
+            {
+                int mine = mm.GetDisplayScore(_player);
+                int theirs = mm.GetBestOpponentScore(_player);
+                int lim = Mathf.Max(1, mm.ScoreLimit);
+                scoreProg = Mathf.Clamp01(Mathf.Max(mine, theirs) / (float)lim);
+                winning = mine > theirs;
+                losing = theirs > mine;
+                if (lim - Mathf.Max(mine, theirs) <= 2 && lim > 2)
+                    scoreProg = Mathf.Max(scoreProg, 0.85f);
+            }
+
+            if (mm.State == MatchState.Playing && mm.TimeRemaining <= 45f && mm.Settings.timeLimitSeconds > 45f)
+                timeProg = Mathf.Max(timeProg, Mathf.Lerp(0.75f, 1f, 1f - mm.TimeRemaining / 45f));
+
+            return mm.IsSuddenDeath ? 1f : Mathf.Clamp01(Mathf.Max(timeProg, scoreProg));
+        }
+
+        private void TriggerOutcomeStinger(MatchManager mm, float userMusic)
+        {
+            _outcomeTriggered = true;
+            bool won = mm != null && (mm.LocalPlayerWon || mm.IsDraw);
+            LastOutcomePlayed = won ? "Win" : "Lose";
+            AudioClip clip = won ? _winClip : _loseClip;
+            if (_outcomeSrc != null && clip != null)
+            {
+                _outcomeSrc.Stop();
+                _outcomeSrc.clip = clip;
+                _outcomeSrc.volume = outcomeCeiling * userMusic;
+                _outcomeSrc.Play();
+            }
         }
 
         private void Update()
@@ -403,45 +515,82 @@ namespace LR2.Audio
 
             float now = Time.unscaledTime;
             var mm = MatchManager.Instance;
-            bool playingMatch = mm == null || mm.State == MatchState.Playing;
             bool ended = mm != null && mm.State == MatchState.Ended;
+            if (mm != null && mm.State != MatchState.Ended && _outcomeTriggered)
+            {
+                _outcomeTriggered = false;
+                if (_outcomeSrc != null && _outcomeSrc.isPlaying) _outcomeSrc.Stop();
+            }
+            if (ended && !_outcomeTriggered)
+                TriggerOutcomeStinger(mm, userMusic);
 
-            // Organic decay after firefight quiet window
-            float baseFloor = playingMatch ? Mathf.Max(0.06f, _proximityFloor) : 0.04f;
-            if (ended) baseFloor = 0.02f;
+            MatchProgress = ComputeMatchProgress(mm, out bool winning, out bool losing);
+
+            // Progressive arc: super mild early (<0.25), smooth mid escalation, relentless endgame overdrive
+            float progFloor = Mathf.Pow(MatchProgress, 1.35f) * 0.72f;
+            bool playingMatch = mm == null || mm.State == MatchState.Playing;
+            float baseFloor = playingMatch ? Mathf.Max(0.04f, Mathf.Max(_proximityFloor * Mathf.Lerp(0.45f, 1.0f, MatchProgress), progFloor)) : 0.03f;
+            if (ended) baseFloor = 0f;
 
             if (now > _combatHoldUntil)
-                _targetIntensity = Mathf.MoveTowards(_targetIntensity, baseFloor, dt * 0.24f);
+                _targetIntensity = Mathf.MoveTowards(_targetIntensity, baseFloor, dt * 0.22f);
             else
                 _targetIntensity = Mathf.Max(_targetIntensity, baseFloor);
 
-            // Fast surge into firefights (no delayed lag) and smooth gradual fade back into calm stealth
-            float rate = _targetIntensity > _intensity ? 2.40f : 0.22f;
-            _intensity = Mathf.MoveTowards(_intensity, _targetIntensity, dt * rate);
+            // Mild cap very early in the match so opening traversal feels calm before battle peaks
+            float earlyCap = Mathf.Lerp(0.56f, 1.0f, Mathf.SmoothStep(0.05f, 0.35f, MatchProgress));
+            float clampedTarget = Mathf.Min(_targetIntensity, earlyCap);
 
-            // Never duck/dim music on player gunfire — keep combat score pulsing live while capping treble under footsteps
+            float rate = clampedTarget > _intensity ? 2.40f : 0.22f;
+            _intensity = Mathf.MoveTowards(_intensity, clampedTarget, dt * rate);
+
+            float targetOverdrive = ended ? 0f : Mathf.SmoothStep(0.60f, 0.96f, Mathf.Max(MatchProgress, _intensity * 0.85f));
+            if (mm != null && mm.IsSuddenDeath && !ended) targetOverdrive = Mathf.Max(targetOverdrive, 0.90f);
+            OverdriveWeight = Mathf.MoveTowards(OverdriveWeight, targetOverdrive, dt * 0.45f);
+
             float stateAtten = 1f;
             if (AudioListener.pause) stateAtten *= 0.35f;
             if (KillcamDirector.IsPlaying) stateAtten *= 0.42f;
-            if (ended) stateAtten *= 0.40f;
-            if (_player != null && !_player.IsAlive) stateAtten *= 0.45f;
+            if (_player != null && !_player.IsAlive && !ended) stateAtten *= 0.48f;
             float master = userMusic * stateAtten;
 
-            float gCalm = calmCeiling * Mathf.Lerp(0.92f, 0.72f, _intensity) * master;
-            float gTension = tensionCeiling * Mathf.SmoothStep(0.06f, 0.54f, _intensity) * master;
-            float gCombat = combatCeiling * Mathf.SmoothStep(0.18f, 0.78f, _intensity) * master;
+            float gCalm, gTension, gCombat, gOverdrive;
+            if (ended)
+            {
+                gCalm = Mathf.MoveTowards(CalmVolume, 0f, dt * 0.5f);
+                gTension = Mathf.MoveTowards(TensionVolume, 0f, dt * 0.6f);
+                gCombat = Mathf.MoveTowards(CombatVolume, 0f, dt * 0.7f);
+                gOverdrive = Mathf.MoveTowards(OverdriveVolume, 0f, dt * 0.8f);
+                if (_outcomeSrc != null) _outcomeSrc.volume = outcomeCeiling * userMusic * (AudioListener.pause ? 0.5f : 1f);
+            }
+            else
+            {
+                gCalm = calmCeiling * Mathf.Lerp(0.95f, 0.55f, MatchProgress) * master;
+                gTension = tensionCeiling * Mathf.SmoothStep(0.08f, 0.92f, Mathf.Max(_intensity, MatchProgress * 0.75f)) * master;
+                gCombat = combatCeiling * Mathf.SmoothStep(0.24f, 0.98f, Mathf.Max(_intensity, MatchProgress * 0.82f)) * master;
+                gOverdrive = overdriveCeiling * OverdriveWeight * master;
+            }
 
             if (_calmSrc != null) _calmSrc.volume = gCalm;
             if (_tensionSrc != null) _tensionSrc.volume = gTension;
             if (_combatSrc != null) _combatSrc.volume = gCombat;
+            if (_overdriveSrc != null) _overdriveSrc.volume = gOverdrive;
 
-            // Keep music un-muffled in gunplay while keeping mixer voice priority highest (B58)
-            float cutoffCalm = Mathf.Lerp(12000f, 20000f, _intensity);
-            float cutoffTension = Mathf.Lerp(14000f, 22000f, _intensity);
-            float cutoffCombat = Mathf.Lerp(16000f, 22000f, _intensity);
+            // Subtle progressive energy lift into climax while keeping stems sample-locked
+            float pitchLift = 1f + OverdriveWeight * (winning ? 0.030f : losing ? 0.016f : 0.024f);
+            if (ended) pitchLift = 1f;
+            if (_calmSrc != null) _calmSrc.pitch = pitchLift;
+            if (_tensionSrc != null) _tensionSrc.pitch = pitchLift;
+            if (_combatSrc != null) _combatSrc.pitch = pitchLift;
+            if (_overdriveSrc != null) _overdriveSrc.pitch = pitchLift;
+
+            float cutoffCalm = Mathf.Lerp(10000f, 20000f, Mathf.Max(_intensity, MatchProgress));
+            float cutoffTension = Mathf.Lerp(12000f, 22000f, Mathf.Max(_intensity, MatchProgress));
+            float cutoffCombat = Mathf.Lerp(15000f, 22000f, Mathf.Max(_intensity, MatchProgress));
             if (_calmLpf != null) _calmLpf.cutoffFrequency = cutoffCalm;
             if (_tensionLpf != null) _tensionLpf.cutoffFrequency = cutoffTension;
             if (_combatLpf != null) _combatLpf.cutoffFrequency = cutoffCombat;
+            if (_overdriveLpf != null) _overdriveLpf.cutoffFrequency = Mathf.Lerp(14000f, 22000f, OverdriveWeight);
         }
 
         private void UpdateProximityFloor()

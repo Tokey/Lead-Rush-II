@@ -797,10 +797,11 @@ namespace LR2.Characters
         {
             _originalHeight = _controller.height;
             _originalCenter = _controller.center;
-            if (_animator != null && _animator.isHuman)
+            if (_animator != null)
             {
-                _leftFoot = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
-                _rightFoot = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
+                // B136: LR2Bones also resolves the generic Kinemation robot's feet
+                _leftFoot = LR2Bones.Get(_animator, HumanBodyBones.LeftFoot);
+                _rightFoot = LR2Bones.Get(_animator, HumanBodyBones.RightFoot);
             }
             _cachedState = State = SoldierMoveState.Idle;
             Stance = SoldierStance.Standing;

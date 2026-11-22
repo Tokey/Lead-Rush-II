@@ -34,8 +34,18 @@ namespace LR2.Characters
         public int weaponSlot;
         public bool nextWeapon;
         public bool interact;
+        /// <summary>B136 (Kinemation demo features): throw a grenade (G). One-shot.</summary>
+        public bool grenade;
+        /// <summary>B136: switch to the next sight group while aiming (V, e.g. optic to canted sight). One-shot.</summary>
+        public bool cycleScope;
+        /// <summary>B136: cycle semi / burst / auto (B). One-shot.</summary>
+        public bool fireMode;
+        /// <summary>B136: enter or leave attachment editing (I, Kinemation's inspect pose). One-shot.</summary>
+        public bool inspect;
+        /// <summary>B136: while editing, cycle attachment group 1 barrel / 2 grip / 3 sight (-1 = none). One-shot.</summary>
+        public int attachmentSlot;
 
-        public static SoldierInput Empty => new SoldierInput { weaponSlot = -1 };
+        public static SoldierInput Empty => new SoldierInput { weaponSlot = -1, attachmentSlot = -1 };
 
         public void ResetOneShots()
         {
@@ -47,6 +57,11 @@ namespace LR2.Characters
             nextWeapon = false;
             interact = false;
             weaponSlot = -1;
+            grenade = false;
+            cycleScope = false;
+            fireMode = false;
+            inspect = false;
+            attachmentSlot = -1;
         }
 
         public void ClearAll()

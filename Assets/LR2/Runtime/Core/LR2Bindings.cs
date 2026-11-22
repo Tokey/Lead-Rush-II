@@ -143,6 +143,13 @@ namespace LR2.Core
             Add("Laser", InputActionType.Button, "<Keyboard>/l");
             Add("Slot1", InputActionType.Button, "<Keyboard>/1");
             Add("Slot2", InputActionType.Button, "<Keyboard>/2");
+            // B136: Kinemation demo features (its own keys where LR2 had none: G, V, B, I) and the knife / torch slots
+            Add("Slot3", InputActionType.Button, "<Keyboard>/3");
+            Add("Slot4", InputActionType.Button, "<Keyboard>/4");
+            Add("Grenade", InputActionType.Button, "<Keyboard>/g", "<Gamepad>/rightShoulder");
+            Add("CycleScope", InputActionType.Button, "<Keyboard>/v", "<Gamepad>/dpad/up");
+            Add("FireMode", InputActionType.Button, "<Keyboard>/b", "<Gamepad>/dpad/left");
+            Add("Inspect", InputActionType.Button, "<Keyboard>/i", "<Gamepad>/dpad/right");
             Add("NextWeapon", InputActionType.Button, "<Gamepad>/buttonNorth");
             Add("Scroll", InputActionType.Value, "<Mouse>/scroll/y");
 

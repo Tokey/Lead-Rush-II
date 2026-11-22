@@ -91,8 +91,8 @@ MonoBehaviour:
     - {fileID: 8300000, guid: e86f23f4dfffb364d81af5708cc5e460, type: 3}
     - {fileID: 8300000, guid: 83dc8e60c08730f4996cc0e80ae2415d, type: 3}
     - {fileID: 8300000, guid: e592f8c239f0e1a4eaa9f257908fb043, type: 3}
-    volume: 0.34
-    pitch: {x: 0.85, y: 0.94}
+    volume: 0.18
+    pitch: {x: 0.97, y: 1.03}
     spatialBlend: 0
     minDistance: 1.5
     maxDistance: 10
@@ -136,8 +136,8 @@ MonoBehaviour:
     - {fileID: 8300000, guid: 41a40475993f0f146985394c67da1413, type: 3}
     - {fileID: 8300000, guid: 5ef8af6e510d3a846b60ed7ccf44f23e, type: 3}
     - {fileID: 8300000, guid: 08cd41057e6df764785b53c3481edae2, type: 3}
-    volume: 0.9
-    pitch: {x: 0.97, y: 1.03}
+    volume: 1
+    pitch: {x: 0.95, y: 1.03}
     spatialBlend: 1
     minDistance: 1.5
     maxDistance: 25
@@ -151,8 +151,8 @@ MonoBehaviour:
     - {fileID: 8300000, guid: 0f5f71f0915ae634cacea5110756b01a, type: 3}
     - {fileID: 8300000, guid: c6917673910330745afdc4f93f655e24, type: 3}
     - {fileID: 8300000, guid: 37f3814c575a282449db9a136d4a6bff, type: 3}
-    volume: 0.36
-    pitch: {x: 0.84, y: 0.93}
+    volume: 0.18
+    pitch: {x: 0.97, y: 1.03}
     spatialBlend: 1
     minDistance: 1.5
     maxDistance: 25

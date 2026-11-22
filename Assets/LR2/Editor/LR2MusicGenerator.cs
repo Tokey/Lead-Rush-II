@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -6,13 +7,13 @@ using UnityEngine;
 namespace LR2.EditorTools
 {
     /// <summary>
-    /// Offline procedural music composer for LeadRush 2.
-    /// Generates 4 seamless 16-second stereo WAV stems (8 bars @ 120 BPM in D Minor / Phrygian) into
-    /// <c>Assets/LR2/Resources/LR2/Music</c>:
-    /// - <c>Music_Menu.wav</c>: moody analog tactical briefing dossier theme
-    /// - <c>Music_Calm.wav</c>: stealth/recon drone + sparse plucks (mid-highs sculpted clear for footsteps)
-    /// - <c>Music_Tension.wav</c>: driving 16th muted bass + frame-drum heartbeat + dark strings
-    /// - <c>Music_Combat.wav</c>: heavy sub kick/tom percussion + saturated synth bass + urgent ostinato
+    /// Procedural adaptive music composer for LeadRush 2 (B136o revamped).
+    /// Generates Vorbis stereo WAVs under <c>Assets/LR2/Resources/LR2/Music</c>:
+    /// - <c>Music_Menu.wav</c>: distinct dark military-industrial dossier theme
+    /// - Per-map adaptive 3-stem loops (<c>Saltworks</c>, <c>Deadsector</c>, <c>Foundry</c>, <c>TestRange</c>):
+    ///   distinct keys/melodic motifs/timbre per level + legacy fallback <c>Music_{Calm,Tension,Combat}</c>
+    /// - <c>Music_Overdrive.wav</c>: intense endgame climax stem (double-kick, 32nd snare/tom fills, rising octave riff)
+    /// - <c>Music_MatchWin.wav</c> &amp; <c>Music_MatchLose.wav</c>: non-looping 9s end-of-match fanfare / dirge.
     /// </summary>
     public static class LR2MusicGenerator
     {
@@ -23,6 +24,34 @@ namespace LR2.EditorTools
         private const float DurationSec = Bars * (60f / Bpm) * 4f; // 16.0 s exact @ 120 BPM
         private static readonly int TotalSamples = SampleRate * 16;
 
+        private readonly struct MapThemeSpec
+        {
+            public readonly string KeyName;
+            public readonly float SemitoneShift;
+            public readonly float Brightness;
+            public readonly float AnvilLevel;
+            public readonly float SynthPulse;
+            public readonly int Seed;
+
+            public MapThemeSpec(string keyName, float semitoneShift, float brightness, float anvilLevel, float synthPulse, int seed)
+            {
+                KeyName = keyName;
+                SemitoneShift = semitoneShift;
+                Brightness = brightness;
+                AnvilLevel = anvilLevel;
+                SynthPulse = synthPulse;
+                Seed = seed;
+            }
+        }
+
+        private static readonly MapThemeSpec[] MapThemes =
+        {
+            new MapThemeSpec("Saltworks", 0f, 1.00f, 0.14f, 0.25f, 101),  // D minor: coastal industrial tension
+            new MapThemeSpec("Deadsector", -2f, 0.78f, 0.08f, 0.35f, 202), // C minor: darker dystopian urban dread
+            new MapThemeSpec("Foundry", 2f, 1.15f, 0.42f, 0.15f, 303),     // E minor: heavy metallic refinery assault
+            new MapThemeSpec("TestRange", -5f, 1.08f, 0.04f, 0.55f, 404),  // A minor: crisp tactical electronic precision
+        };
+
         [MenuItem("LR2/Audio/Regenerate Procedural Music Stems", priority = 35)]
         public static void EnsureGeneratedMenu() => EnsureGenerated(true);
 
@@ -30,24 +59,56 @@ namespace LR2.EditorTools
         {
             Directory.CreateDirectory(OutputDir);
 
+            var allPaths = new List<string>();
+            bool anyWritten = false;
+
             string menuPath = OutputDir + "/Music_Menu.wav";
+            allPaths.Add(menuPath);
+            if (force || !File.Exists(menuPath)) { WriteMenuStem(menuPath); anyWritten = true; }
+
+            // Legacy default stems (Saltworks D minor)
             string calmPath = OutputDir + "/Music_Calm.wav";
             string tensionPath = OutputDir + "/Music_Tension.wav";
             string combatPath = OutputDir + "/Music_Combat.wav";
+            allPaths.Add(calmPath);
+            allPaths.Add(tensionPath);
+            allPaths.Add(combatPath);
+            if (force || !File.Exists(calmPath)) { WriteCalmStem(calmPath, MapThemes[0]); anyWritten = true; }
+            if (force || !File.Exists(tensionPath)) { WriteTensionStem(tensionPath, MapThemes[0]); anyWritten = true; }
+            if (force || !File.Exists(combatPath)) { WriteCombatStem(combatPath, MapThemes[0]); anyWritten = true; }
 
-            bool anyWritten = false;
-            if (force || !File.Exists(menuPath)) { WriteMenuStem(menuPath); anyWritten = true; }
-            if (force || !File.Exists(calmPath)) { WriteCalmStem(calmPath); anyWritten = true; }
-            if (force || !File.Exists(tensionPath)) { WriteTensionStem(tensionPath); anyWritten = true; }
-            if (force || !File.Exists(combatPath)) { WriteCombatStem(combatPath); anyWritten = true; }
+            // Distinct per-map stems
+            foreach (var theme in MapThemes)
+            {
+                string cP = $"{OutputDir}/Music_{theme.KeyName}_Calm.wav";
+                string tP = $"{OutputDir}/Music_{theme.KeyName}_Tension.wav";
+                string xP = $"{OutputDir}/Music_{theme.KeyName}_Combat.wav";
+                allPaths.Add(cP);
+                allPaths.Add(tP);
+                allPaths.Add(xP);
+                if (force || !File.Exists(cP)) { WriteCalmStem(cP, theme); anyWritten = true; }
+                if (force || !File.Exists(tP)) { WriteTensionStem(tP, theme); anyWritten = true; }
+                if (force || !File.Exists(xP)) { WriteCombatStem(xP, theme); anyWritten = true; }
+            }
+
+            // Insane climax overdrive layer + match outcome stingers
+            string overdrivePath = OutputDir + "/Music_Overdrive.wav";
+            string winPath = OutputDir + "/Music_MatchWin.wav";
+            string losePath = OutputDir + "/Music_MatchLose.wav";
+            allPaths.Add(overdrivePath);
+            allPaths.Add(winPath);
+            allPaths.Add(losePath);
+            if (force || !File.Exists(overdrivePath)) { WriteOverdriveStem(overdrivePath); anyWritten = true; }
+            if (force || !File.Exists(winPath)) { WriteOutcomeStinger(winPath, true); anyWritten = true; }
+            if (force || !File.Exists(losePath)) { WriteOutcomeStinger(losePath, false); anyWritten = true; }
 
             if (anyWritten)
             {
                 AssetDatabase.Refresh();
-                foreach (var p in new[] { menuPath, calmPath, tensionPath, combatPath })
+                foreach (var p in allPaths)
                     ConfigureMusicImporter(p);
                 AssetDatabase.SaveAssets();
-                Debug.Log("[LR2] Generated procedural adaptive music stems -> " + OutputDir);
+                Debug.Log($"[LR2] Generated {allPaths.Count} revamped progressive & outcome music WAVs -> {OutputDir}");
             }
         }
 
@@ -60,30 +121,29 @@ namespace LR2.EditorTools
             var s = imp.defaultSampleSettings;
             s.loadType = AudioClipLoadType.DecompressOnLoad;
             s.compressionFormat = AudioCompressionFormat.Vorbis;
-            s.quality = 0.72f;
+            s.quality = 0.70f;
             imp.defaultSampleSettings = s;
             imp.SaveAndReimport();
         }
 
-        // 8-bar D minor tactical progression: Dm -> Bb -> Gm -> A | Dm -> C -> Bb -> Asus4
-        private static readonly float[] BassMidi = { 38f, 34f, 31f, 33f, 38f, 36f, 34f, 33f }; // D2, Bb1, G1, A1, D2, C2, Bb1, A1
+        private static readonly float[] BassMidi = { 38f, 34f, 31f, 33f, 38f, 36f, 34f, 33f };
         private static readonly float[][] PadChords =
         {
-            new[] { 50f, 57f, 60f, 64f }, // Dm9: D3 A3 C4 E4
-            new[] { 46f, 53f, 57f, 62f }, // Bbmaj7: Bb2 F3 A3 D4
-            new[] { 43f, 50f, 55f, 58f }, // Gm7: G2 D3 G3 Bb3
-            new[] { 45f, 52f, 57f, 61f }, // A: A2 E3 A3 C#4
-            new[] { 50f, 57f, 60f, 65f }, // Dm7: D3 A3 C4 F4
-            new[] { 48f, 55f, 60f, 64f }, // C: C3 G3 C4 E4
-            new[] { 46f, 53f, 58f, 62f }, // Bb: Bb2 F3 Bb3 D4
-            new[] { 45f, 52f, 57f, 62f }, // Asus4: A2 E3 A3 D4
+            new[] { 50f, 57f, 60f, 64f },
+            new[] { 46f, 53f, 57f, 62f },
+            new[] { 43f, 50f, 55f, 58f },
+            new[] { 45f, 52f, 57f, 61f },
+            new[] { 50f, 57f, 60f, 65f },
+            new[] { 48f, 55f, 60f, 64f },
+            new[] { 46f, 53f, 58f, 62f },
+            new[] { 45f, 52f, 57f, 62f },
         };
         private static readonly float[][] ArpNotes =
         {
-            new[] { 62f, 65f, 69f, 76f, 69f, 65f, 64f, 69f }, // D4 F4 A4 E5 ...
-            new[] { 58f, 62f, 65f, 69f, 65f, 62f, 65f, 74f }, // Bb3 D4 F4 A4 ...
-            new[] { 55f, 58f, 62f, 69f, 62f, 58f, 62f, 67f }, // G3 Bb3 D4 A4 ...
-            new[] { 57f, 64f, 67f, 73f, 69f, 64f, 61f, 64f }, // A3 E4 G4 C#5 ...
+            new[] { 62f, 65f, 69f, 76f, 69f, 65f, 64f, 69f },
+            new[] { 58f, 62f, 65f, 69f, 65f, 62f, 65f, 74f },
+            new[] { 55f, 58f, 62f, 69f, 62f, 58f, 62f, 67f },
+            new[] { 57f, 64f, 67f, 73f, 69f, 64f, 61f, 64f },
             new[] { 62f, 65f, 69f, 74f, 69f, 65f, 64f, 62f },
             new[] { 60f, 64f, 67f, 72f, 67f, 64f, 60f, 67f },
             new[] { 58f, 62f, 65f, 70f, 65f, 62f, 58f, 65f },
@@ -111,7 +171,6 @@ namespace LR2.EditorTools
             return state;
         }
 
-        // Seamless period-locked harmonic frequency ratio so oscillators loop without seam discontinuities at 16.0 s
         private static float LoopLockedPhaseHz(float targetHz)
         {
             float cycles = Mathf.Max(1f, Mathf.Round(targetHz * DurationSec));
@@ -132,7 +191,6 @@ namespace LR2.EditorTools
                 int bar = Mathf.Clamp((int)(t / 2f), 0, 7);
                 float barT = t - bar * 2f;
 
-                // Warm analog pad chord (crossfaded softly near bar boundaries)
                 float chordEnv = Mathf.Clamp01(barT / 0.14f) * Mathf.Clamp01((2f - barT) / 0.12f);
                 var chord = PadChords[bar];
                 float padSumL = 0f, padSumR = 0f;
@@ -147,96 +205,98 @@ namespace LR2.EditorTools
                     padSumL += oscA * (v % 2 == 0 ? 0.7f : 0.45f) + oscB * 0.35f;
                     padSumR += oscB * (v % 2 == 0 ? 0.45f : 0.7f) + oscA * 0.35f;
                 }
-                float sweep = 460f + 360f * (0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * t / DurationSec));
+                float sweep = 420f + 320f * (0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * t / DurationSec));
                 float pL = SoftLowpass(ref padLpL, padSumL * 0.14f * chordEnv, sweep);
                 float pR = SoftLowpass(ref padLpR, padSumR * 0.14f * chordEnv, sweep);
 
-                // Warm deep sub-bass + solemn war-drum heartbeat on bar downbeats (B36)
                 float subF = LoopLockedPhaseHz(MidiToHz(BassMidi[bar]));
                 float sub = Mathf.Sin(2f * Mathf.PI * subF * t) * 0.22f * Mathf.Clamp01(barT / 0.08f);
                 float warDrum = 0f;
                 if (barT < 0.36f)
                 {
                     float df = Mathf.Lerp(96f, 41f, Mathf.Clamp01(barT * 9f));
-                    warDrum = Mathf.Sin(2f * Mathf.PI * df * barT) * Mathf.Exp(-barT * 10.5f) * Mathf.Clamp01(barT / 0.004f) * 0.24f;
+                    warDrum = Mathf.Sin(2f * Mathf.PI * df * barT) * Mathf.Exp(-barT * 10.5f) * Mathf.Clamp01(barT / 0.004f) * 0.22f;
                 }
 
-                // Dusty analog field-radio / tape grit bed band-limited 300-1800 Hz (B36)
+                // Subtle briefing sonar ping on bar starts + clean tactical rim-tick
+                float sonar = 0f;
+                if (bar % 2 == 0 && barT < 0.65f)
+                    sonar = Mathf.Sin(2f * Mathf.PI * MidiToHz(74f) * barT) * Mathf.Exp(-barT * 6.5f) * Mathf.Clamp01(barT / 0.004f) * 0.09f;
+
                 float white = (float)(radioRng.NextDouble() * 2.0 - 1.0);
-                float crackle = (radioRng.NextDouble() < 0.00055) ? white * 0.35f : 0f;
-                float radioRaw = white * 0.022f + crackle;
+                float crackle = (radioRng.NextDouble() < 0.00045) ? white * 0.28f : 0f;
+                float radioRaw = white * 0.018f + crackle;
                 radioHp = 0.96f * (radioHp + radioRaw - radioPrev);
                 radioPrev = radioRaw;
-                float radioDust = SoftLowpass(ref radioLp, radioHp, 1650f);
+                float radioDust = SoftLowpass(ref radioLp, radioHp, 1550f);
 
-                // Bowed war-cello / Phrygian minor 2nd tension motif (subtle analog grit)
                 int step = Mathf.Clamp((int)(barT / 0.25f), 0, 7);
                 float stepT = barT - step * 0.25f;
                 float arpMidi = (bar % 2 == 1 && step == 6) ? (ArpNotes[bar][step] - 1f) : ArpNotes[bar][step];
                 float noteHz = MidiToHz(arpMidi - 12f);
                 float bowAtk = Mathf.Clamp01(stepT / 0.035f);
                 float arpEnv = bowAtk * Mathf.Exp(-stepT * 4.8f);
-                float bowed = (float)Math.Tanh((Saw(noteHz * stepT) * 0.55f + Tri(noteHz * 2f * stepT) * 0.28f) * 1.4f) * arpEnv * 0.18f;
+                float bowed = (float)Math.Tanh((Saw(noteHz * stepT) * 0.52f + Tri(noteHz * 2f * stepT) * 0.26f) * 1.35f) * arpEnv * 0.16f;
                 float pan = (step % 2 == 0) ? 0.65f : 0.35f;
 
-                float dryL = pL + sub + warDrum + radioDust + bowed * pan;
-                float dryR = pR + sub + warDrum + radioDust * 0.85f + bowed * (1f - pan);
-                L[i] = SoftLowpass(ref lpL, dryL, 5200f);
-                R[i] = SoftLowpass(ref lpR, dryR, 5200f);
+                float dryL = pL + sub + warDrum + sonar * 0.65f + radioDust + bowed * pan;
+                float dryR = pR + sub + warDrum + sonar * 0.35f + radioDust * 0.85f + bowed * (1f - pan);
+                L[i] = SoftLowpass(ref lpL, dryL, 4800f);
+                R[i] = SoftLowpass(ref lpR, dryR, 4800f);
             }
 
-            AddWarTornOrchestralBed(L, R, brassWeight: 0.30f, gritDrive: 1.55f, withArtillery: true);
-            AddCircularStereoEcho(L, R, Mathf.RoundToInt(0.375f * SampleRate), 0.34f);
-            FinalizeStem(L, R, targetRms: 0.145f, maxPeak: 0.78f);
+            AddWarTornOrchestralBed(L, R, 0f, brassWeight: 0.24f, gritDrive: 1.45f, withArtillery: true);
+            AddCircularStereoEcho(L, R, Mathf.RoundToInt(0.375f * SampleRate), 0.32f);
+            FinalizeStem(L, R, targetRms: 0.125f, maxPeak: 0.74f);
             WriteWav(path, L, R);
         }
 
-        private static void WriteCalmStem(string path)
+        private static void WriteCalmStem(string path, MapThemeSpec theme)
         {
             float[] L = new float[TotalSamples];
             float[] R = new float[TotalSamples];
             float lpL = 0f, lpR = 0f;
+            float shift = theme.SemitoneShift;
 
+            // Super-mild opening bed: warm stealth sub, sparse sonar harmonic plucks, zero harsh overdrive
             for (int i = 0; i < TotalSamples; i++)
             {
                 float t = i / (float)SampleRate;
                 int bar = Mathf.Clamp((int)(t / 2f), 0, 7);
                 float barT = t - bar * 2f;
 
-                // Dark loop-locked tactical drone + warm sub octave (continuous phase across bars -> zero transition click)
-                float fRoot = LoopLockedPhaseHz(MidiToHz(BassMidi[bar]));
-                float barFade = Mathf.Clamp01(barT / 0.02f) * Mathf.Clamp01((2f - barT) / 0.02f);
-                float sub = (Mathf.Sin(2f * Mathf.PI * fRoot * barT) * 0.24f + Tri(fRoot * barT) * 0.08f) * barFade;
-                float fifth = Mathf.Sin(2f * Mathf.PI * (fRoot * 1.5f) * barT + 0.4f) * 0.08f * barFade * (0.6f + 0.4f * Mathf.Sin(2f * Mathf.PI * 2f * t / DurationSec));
+                float fRoot = LoopLockedPhaseHz(MidiToHz(BassMidi[bar] + shift));
+                float barFade = Mathf.Clamp01(barT / 0.03f) * Mathf.Clamp01((2f - barT) / 0.03f);
+                float sub = (Mathf.Sin(2f * Mathf.PI * fRoot * barT) * 0.24f + Tri(fRoot * barT) * 0.06f) * barFade;
+                float fifth = Mathf.Sin(2f * Mathf.PI * (fRoot * 1.5f) * barT + 0.4f) * 0.07f * barFade * (0.6f + 0.4f * Mathf.Sin(2f * Mathf.PI * 2f * t / DurationSec));
 
-                // Sparse sonar/kalimba pulse on beats 1 and 3.5 so footsteps remain completely exposed
                 float pluck = 0f;
-                if (barT < 0.85f || barT > 1.5f)
+                if (barT < 0.75f || (theme.SynthPulse > 0.3f && barT > 1.375f))
                 {
-                    float localT = barT < 0.85f ? barT : (barT - 1.5f);
-                    float noteHz = MidiToHz(ArpNotes[bar][barT < 0.85f ? 0 : 4]);
-                    pluck = Mathf.Sin(2f * Mathf.PI * noteHz * localT) * Mathf.Exp(-localT * 6.5f) * Mathf.Clamp01(localT / 0.004f) * 0.14f;
+                    float localT = barT < 0.75f ? barT : (barT - 1.375f);
+                    float noteHz = MidiToHz(ArpNotes[bar][(barT < 0.75f ? 0 : 4 + (theme.Seed % 2))] + shift);
+                    pluck = (Mathf.Sin(2f * Mathf.PI * noteHz * localT) + Tri(noteHz * 2f * localT) * theme.SynthPulse * 0.35f)
+                            * Mathf.Exp(-localT * 6.8f) * Mathf.Clamp01(localT / 0.005f) * 0.13f;
                 }
 
-                // Gentle stereo phase drift on fifth + low-pass keep mid-highs open for footsteps
                 float xL = sub + fifth * 0.8f + pluck * 0.62f;
                 float xR = sub + fifth * 1.0f + pluck * 0.38f;
-                L[i] = SoftLowpass(ref lpL, xL, 3800f);
-                R[i] = SoftLowpass(ref lpR, xR, 3800f);
+                L[i] = SoftLowpass(ref lpL, xL, 3200f * theme.Brightness);
+                R[i] = SoftLowpass(ref lpR, xR, 3200f * theme.Brightness);
             }
 
-            AddWarTornOrchestralBed(L, R, brassWeight: 0.10f, gritDrive: 1.15f, withArtillery: true);
-            AddCircularStereoEcho(L, R, Mathf.RoundToInt(0.375f * SampleRate), 0.28f);
-            MixProgressiveGuitar(L, R, GuitarIntensity.CleanCalm);
-            FinalizeStem(L, R, targetRms: 0.080f, maxPeak: 0.70f);
+            AddCircularStereoEcho(L, R, Mathf.RoundToInt(0.375f * SampleRate), 0.26f);
+            MixProgressiveGuitar(L, R, GuitarIntensity.CleanCalm, shift);
+            FinalizeStem(L, R, targetRms: 0.055f, maxPeak: 0.62f);
             WriteWav(path, L, R);
         }
 
-        private static void WriteTensionStem(string path)
+        private static void WriteTensionStem(string path, MapThemeSpec theme)
         {
             float[] L = new float[TotalSamples];
             float[] R = new float[TotalSamples];
             float bassLpL = 0f, bassLpR = 0f, strLpL = 0f, strLpR = 0f;
+            float shift = theme.SemitoneShift;
 
             for (int i = 0; i < TotalSamples; i++)
             {
@@ -244,19 +304,17 @@ namespace LR2.EditorTools
                 int bar = Mathf.Clamp((int)(t / 2f), 0, 7);
                 float barT = t - bar * 2f;
 
-                // 16th-note muted bass palm-mute pulse (0.125s steps)
                 int s16 = Mathf.Clamp((int)(barT / 0.125f), 0, 15);
                 float stepT = barT - s16 * 0.125f;
-                float bassMidi = BassMidi[bar] + (s16 == 14 ? 2f : s16 == 15 ? 3f : 0f);
+                float bassMidi = BassMidi[bar] + shift + (s16 == 14 ? 2f : s16 == 15 ? 3f : 0f);
                 float bassHz = MidiToHz(bassMidi);
-                float pulseAcc = (s16 % 4 == 0) ? 1.0f : (s16 % 2 == 0) ? 0.72f : 0.48f;
+                float pulseAcc = (s16 % 4 == 0) ? 1.0f : (s16 % 2 == 0) ? 0.72f : (0.38f + theme.SynthPulse * 0.25f);
                 float pulseEnv = Mathf.Exp(-stepT * 18f) * Mathf.Clamp01(stepT / 0.002f) * pulseAcc;
                 float bassRaw = (Saw(bassHz * stepT) * 0.55f + Tri(bassHz * 2f * stepT) * 0.35f) * pulseEnv;
-                float cutoff = 580f + 500f * (0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * 2f * t / DurationSec));
+                float cutoff = (560f + 480f * (0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * 2f * t / DurationSec))) * theme.Brightness;
                 float bL = SoftLowpass(ref bassLpL, bassRaw * 0.38f, cutoff);
                 float bR = SoftLowpass(ref bassLpR, bassRaw * 0.38f, cutoff * 1.04f);
 
-                // Warm low taiko/frame-drum heartbeat on beats 1 and 2.5 (t=0, t=0.75) and beat 3.5 (t=1.375)
                 float drum = 0f;
                 foreach (float hitT in new[] { 0f, 0.75f, 1.375f })
                 {
@@ -268,31 +326,35 @@ namespace LR2.EditorTools
                     }
                 }
 
-                // Dark ensemble strings swell on bars 4-7 (smooth bar-edge crossfade eliminates step clicks)
+                float anvil = 0f;
+                if (theme.AnvilLevel > 0.1f && barT < 0.18f && (bar % 2 == 1))
+                    anvil = Mathf.Sin(2f * Mathf.PI * 330f * barT) * Mathf.Exp(-barT * 18f) * theme.AnvilLevel * 0.30f;
+
                 float strAmt = (bar >= 4 ? Mathf.Clamp01((bar - 3.5f) * 0.35f) : 0.25f) * Mathf.Clamp01(barT / 0.02f) * Mathf.Clamp01((2f - barT) / 0.02f);
                 var ch = PadChords[bar];
-                float strWaveL = (Saw(MidiToHz(ch[1]) * 1.003f * barT) + Saw(MidiToHz(ch[2]) * 0.997f * barT)) * 0.09f * strAmt;
-                float strWaveR = (Saw(MidiToHz(ch[1]) * 0.997f * barT) + Saw(MidiToHz(ch[2]) * 1.003f * barT)) * 0.09f * strAmt;
-                float sL = SoftLowpass(ref strLpL, strWaveL, 2600f);
-                float sR = SoftLowpass(ref strLpR, strWaveR, 2600f);
+                float strWaveL = (Saw(MidiToHz(ch[1] + shift) * 1.003f * barT) + Saw(MidiToHz(ch[2] + shift) * 0.997f * barT)) * 0.09f * strAmt;
+                float strWaveR = (Saw(MidiToHz(ch[1] + shift) * 0.997f * barT) + Saw(MidiToHz(ch[2] + shift) * 1.003f * barT)) * 0.09f * strAmt;
+                float sL = SoftLowpass(ref strLpL, strWaveL, 2600f * theme.Brightness);
+                float sR = SoftLowpass(ref strLpR, strWaveR, 2600f * theme.Brightness);
 
-                L[i] = bL + drum + sL;
-                R[i] = bR + drum + sR;
+                L[i] = bL + drum + anvil + sL;
+                R[i] = bR + drum + anvil + sR;
             }
 
-            AddWarTornOrchestralBed(L, R, brassWeight: 0.28f, gritDrive: 1.75f, withArtillery: true);
+            AddWarTornOrchestralBed(L, R, shift, brassWeight: 0.28f, gritDrive: 1.75f, withArtillery: true);
             AddCircularStereoEcho(L, R, Mathf.RoundToInt(0.25f * SampleRate), 0.18f);
-            MixProgressiveGuitar(L, R, GuitarIntensity.OverdriveTension);
+            MixProgressiveGuitar(L, R, GuitarIntensity.OverdriveTension, shift);
             FinalizeStem(L, R, targetRms: 0.145f, maxPeak: 0.80f);
             WriteWav(path, L, R);
         }
 
-        private static void WriteCombatStem(string path)
+        private static void WriteCombatStem(string path, MapThemeSpec theme)
         {
             float[] L = new float[TotalSamples];
             float[] R = new float[TotalSamples];
             float leadLpL = 0f, leadLpR = 0f, hatLp = 0f;
-            var rng = new System.Random(2026);
+            var rng = new System.Random(2026 + theme.Seed);
+            float shift = theme.SemitoneShift;
 
             for (int i = 0; i < TotalSamples; i++)
             {
@@ -300,7 +362,6 @@ namespace LR2.EditorTools
                 int bar = Mathf.Clamp((int)(t / 2f), 0, 7);
                 float barT = t - bar * 2f;
 
-                // Driving 4-on-floor & syncopated combat kick (beat 0, 0.5, 1.0, 1.375, 1.5)
                 float kick = 0f;
                 foreach (float kt in new[] { 0f, 0.5f, 1.0f, 1.375f, 1.5f })
                 {
@@ -313,7 +374,6 @@ namespace LR2.EditorTools
                     }
                 }
 
-                // Tight dark combat industrial snare/rim on beats 2 & 4 (barT 0.5 and 1.5)
                 float snare = 0f;
                 float noise = (float)(rng.NextDouble() * 2.0 - 1.0);
                 foreach (float st in new[] { 0.5f, 1.5f })
@@ -326,32 +386,30 @@ namespace LR2.EditorTools
                     }
                 }
 
-                // Soft dark hi-hat pulse rolled off safely below harsh footstep crunch bands
                 int s16 = Mathf.Clamp((int)(barT / 0.125f), 0, 15);
                 float hatDt = barT - s16 * 0.125f;
                 float hatAmp = (s16 % 4 == 2) ? 0.16f : 0.08f;
                 float hat = SoftLowpass(ref hatLp, noise * Mathf.Exp(-hatDt * 58f) * hatAmp, 5200f);
 
-                // Saturated bass + urgent 8th-note staccato ostinato riff
                 int s8 = Mathf.Clamp((int)(barT / 0.25f), 0, 7);
+                int noteIdx = (theme.Seed % 2 == 0) ? s8 : (7 - s8);
                 float s8t = barT - s8 * 0.25f;
-                float ostNote = MidiToHz(ArpNotes[bar][s8] - 12f);
+                float ostNote = MidiToHz(ArpNotes[bar][noteIdx] + shift - 12f);
                 float ostEnv = Mathf.Exp(-s8t * 10f) * Mathf.Clamp01(s8t / 0.002f);
                 float ostL = (Saw(ostNote * 1.004f * s8t) + Saw(ostNote * 0.5f * s8t)) * ostEnv * 0.24f;
                 float ostR = (Saw(ostNote * 0.996f * s8t) + Saw(ostNote * 0.5f * s8t)) * ostEnv * 0.24f;
                 float barEdge = Mathf.Clamp01(barT / 0.015f) * Mathf.Clamp01((2f - barT) / 0.015f);
-                float bassDrive = (float)Math.Tanh(Saw(MidiToHz(BassMidi[bar]) * hatDt) * 1.7f) * 0.26f * Mathf.Exp(-hatDt * 6f) * barEdge;
+                float bassDrive = (float)Math.Tanh(Saw(MidiToHz(BassMidi[bar] + shift) * hatDt) * 1.7f) * 0.26f * Mathf.Exp(-hatDt * 6f) * barEdge;
 
-                float fCut = 1800f + 1600f * (0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * 2f * t / DurationSec));
+                float fCut = (1800f + 1600f * (0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * 2f * t / DurationSec))) * theme.Brightness;
 
-                // Driving firefight snare & field-tom drumrolls (escalating 32nd-note rolls on odd bar turnarounds + tension ghost fills)
                 float rollL = 0f, rollR = 0f;
                 if ((bar % 2 == 1 && barT >= 1.50f) || (bar % 2 == 0 && barT >= 1.75f))
                 {
                     float rollStart = (bar % 2 == 1) ? 1.50f : 1.75f;
                     float rollLen = 2.0f - rollStart;
                     float localT = barT - rollStart;
-                    float subStep = (bar == 3 || bar == 7) ? 0.05f : 0.0625f; // accelerating 20 Hz / 16 Hz sticks
+                    float subStep = (bar == 3 || bar == 7) ? 0.05f : 0.0625f;
                     int hitIdx = Mathf.FloorToInt(localT / subStep);
                     float dtR = localT - hitIdx * subStep;
                     if (dtR >= 0f && dtR < 0.075f)
@@ -359,8 +417,8 @@ namespace LR2.EditorTools
                         float ramp = Mathf.Pow(Mathf.Clamp01(localT / rollLen), 1.35f);
                         float stickAmp = Mathf.Lerp(0.18f, 0.72f, ramp);
                         float drumFreq = (bar >= 6 && hitIdx % 3 == 0)
-                            ? Mathf.Lerp(112f, 68f, Mathf.Clamp01(dtR * 18f)) // deep tom punch
-                            : Mathf.Lerp(210f, 138f, Mathf.Clamp01(dtR * 24f)); // taut tactical snare
+                            ? Mathf.Lerp(112f, 68f, Mathf.Clamp01(dtR * 18f))
+                            : Mathf.Lerp(210f, 138f, Mathf.Clamp01(dtR * 24f));
                         float hitSig = (Mathf.Sin(2f * Mathf.PI * drumFreq * dtR) * 0.58f + noise * Mathf.Exp(-dtR * 36f) * 0.42f)
                                        * Mathf.Exp(-dtR * 28f) * Mathf.Clamp01(dtR / 0.002f) * stickAmp;
                         float rollPan = (hitIdx % 2 == 0) ? 0.44f : 0.56f;
@@ -369,7 +427,6 @@ namespace LR2.EditorTools
                     }
                 }
 
-                // B36: Heavy industrial metallic anvil / tank-chassis clangs on downbeat accents (band-limited < 2.6 kHz so footsteps stay crisp)
                 float anvil = 0f;
                 if (barT < 0.24f || (bar % 2 == 1 && barT >= 1.0f && barT < 1.22f))
                 {
@@ -377,27 +434,124 @@ namespace LR2.EditorTools
                     float aEnv = Mathf.Clamp01(adt / 0.002f) * Mathf.Exp(-adt * 15.5f);
                     float modes = Mathf.Sin(2f * Mathf.PI * 310f * adt) * 0.42f
                                 + Mathf.Sin(2f * Mathf.PI * 478f * adt) * 0.30f
-                                + Mathf.Sin(2f * Mathf.PI * 712f * adt) * 0.18f
-                                + Mathf.Sin(2f * Mathf.PI * 1090f * adt) * 0.10f;
-                    anvil = (float)Math.Tanh(modes * 1.55f) * aEnv * (barT < 0.24f ? 0.22f : 0.15f);
+                                + Mathf.Sin(2f * Mathf.PI * 712f * adt) * 0.18f;
+                    anvil = (float)Math.Tanh(modes * 1.55f) * aEnv * theme.AnvilLevel * 0.9f;
                 }
 
                 L[i] = kick + snare + hat + bassDrive + rollL + anvil * 0.92f + SoftLowpass(ref leadLpL, ostL, fCut);
                 R[i] = kick + snare + hat + bassDrive + rollR + anvil * 1.04f + SoftLowpass(ref leadLpR, ostR, fCut);
             }
 
-            AddWarTornOrchestralBed(L, R, brassWeight: 0.46f, gritDrive: 2.45f, withArtillery: true);
-            MixProgressiveGuitar(L, R, GuitarIntensity.HeavyCombat);
+            AddWarTornOrchestralBed(L, R, shift, brassWeight: 0.46f, gritDrive: 2.45f, withArtillery: true);
+            MixProgressiveGuitar(L, R, GuitarIntensity.HeavyCombat, shift);
             AddCircularStereoEcho(L, R, Mathf.RoundToInt(0.1875f * SampleRate), 0.16f);
-            FinalizeStem(L, R, targetRms: 0.225f, maxPeak: 0.86f);
+            FinalizeStem(L, R, targetRms: 0.235f, maxPeak: 0.88f);
             WriteWav(path, L, R);
         }
 
-        /// <summary>
-        /// B36: Adds war-torn low bowed brass/cello D-Phrygian power fifths, subtle tape-grit saturation,
-        /// and far-off muffled battlefield artillery thuds while carving upper-mids so footsteps cut cleanly through.
-        /// </summary>
-        private static void AddWarTornOrchestralBed(float[] L, float[] R, float brassWeight, float gritDrive, bool withArtillery)
+        /// <summary>Insane endgame climax stem: rapid double-kick, 32nd-note tom/snare rolls, soaring brass & guitar harmonics.</summary>
+        private static void WriteOverdriveStem(string path)
+        {
+            float[] L = new float[TotalSamples];
+            float[] R = new float[TotalSamples];
+            float lpL = 0f, lpR = 0f, hatLp = 0f;
+            var rng = new System.Random(9090);
+
+            for (int i = 0; i < TotalSamples; i++)
+            {
+                float t = i / (float)SampleRate;
+                int bar = Mathf.Clamp((int)(t / 2f), 0, 7);
+                float barT = t - bar * 2f;
+                float noise = (float)(rng.NextDouble() * 2.0 - 1.0);
+
+                // Relentless double-kick pattern (every 8th + syncopated 16ths)
+                int kStep = Mathf.Clamp((int)(barT / 0.125f), 0, 15);
+                float kDt = barT - kStep * 0.125f;
+                float kick = 0f;
+                if (kStep % 2 == 0 || (kStep >= 11))
+                {
+                    float kf = Mathf.Lerp(175f, 44f, Mathf.Clamp01(kDt * 22f));
+                    kick = (float)Math.Tanh(Mathf.Sin(2f * Mathf.PI * kf * kDt) * 1.9f) * Mathf.Exp(-kDt * 18f) * 0.45f;
+                }
+
+                // Rapid 16th/32nd urgent snare drive + octave lead arpeggio
+                int s16 = kStep;
+                float sDt = kDt;
+                float snareHit = (s16 % 4 == 2 || s16 >= 14) ? 0.36f : 0.08f;
+                float snare = (Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(235f, 118f, Mathf.Clamp01(sDt * 25f)) * sDt) * 0.48f + noise * 0.52f)
+                              * Mathf.Exp(-sDt * 28f) * snareHit;
+                float hat = SoftLowpass(ref hatLp, noise * Mathf.Exp(-sDt * 60f) * 0.18f, 6400f);
+
+                float arpHz = MidiToHz(ArpNotes[bar][s16 % 8] + (bar >= 4 ? 12f : 0f));
+                float arpEnv = Mathf.Exp(-sDt * 9f) * Mathf.Clamp01(sDt / 0.002f);
+                float leadL = (float)Math.Tanh((Saw(arpHz * 1.005f * sDt) + Saw(arpHz * 0.5f * sDt) * 0.65f) * 1.85f) * arpEnv * 0.32f;
+                float leadR = (float)Math.Tanh((Saw(arpHz * 0.995f * sDt) + Saw(arpHz * 0.5f * sDt) * 0.65f) * 1.85f) * arpEnv * 0.32f;
+
+                L[i] = kick + snare + hat + SoftLowpass(ref lpL, leadL, 4200f);
+                R[i] = kick + snare + hat + SoftLowpass(ref lpR, leadR, 4200f);
+            }
+
+            AddWarTornOrchestralBed(L, R, 0f, brassWeight: 0.56f, gritDrive: 2.85f, withArtillery: true);
+            MixProgressiveGuitar(L, R, GuitarIntensity.HeavyCombat, 0f);
+            AddCircularStereoEcho(L, R, Mathf.RoundToInt(0.125f * SampleRate), 0.18f);
+            FinalizeStem(L, R, targetRms: 0.285f, maxPeak: 0.90f);
+            WriteWav(path, L, R);
+        }
+
+        /// <summary>9-second heroic victory fanfare (win=true) or somber minor defeat dirge (win=false).</summary>
+        private static void WriteOutcomeStinger(string path, bool win)
+        {
+            const float dur = 9.0f;
+            int n = Mathf.RoundToInt(SampleRate * dur);
+            float[] L = new float[n];
+            float[] R = new float[n];
+            var rng = new System.Random(win ? 777 : 666);
+            float lpL = 0f, lpR = 0f;
+
+            // Heroic D major -> G -> A -> D resolution vs Sombre Dm -> Bb -> Gm -> Dm/A descent
+            float[] motifMidi = win
+                ? new[] { 62f, 66f, 69f, 74f, 73f, 74f, 78f, 86f }
+                : new[] { 62f, 60f, 58f, 57f, 55f, 53f, 52f, 50f };
+            float[] bassRoots = win
+                ? new[] { 38f, 38f, 43f, 43f, 45f, 45f, 38f, 38f }
+                : new[] { 38f, 36f, 34f, 33f, 31f, 31f, 29f, 26f };
+
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)SampleRate;
+                int seg = Mathf.Clamp((int)(t / (dur / 8f)), 0, 7);
+                float segT = t - seg * (dur / 8f);
+                float globalFade = Mathf.Clamp01(t / 0.04f) * Mathf.Clamp01((dur - t) / 1.4f);
+
+                float rootF = MidiToHz(bassRoots[seg]);
+                float bass = (Mathf.Sin(2f * Mathf.PI * rootF * t) * 0.45f + Saw(rootF * t) * 0.16f);
+
+                float mHz = MidiToHz(motifMidi[seg]);
+                float fifthHz = mHz * (win ? 1.5f : 1.1892f); // triumphant 5th vs brooding minor 3rd
+                float atk = Mathf.Clamp01(segT / 0.06f);
+                float brass = (float)Math.Tanh((Saw(mHz * t) * 0.48f + Saw(fifthHz * 1.003f * t) * 0.36f) * (win ? 1.7f : 1.3f)) * atk;
+
+                // Timpani booms on bars 0, 2, 4, 6
+                float timpani = 0f;
+                if (seg % 2 == 0 && segT < 0.7f)
+                {
+                    float df = Mathf.Lerp(win ? 120f : 86f, 44f, Mathf.Clamp01(segT * 5f));
+                    float noise = (float)(rng.NextDouble() * 2.0 - 1.0) * Mathf.Exp(-segT * 28f) * 0.15f;
+                    timpani = (Mathf.Sin(2f * Mathf.PI * df * segT) * Mathf.Exp(-segT * 5.2f) * 0.55f + noise) * (win ? 1.0f : 0.75f);
+                }
+
+                float cut = win ? 4400f : Mathf.Lerp(2100f, 650f, t / dur);
+                float rawL = (bass + brass * 0.42f + timpani) * globalFade;
+                float rawR = (bass + brass * 0.42f * 0.96f + timpani) * globalFade;
+                L[i] = SoftLowpass(ref lpL, rawL, cut);
+                R[i] = SoftLowpass(ref lpR, rawR, cut);
+            }
+
+            FinalizeStinger(L, R, win ? 0.20f : 0.14f, 0.85f);
+            WriteWav(path, L, R);
+        }
+
+        private static void AddWarTornOrchestralBed(float[] L, float[] R, float semitoneShift, float brassWeight, float gritDrive, bool withArtillery)
         {
             int n = L.Length;
             float hornLpL = 0f, hornLpR = 0f, artLp = 0f;
@@ -411,9 +565,10 @@ namespace LR2.EditorTools
                 float barT = t - bar * 2f;
                 float edge = Mathf.Clamp01(barT / 0.04f) * Mathf.Clamp01((2f - barT) / 0.04f);
 
-                // Low bowed war brass (D3/A3 power fifths + Phrygian b2 tension in bars 3 & 7)
-                float rootF = LoopLockedPhaseHz(MidiToHz(BassMidi[bar] + 12f));
-                float fifthF = (bar == 3 || bar == 7) ? LoopLockedPhaseHz(MidiToHz(BassMidi[bar] + 13f)) : LoopLockedPhaseHz(MidiToHz(BassMidi[bar] + 19f));
+                float rootF = LoopLockedPhaseHz(MidiToHz(BassMidi[bar] + semitoneShift + 12f));
+                float fifthF = (bar == 3 || bar == 7)
+                    ? LoopLockedPhaseHz(MidiToHz(BassMidi[bar] + semitoneShift + 13f))
+                    : LoopLockedPhaseHz(MidiToHz(BassMidi[bar] + semitoneShift + 19f));
                 float swell = (0.35f + 0.65f * Mathf.Clamp01(bar / 7f)) * edge;
                 float brassL = (float)Math.Tanh((Saw(rootF * 1.002f * t) + Saw(fifthF * 0.998f * t) * 0.72f) * gritDrive) * brassWeight * swell;
                 float brassR = (float)Math.Tanh((Saw(rootF * 0.998f * t) + Saw(fifthF * 1.002f * t) * 0.72f) * gritDrive) * brassWeight * swell;
@@ -449,7 +604,6 @@ namespace LR2.EditorTools
             {
                 int src = (i - delaySamples + n) % n;
                 int src2 = (i - delaySamples * 2 + n) % n;
-                // Ping-pong cross feedback keeping circular loop boundaries 100% seamless
                 eL[i] = R[src] * feedbackGain + L[src2] * (feedbackGain * 0.42f);
                 eR[i] = L[src] * feedbackGain + R[src2] * (feedbackGain * 0.42f);
             }
@@ -460,7 +614,21 @@ namespace LR2.EditorTools
             }
         }
 
-        /// <summary>Normalizes to a strict perceptual RMS hierarchy (Calm &lt; Tension &lt; Combat), soft-limits peaks, and cross-blends loop ends for zero seam click.</summary>
+        private static void FinalizeStinger(float[] L, float[] R, float targetRms, float maxPeak)
+        {
+            int n = L.Length;
+            double sumSq = 0.0;
+            for (int i = 0; i < n; i++)
+                sumSq += 0.5 * (L[i] * (double)L[i] + R[i] * (double)R[i]);
+            float curRms = Mathf.Sqrt((float)(sumSq / Mathf.Max(1, n)));
+            float gain = curRms > 1e-5f ? targetRms / curRms : 1f;
+            for (int i = 0; i < n; i++)
+            {
+                L[i] = Mathf.Clamp(L[i] * gain, -maxPeak, maxPeak);
+                R[i] = Mathf.Clamp(R[i] * gain, -maxPeak, maxPeak);
+            }
+        }
+
         private static void FinalizeStem(float[] L, float[] R, float targetRms, float maxPeak)
         {
             int n = L.Length;
@@ -474,7 +642,6 @@ namespace LR2.EditorTools
             {
                 float xL = L[i] * gain;
                 float xR = R[i] * gain;
-                // Soft-clip only extreme transient spikes above 0.72 * maxPeak so RMS hierarchy stays intact without harsh digital clipping
                 float softKnee = maxPeak * 0.72f;
                 if (Mathf.Abs(xL) > softKnee) xL = Mathf.Sign(xL) * (softKnee + (maxPeak - softKnee) * (float)Math.Tanh((Mathf.Abs(xL) - softKnee) / Mathf.Max(0.05f, maxPeak - softKnee)));
                 if (Mathf.Abs(xR) > softKnee) xR = Mathf.Sign(xR) * (softKnee + (maxPeak - softKnee) * (float)Math.Tanh((Mathf.Abs(xR) - softKnee) / Mathf.Max(0.05f, maxPeak - softKnee)));
@@ -482,7 +649,6 @@ namespace LR2.EditorTools
                 R[i] = xR;
             }
 
-            // Smooth 256-sample wrap-around cosine taper to near-zero loop seam delta
             const int Seam = 256;
             for (int k = 0; k < Seam; k++)
             {
@@ -496,22 +662,16 @@ namespace LR2.EditorTools
 
         private enum GuitarIntensity { CleanCalm, OverdriveTension, HeavyCombat }
 
-        /// <summary>
-        /// Synthesizes a slowly progressive double-tracked electric guitar riff (Karplus-Strong plucked
-        /// strings through asymmetric tube overdrive + 2-pole guitar cabinet lowpass) evolving across
-        /// all 8 bars while rolling off cleanly above 3.5 kHz so combat footsteps remain crisp.
-        /// </summary>
-        private static void MixProgressiveGuitar(float[] L, float[] R, GuitarIntensity mode)
+        private static void MixProgressiveGuitar(float[] L, float[] R, GuitarIntensity mode, float semitoneShift)
         {
             int n = TotalSamples;
             float[] rL = new float[n];
             float[] rR = new float[n];
             float[] lead = new float[n];
 
-            int stepSamples = Mathf.RoundToInt(SampleRate * (60f / Bpm) * 0.25f); // 16th note = 0.125 s
-            int totalSteps = Bars * 16; // 128 16th-note steps
+            int stepSamples = Mathf.RoundToInt(SampleRate * (60f / Bpm) * 0.25f);
+            int totalSteps = Bars * 16;
 
-            // Heavy rhythmic chug accents across each 16-step bar: 1 . a & 1 e . a 1 . & . 1 e & .
             bool[] chugMask =
             {
                 true, false, true, true,  false, true, true, false,
@@ -523,20 +683,19 @@ namespace LR2.EditorTools
                 true, false, false, false, true,  false, false, false
             };
 
-            // Ascending Bar 0..7 lead phrase (in MIDI; -1 = rest) building slowly from low motif to octave climax
             float[][] leadBars =
             {
-                new float[] { 62f, -1, -1, -1,  -1, -1, 65f, -1,  64f, -1, -1, -1,  -1, -1, 62f, -1 }, // Bar 0: spare D4 -> F4 -> E4
-                new float[] { 58f, -1, -1, -1,  62f, -1, -1, -1,  65f, -1, -1, -1,  64f, -1, 62f, -1 }, // Bar 1: Bb3 -> D4 -> F4 -> E4
-                new float[] { 62f, -1, 65f, -1, 67f, -1, -1, -1,  65f, -1, 64f, -1, 62f, -1, -1, -1 }, // Bar 2: D4 F4 G4 F4 E4
-                new float[] { 61f, -1, 64f, -1, 69f, -1, -1, -1,  67f, -1, 64f, -1, 61f, -1, 64f, -1 }, // Bar 3: A7 harmonic push C#4 E4 A4
-                new float[] { 62f, -1, 65f, -1, 69f, -1, 70f, -1, 69f, -1, 67f, -1, 65f, -1, 64f, -1 }, // Bar 4: rising Dm + b6 Phrygian Bb4
-                new float[] { 67f, -1, 69f, -1, 72f, -1, -1, -1,  71f, -1, 69f, -1, 67f, -1, 64f, -1 }, // Bar 5: C5 soaring climb
-                new float[] { 70f, -1, 69f, -1, 67f, -1, 65f, -1, 69f, -1, 70f, -1, 72f, -1, 74f, -1 }, // Bar 6: intense climb to D5
-                new float[] { 73f, -1, 74f, -1, 76f, -1, 74f, -1, 73f, -1, 69f, -1, 67f, -1, 64f, -1 }, // Bar 7: C#5->E5 harmonic minor climax resolving to D4
+                new float[] { 62f, -1, -1, -1,  -1, -1, 65f, -1,  64f, -1, -1, -1,  -1, -1, 62f, -1 },
+                new float[] { 58f, -1, -1, -1,  62f, -1, -1, -1,  65f, -1, -1, -1,  64f, -1, 62f, -1 },
+                new float[] { 62f, -1, 65f, -1, 67f, -1, -1, -1,  65f, -1, 64f, -1, 62f, -1, -1, -1 },
+                new float[] { 61f, -1, 64f, -1, 69f, -1, -1, -1,  67f, -1, 64f, -1, 61f, -1, 64f, -1 },
+                new float[] { 62f, -1, 65f, -1, 69f, -1, 70f, -1, 69f, -1, 67f, -1, 65f, -1, 64f, -1 },
+                new float[] { 67f, -1, 69f, -1, 72f, -1, -1, -1,  71f, -1, 69f, -1, 67f, -1, 64f, -1 },
+                new float[] { 70f, -1, 69f, -1, 67f, -1, 65f, -1, 69f, -1, 70f, -1, 72f, -1, 74f, -1 },
+                new float[] { 73f, -1, 74f, -1, 76f, -1, 74f, -1, 73f, -1, 69f, -1, 67f, -1, 64f, -1 },
             };
 
-            int doubleTrackOffset = Mathf.RoundToInt(0.0065f * SampleRate); // 6.5 ms tight twin guitar spread
+            int doubleTrackOffset = Mathf.RoundToInt(0.0065f * SampleRate);
 
             for (int step = 0; step < totalSteps; step++)
             {
@@ -544,15 +703,14 @@ namespace LR2.EditorTools
                 int sInBar = step % 16;
                 float barProg = (float)step / (totalSteps - 1);
                 int startSample = step * stepSamples;
-                float root = BassMidi[bar];
+                float root = BassMidi[bar] + semitoneShift;
 
                 if (mode == GuitarIntensity.CleanCalm)
                 {
-                    // Slowly opens from 2 atmospheric harmonics/bar (bars 0-3) to delicate picking (bars 4-7)
                     bool playClean = (bar < 4) ? (sInBar == 0 || sInBar == 10) : (sInBar == 0 || sInBar == 4 || sInBar == 8 || sInBar == 12);
                     if (!playClean) continue;
-                    float cleanNote = ArpNotes[bar][sInBar % 8];
-                    float vel = Mathf.Lerp(0.18f, 0.34f, barProg);
+                    float cleanNote = ArpNotes[bar][sInBar % 8] + semitoneShift;
+                    float vel = Mathf.Lerp(0.16f, 0.30f, barProg);
                     RenderKarplusNote(rL, startSample, cleanNote, 0.62f, vel, damping: 0.9965f, seed: 101 + step, vibratoCents: 6f);
                     RenderKarplusNote(rR, (startSample + 220) % n, cleanNote + 12f, 0.50f, vel * 0.45f, damping: 0.9955f, seed: 202 + step, vibratoCents: 9f);
                     continue;
@@ -576,22 +734,19 @@ namespace LR2.EditorTools
                     continue;
                 }
 
-                // HeavyCombat: progressively denser power-chord riff + ascending harmonic-minor lead
                 bool gallopExtra = bar >= 4 && (sInBar == 7 || sInBar == 14);
                 if (chugMask[sInBar] || gallopExtra)
                 {
                     bool open = openAccentMask[sInBar] || (bar >= 6 && sInBar % 4 == 0);
-                    // Signature Phrygian b2 pull-off in bar 4 & chromatic climb in bar 7
                     float rNote = root;
                     if (bar == 3 && sInBar >= 14) rNote = root + 1f;
-                    else if (bar == 4 && sInBar == 10) rNote = 39f; // Eb2 Phrygian snarl
-                    else if (bar == 7 && sInBar >= 12) rNote = root + (sInBar - 12); // ascending chromatic turnaround into D2
+                    else if (bar == 4 && sInBar == 10) rNote = 39f + semitoneShift;
+                    else if (bar == 7 && sInBar >= 12) rNote = root + (sInBar - 12);
 
                     float damp = open ? Mathf.Lerp(0.992f, 0.996f, barProg) : Mathf.Lerp(0.958f, 0.975f, barProg);
                     float dur = open ? 0.36f : 0.135f;
                     float vel = (open ? 0.68f : 0.44f) * Mathf.Lerp(0.75f, 1.18f, barProg);
 
-                    // Left & Right double-tracked root + fifth (+ octave slam in second half)
                     RenderKarplusNote(rL, startSample, rNote, dur, vel, damp, 701 + step, open ? 4f : 0f);
                     RenderKarplusNote(rL, startSample, rNote + 7f, dur, vel * 0.85f, damp, 801 + step, 0f);
                     RenderKarplusNote(rR, (startSample + doubleTrackOffset) % n, rNote + 0.04f, dur, vel * 0.98f, damp, 901 + step, open ? -4f : 0f);
@@ -606,29 +761,28 @@ namespace LR2.EditorTools
                 float leadMidi = leadBars[bar][sInBar];
                 if (leadMidi > 0f)
                 {
-                    float leadGain = Mathf.Lerp(0.22f, 0.68f, barProg); // gradually intensifies Bar 0 -> Bar 7
+                    leadMidi += semitoneShift;
+                    float leadGain = Mathf.Lerp(0.22f, 0.68f, barProg);
                     float leadDur = (bar >= 6) ? 0.30f : 0.42f;
                     RenderKarplusNote(lead, startSample, leadMidi, leadDur, leadGain, damping: 0.9968f, seed: 1301 + step, vibratoCents: 14f);
                 }
             }
 
-            // Amp overdrive + cabinet EQ (keeps sub tight above 95 Hz and rolls highs gently below footstep transients)
             float hpL = 0f, hpPrevL = 0f, hpR = 0f, hpPrevR = 0f, hpLead = 0f, hpPrevLead = 0f;
             float lp1L = 0f, lp2L = 0f, lp1R = 0f, lp2R = 0f, lp1Lead = 0f, lp2Lead = 0f;
             float baseDrive = mode == GuitarIntensity.CleanCalm ? 0.85f : (mode == GuitarIntensity.OverdriveTension ? 1.55f : 2.55f);
             float endDrive = mode == GuitarIntensity.CleanCalm ? 1.15f : (mode == GuitarIntensity.OverdriveTension ? 3.10f : 4.65f);
             float baseCut = mode == GuitarIntensity.CleanCalm ? 1650f : (mode == GuitarIntensity.OverdriveTension ? 1200f : 2450f);
             float endCut = mode == GuitarIntensity.CleanCalm ? 2600f : (mode == GuitarIntensity.OverdriveTension ? 2250f : 3450f);
-            float mixWeight = mode == GuitarIntensity.CleanCalm ? 0.16f : (mode == GuitarIntensity.OverdriveTension ? 0.24f : 0.34f);
+            float mixWeight = mode == GuitarIntensity.CleanCalm ? 0.14f : (mode == GuitarIntensity.OverdriveTension ? 0.24f : 0.34f);
 
-            const float HpAlpha = 0.9865f; // ~95 Hz tight chug highpass
+            const float HpAlpha = 0.9865f;
             for (int i = 0; i < n; i++)
             {
                 float prog = (float)i / n;
                 float drive = Mathf.Lerp(baseDrive, endDrive, prog);
                 float cabCut = Mathf.Lerp(baseCut, endCut, prog);
 
-                // Asymmetric tube waveshaper on twin rhythm guitars
                 float xL = rL[i];
                 float xR = rR[i];
                 hpL = HpAlpha * (hpL + xL - hpPrevL); hpPrevL = xL;
@@ -644,16 +798,13 @@ namespace LR2.EditorTools
                 float cabL = SoftLowpass(ref lp2L, SoftLowpass(ref lp1L, satL, cabCut), cabCut * 0.95f);
                 float cabR = SoftLowpass(ref lp2R, SoftLowpass(ref lp1R, satR, cabCut), cabCut * 0.95f);
 
-                // Lead guitar layered with slight center-right focus + screaming harmonic tube sustain
                 float xLd = lead[i];
                 hpLead = HpAlpha * (hpLead + xLd - hpPrevLead); hpPrevLead = xLd;
                 float satLd = (float)Math.Tanh(hpLead * (drive * 1.15f) + 0.18f * hpLead * hpLead);
                 float cabLd = SoftLowpass(ref lp2Lead, SoftLowpass(ref lp1Lead, satLd, cabCut + 300f), cabCut + 200f);
 
-                float wideL = (cabL * 0.82f + cabR * 0.18f + cabLd * 0.42f) * mixWeight;
-                float wideR = (cabR * 0.82f + cabL * 0.18f + cabLd * 0.50f) * mixWeight;
-                L[i] += wideL;
-                R[i] += wideR;
+                L[i] += (cabL * 0.82f + cabR * 0.18f + cabLd * 0.42f) * mixWeight;
+                R[i] += (cabR * 0.82f + cabL * 0.18f + cabLd * 0.50f) * mixWeight;
             }
         }
 
@@ -666,7 +817,6 @@ namespace LR2.EditorTools
             float[] ring = new float[delayLen];
 
             var rng = new System.Random(seed);
-            // Filtered pick burst excitation
             float pickLp = 0f;
             for (int k = 0; k < delayLen; k++)
             {
@@ -714,7 +864,7 @@ namespace LR2.EditorTools
         private static void WriteWav(string path, float[] L, float[] R)
         {
             int numSamples = L.Length;
-            int dataBytes = numSamples * 2 * 2; // 2 channels, 16-bit
+            int dataBytes = numSamples * 2 * 2;
             using var fs = new FileStream(path, FileMode.Create, FileAccess.Write);
             using var bw = new BinaryWriter(fs);
             bw.Write(new[] { 'R', 'I', 'F', 'F' });
@@ -722,8 +872,8 @@ namespace LR2.EditorTools
             bw.Write(new[] { 'W', 'A', 'V', 'E' });
             bw.Write(new[] { 'f', 'm', 't', ' ' });
             bw.Write(16);
-            bw.Write((short)1); // PCM
-            bw.Write((short)2); // Stereo
+            bw.Write((short)1);
+            bw.Write((short)2);
             bw.Write(SampleRate);
             bw.Write(SampleRate * 4);
             bw.Write((short)4);

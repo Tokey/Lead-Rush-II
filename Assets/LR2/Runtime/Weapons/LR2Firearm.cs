@@ -39,14 +39,16 @@ namespace LR2.Weapons
         [Tooltip("A tactical reload keeps the chambered round, so the gun holds magazine + 1 (30+1).")]
         [SerializeField] private bool chamberedRoundBonus = true;
         private FPSAnimationAsset _reloadRuntime, _tacticalRuntime;
-        // B94 (user 11-19 "tactical reload ... too long, it tilts the gun to clock and then stops, specially AKs"; C30 AK-74N: 2.35 s,
-        // gun rolled 22-27 deg mid-reload, 5.7 deg/frame snap at the end): tactical reloads play 15 % faster, end at the mag-seat cue
-        // and blend back over 0.45 s.
-        private const float TacticalSpeedUp = 1.15f, TacticalBlendOut = 0.45f;
+        // B94 + B136k: End reloads early right after the mag/bolt action completes so the robot stops rotating the gun in
+        // recovery tail; tighten blend-out from 0.45 s to 0.18 s (empty 0.16 s).
+        private const float TacticalSpeedUp = 1.15f, TacticalBlendOut = 0.18f, EmptyBlendOut = 0.16f;
         private float _activeReloadRate = 1f;
         [SerializeField] private FPSCameraAnimation cameraReloadAnimation;
         [SerializeField] private FPSAnimationAsset grenadeClip;
         [SerializeField] private FPSCameraAnimation cameraGrenadeAnimation;
+        [Tooltip("B136: grenade-throw play rate (LR2 keeps Kinemation's actions short, like the reload).")]
+        [SerializeField, Range(0.5f, 2f)] private float grenadeThrowRate = 1.25f;
+        private FPSAnimationAsset _grenadeRuntime;
 
         [Header("Recoil")]
         [SerializeField] private FPSAnimationAsset fireClip;
@@ -62,6 +64,11 @@ namespace LR2.Weapons
         [SerializeField] private AttachmentGroup<BaseAttachment> barrelAttachments = new AttachmentGroup<BaseAttachment>();
         [SerializeField] private AttachmentGroup<BaseAttachment> gripAttachments = new AttachmentGroup<BaseAttachment>();
         [SerializeField] private List<AttachmentGroup<ScopeAttachment>> scopeGroups = new List<AttachmentGroup<ScopeAttachment>>();
+        [Tooltip("B136: Kinemation's own attachment behaviour (the active attachment of each group shows and links its grip/sight " +
+                 "layers, cycling works). Off = the old humanoid-driver setup, which hid every attachment and stripped its layers.")]
+        [SerializeField] private bool kinemationAttachments;
+        [Tooltip("B125 wall-tuck gate: at full ADS only 12 % of Kinemation's collision tuck is left. Kinemation itself tucks fully.")]
+        [SerializeField] private bool gateWallTuckInAds = true;
 
         [Header("LR2 Gunplay")]
         [SerializeField] private WeaponDefinition definition;
@@ -70,6 +77,8 @@ namespace LR2.Weapons
         [SerializeField] private ShellEjector shellEjector;
         [Tooltip("Bots see tracers more often so the player can read where fire comes from.")]
         [SerializeField] private int botTracerEvery = 1;
+        [Tooltip("B136 (user 11-22: a laser device on every gun without one): where the beam leaves the gun. Null = the muzzle.")]
+        [SerializeField] private Transform laserEmitter;
 
         public event Action Fired;
         public event Action AmmoChanged;
@@ -91,11 +100,24 @@ namespace LR2.Weapons
         public bool IsEmpty => AmmoInMagazine <= 0;
         public FireMode FireMode => _fireMode;
         public Transform Muzzle => muzzle != null ? muzzle : transform;
+        /// <summary>B136: the laser device's emitter when one is fitted and showing, else the muzzle.</summary>
+        public Transform LaserOrigin => laserEmitter != null && laserEmitter.gameObject.activeInHierarchy ? laserEmitter : Muzzle;
+        public bool HasLaserDevice => laserEmitter != null;
         public float ReloadProgress => IsReloading ? Mathf.Clamp01((Time.time - _reloadStart) / Mathf.Max(0.01f, _reloadDuration)) : 0f;
         /// <summary>0..1 over the part of the clip this reload actually plays (tactical reloads end early), for HUD bars.</summary>
         public float ReloadDisplayProgress => IsReloading ? Mathf.Clamp01(ReloadProgress / Mathf.Max(0.05f, _reloadEndAt)) : 0f;
         public override bool IsBusy => IsReloading || Time.time < _equipReadyAt;
         public override string DisplayName => definition != null ? definition.displayName : base.DisplayName;
+        /// <summary>B136: the definition says so, or a suppressor is the active barrel attachment.</summary>
+        public bool IsSuppressed => (definition != null && definition.suppressed) || _suppressorFitted;
+        public override bool HasEditableAttachments => kinemationAttachments &&
+            (scopeGroups.Count > 0 || barrelAttachments.attachments.Count > 1 || gripAttachments.attachments.Count > 1);
+        public override float GrenadeThrowDuration => FPSAnimationAsset.IsValid(grenadeClip) && grenadeClip.clip != null
+            ? grenadeClip.clip.length * 0.8f / Mathf.Max(0.1f, grenadeThrowRate) : 0f;
+        /// <summary>B136: the sight the gun is aimed through (null = its default aim point / iron sights).</summary>
+        public ScopeAttachment ActiveScope => scopeGroups.Count > 0 ? scopeGroups[_scopeIndex].GetActiveAttachment() : null;
+        public bool UsesKinemationAttachments => kinemationAttachments;
+        private bool _suppressorFitted;
 
         public bool CanFire => Owner != null && !IsReloading && AmmoInMagazine > 0 && Time.time >= _equipReadyAt && Owner.CanShootNow;
 
@@ -198,6 +220,31 @@ namespace LR2.Weapons
             // rays, sight lines and bullets all hit guns. Dropped guns get their own BoxCollider when they fall.
             foreach (var col in GetComponentsInChildren<Collider>(true))
                 if (col != null && !col.isTrigger) Destroy(col);
+            // B136: picture-in-picture scope cameras (ACOG, 1P29, long-range scope) start off; see UpdateScopeCameras
+            var cams = new List<Camera>();
+            foreach (var cam in GetComponentsInChildren<Camera>(true))
+                if (cam != null && cam.targetTexture != null) { cam.enabled = false; cams.Add(cam); }
+            _scopeCameras = cams.ToArray();
+        }
+
+        private Camera[] _scopeCameras = Array.Empty<Camera>();
+
+        /// <summary>
+        /// B136: a scope camera renders only for the local player and only for the sight being looked through (a dozen bots each
+        /// rendering an HDRP camera per scope would cost more than the whole map). It runs while the gun is out, not only while
+        /// aiming, so its auto exposure has settled by the time the player aims (the first pose check saw a dark lens).
+        /// </summary>
+        private void UpdateScopeCameras()
+        {
+            if (_scopeCameras.Length == 0) return;
+            var scope = ActiveScope;
+            bool look = Owner != null && Owner.IsLocalPlayer && !Owner.IsDead && scope != null;
+            foreach (var cam in _scopeCameras)
+            {
+                if (cam == null) continue;
+                bool on = look && cam.gameObject.activeInHierarchy && cam.transform.IsChildOf(scope.transform);
+                if (cam.enabled != on) cam.enabled = on;
+            }
         }
 
         private void EnsureAmmo()
@@ -294,6 +341,22 @@ namespace LR2.Weapons
 
         private void InitializeAttachments()
         {
+            if (kinemationAttachments)
+            {
+                // B136: Kinemation's demo behaviour. Every group shows its active attachment (main optic AND canted sight,
+                // grip, muzzle device) and links that attachment's layer settings (left-hand grip pose, sight offsets).
+                ShowOnlyActive(barrelAttachments);
+                ShowOnlyActive(gripAttachments);
+                foreach (var group in scopeGroups) ShowOnlyActive(group);
+                if (_fpsAnimator != null)
+                    foreach (var group in scopeGroups) group.Initialize(_fpsAnimator);
+                _scopeIndex = 0;
+                if (_entity != null && _baseAimPointCached) _entity.defaultAimPoint = _baseDefaultAimPoint;
+                UpdateAimPoint();
+                RefreshSuppressor();
+                return;
+            }
+
             DisableAttachments();
 
             // B49/B55: Strip any Generic-rig AttachHandLayerSettings from Kinemation attachments (e.g. Mk18 GripEmpty/GripMount)
@@ -336,6 +399,82 @@ namespace LR2.Weapons
             if (scope != null && scope.aimPoint != null) _entity.defaultAimPoint = scope.aimPoint;
         }
 
+        private static void ShowOnlyActive<T>(AttachmentGroup<T> group) where T : BaseAttachment
+        {
+            if (group == null || group.attachments == null) return;
+            var active = group.GetActiveAttachment();
+            foreach (var att in group.attachments)
+                if (att != null) att.gameObject.SetActive(att == active);
+        }
+
+        // B136: muzzle point follows a fitted suppressor (tracers and the flash start at its tip)
+        private Vector3 _muzzleBaseLocal;
+        private bool _muzzleBaseCached;
+
+        private void RefreshSuppressor()
+        {
+            var att = barrelAttachments != null ? barrelAttachments.GetActiveAttachment() : null;
+            string n = att != null ? att.name.ToLowerInvariant() : string.Empty;
+            // Kinemation's own names: AKHexagonSuppressor, Supperssor_Mk18 (sic); the Empty* entries are the "nothing fitted" slot
+            _suppressorFitted = att != null && att.gameObject.activeInHierarchy && !n.StartsWith("empty") &&
+                                (n.Contains("suppress") || n.Contains("supperss") || n.Contains("silenc"));
+            if (muzzle == null) return;
+            if (!_muzzleBaseCached)
+            {
+                _muzzleBaseLocal = muzzle.localPosition;
+                _muzzleBaseCached = true;
+            }
+            muzzle.localPosition = _muzzleBaseLocal;
+            if (!_suppressorFitted) return;
+            // the suppressor's furthest point along the barrel, measured from the bare muzzle
+            float reach = 0f;
+            Vector3 origin = muzzle.position, axis = muzzle.forward;
+            foreach (var r in att.GetComponentsInChildren<Renderer>())
+            {
+                var b = r.bounds;
+                for (int i = 0; i < 8; i++)
+                {
+                    var corner = b.center + Vector3.Scale(b.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+                    reach = Mathf.Max(reach, Vector3.Dot(corner - origin, axis));
+                }
+            }
+            if (reach > 0.005f && reach < 0.6f) muzzle.position = origin + axis * reach;
+        }
+
+        /// <summary>B136: Kinemation attachment editing (1 barrel, 2 grip, else the active sight group).</summary>
+        public override void OnAttachmentChanged(int attachmentTypeIndex)
+        {
+            if (!kinemationAttachments || _fpsAnimator == null) return;
+            if (attachmentTypeIndex == 1) { barrelAttachments.CycleAttachments(_fpsAnimator); RefreshSuppressor(); }
+            else if (attachmentTypeIndex == 2) gripAttachments.CycleAttachments(_fpsAnimator);
+            else
+            {
+                if (scopeGroups.Count == 0) return;
+                scopeGroups[_scopeIndex].CycleAttachments(_fpsAnimator);
+                UpdateAimPoint();
+                UpdateFieldOfView(Owner != null && Owner.IsAiming);
+            }
+            if (definition != null && definition.audio != null) LR2Audio.PlayAt(definition.audio.fireModeSwitch, transform.position, 0.7f);
+        }
+
+        /// <summary>B136: Kinemation's grenade throw (the rifles carry C_GrenadeThrow). The soldier spawns the grenade.</summary>
+        public override bool OnGrenadeThrow()
+        {
+            if (!FPSAnimationAsset.IsValid(grenadeClip) || _playables == null || IsReloading) return false;
+            OnFireReleased();
+            if (_grenadeRuntime == null)
+            {
+                _grenadeRuntime = Instantiate(grenadeClip);
+                _grenadeRuntime.hideFlags = HideFlags.HideAndDontSave;
+                var bt = _grenadeRuntime.blendTime;
+                bt.rateScale = grenadeThrowRate;
+                _grenadeRuntime.blendTime = bt;
+            }
+            _playables.PlayAnimation(_grenadeRuntime, 0f);
+            if (_cameraController != null && cameraGrenadeAnimation != null) _cameraController.PlayCameraAnimation(cameraGrenadeAnimation);
+            return true;
+        }
+
         /// <summary>Kinemation per-shot camera shake asset (the killcam replays it on the recorded shots).</summary>
         public FPSCameraShake CameraShakeAsset => cameraShake;
 
@@ -363,7 +502,7 @@ namespace LR2.Weapons
                             _runtimeAdsSettings.hideFlags = HideFlags.HideAndDontSave;
                             _runtimeProfile.settings[i] = _runtimeAdsSettings;
                         }
-                        else if (_runtimeProfile.settings[i] is KINEMATION.FPSAnimationFramework.Runtime.Layers.CollisionLayer.CollisionLayerSettings origCol)
+                        else if (gateWallTuckInAds && _runtimeProfile.settings[i] is KINEMATION.FPSAnimationFramework.Runtime.Layers.CollisionLayer.CollisionLayerSettings origCol)
                         {
                             // B125 (user 11-19: "during ADS, when I hit other obstacles"; -lr2AdsWallCheck: the full wall tuck swung
                             // the rifle 23 deg off the sight line in ADS). Same gate as LR2ContentBuilder.TuneHumanoidCollision,
@@ -554,6 +693,7 @@ namespace LR2.Weapons
 
         public override void Tick(float deltaTime)
         {
+            UpdateScopeCameras();
             if (definition != null) _bloom = Mathf.Max(0f, _bloom - definition.bloomRecovery * deltaTime);
             // B47: hold the climb for 0.10 s after the last shot, then recover at the pattern's own rate (damping 5: 80 % in ~0.32 s)
             if (_patternRuntime != null) _patternRuntime.damping = Time.time - _lastShotAt < RecoveryHoldSeconds ? 0f : _patternBaseDamping;
@@ -639,7 +779,7 @@ namespace LR2.Weapons
             if (definition != null) _bloom = Mathf.Min(definition.maxBloom, _bloom + definition.bloomPerShot);
 
             // Visuals / Kinemation
-            if (muzzleFlash != null) muzzleFlash.Play();
+            if (muzzleFlash != null && !_suppressorFitted) muzzleFlash.Play(); // B136: a fitted suppressor hides the flash
             if (shellEjector != null && definition != null && definition.audio != null)
                 shellEjector.Eject(owner.Movement != null ? owner.Movement.Velocity : Vector3.zero, definition.audio.shellCasings);
             if (_weaponAnimator != null)
@@ -674,14 +814,14 @@ namespace LR2.Weapons
             _lastShotTime = Time.time;
 
             // Gameplay events
-            bool suppressed = definition != null && definition.suppressed;
+            bool suppressed = IsSuppressed;
             if (combatant != null)
             {
                 combatant.stats.shotsFired++;
                 if (!suppressed) combatant.LastLoudShotTime = Time.time;
             }
             if (owner.Health != null) owner.Health.CancelSpawnProtection();
-            float radius = definition != null ? definition.audibleRadius : 60f;
+            float radius = (definition != null ? definition.audibleRadius : 60f) * (_suppressorFitted ? 0.35f : 1f);
             GameEvents.RaiseShotFired(new ShotEvent
             {
                 shooter = combatant,
@@ -707,26 +847,53 @@ namespace LR2.Weapons
             // Indoor check is cheap (2 rays) but only needed every few shots.
             if (_shotCounter % 4 == 1 || Time.time - _lastShotTime > 0.4f) _indoors = LR2Audio.IsIndoors(pos);
             float overheat = Mathf.Clamp01((_barrelHeat - 0.30f) / 0.70f);
+            float sup = _suppressorFitted ? 0.42f : 1f; // B136: suppressor fitted from the attachment menu
             float heatPitch = overheat > 0f ? Mathf.Lerp(1f, 1.16f, overheat) * (1f + UnityEngine.Random.Range(-0.03f, 0.07f) * overheat) : 1f;
+            float supPitch = _suppressorFitted ? 1.04f : 1f;
             if (combatant != null && combatant.IsLocalPlayer)
             {
-                bool first = Time.time - _lastShotTime > 0.35f && a.fireFirstShot.IsValid;
-                LR2Audio.PlayAt(first ? a.fireFirstShot : a.firePlayer, pos, 1f + overheat * 0.18f, 0f, false, heatPitch);
-                LR2Audio.PlayAt(Owner.IsAiming && a.fireMechAds.IsValid ? a.fireMechAds : a.fireMech, pos, 1f + overheat * 0.45f, 0f, false, heatPitch * (1f + overheat * 0.12f));
-                if (overheat > 0.25f && a.fireMech.IsValid)
-                    LR2Audio.PlayAt(a.fireMech, pos, 0.44f * overheat, 0.012f, true, 1.48f + overheat * 0.18f);
-                if (_shotCounter % 2 == 0 || !_triggerHeld) LR2Audio.PlayAt(a.TailFor(_indoors), pos, 1f, 0f, false, 1f + overheat * 0.08f);
-                LR2Audio.Duck(_indoors ? 0.75f : 0.55f);
+                if (_suppressorFitted)
+                {
+                    SoundSet shotSet = a.firePlayerSuppressed.IsValid ? a.firePlayerSuppressed : a.firePlayer;
+                    float shotVol = (a.firePlayerSuppressed.IsValid ? 0.96f : 0.42f) + overheat * 0.14f;
+                    LR2Audio.PlayAt(shotSet, pos, shotVol, 0f, false, heatPitch * (a.firePlayerSuppressed.IsValid ? 1f : supPitch));
+                    LR2Audio.PlayAt(Owner.IsAiming && a.fireMechAds.IsValid ? a.fireMechAds : a.fireMech, pos, 0.88f + overheat * 0.35f, 0f, false, heatPitch);
+                    SoundSet supTail = a.SuppressedTailFor(_indoors);
+                    if (supTail.IsValid && (_shotCounter % 2 == 0 || !_triggerHeld))
+                        LR2Audio.PlayAt(supTail, pos, _indoors ? 0.62f : 0.48f, 0f, false, 1f + overheat * 0.06f);
+                    LR2Audio.Duck(_indoors ? 0.30f : 0.22f);
+                }
+                else
+                {
+                    bool first = Time.time - _lastShotTime > 0.35f && a.fireFirstShot.IsValid;
+                    LR2Audio.PlayAt(first ? a.fireFirstShot : a.firePlayer, pos, 1f + overheat * 0.18f, 0f, false, heatPitch);
+                    LR2Audio.PlayAt(Owner.IsAiming && a.fireMechAds.IsValid ? a.fireMechAds : a.fireMech, pos, 1f + overheat * 0.45f, 0f, false, heatPitch * (1f + overheat * 0.12f));
+                    if (overheat > 0.25f && a.fireMech.IsValid)
+                        LR2Audio.PlayAt(a.fireMech, pos, 0.44f * overheat, 0.012f, true, 1.48f + overheat * 0.18f);
+                    if (_shotCounter % 2 == 0 || !_triggerHeld) LR2Audio.PlayAt(a.TailFor(_indoors), pos, 1f, 0f, false, 1f + overheat * 0.08f);
+                    LR2Audio.Duck(_indoors ? 0.75f : 0.55f);
+                }
             }
             else
             {
                 Vector3 listener = LR2Audio.ListenerPosition;
                 float dist = Vector3.Distance(listener, pos);
-                LR2Audio.PlayAtWithTravelTime(a.NpcShotForDistance(dist), pos, listener, 1f + overheat * 0.15f);
-                if (dist < 30f && (_shotCounter % 3 == 0)) LR2Audio.PlayAt(a.TailFor(_indoors), pos, 0.6f);
-                if (dist < 20f) LR2Audio.Duck(0.25f);
+                if (_suppressorFitted && a.fireNpcSuppressed.IsValid)
+                {
+                    LR2Audio.PlayAtWithTravelTime(a.fireNpcSuppressed, pos, listener, 0.85f + overheat * 0.12f);
+                    SoundSet supTail = a.SuppressedTailFor(_indoors);
+                    if (supTail.IsValid && dist < 20f && (_shotCounter % 3 == 0))
+                        LR2Audio.PlayAt(supTail, pos, 0.42f);
+                    if (dist < 12f) LR2Audio.Duck(0.14f);
+                }
+                else
+                {
+                    LR2Audio.PlayAtWithTravelTime(a.NpcShotForDistance(dist * (_suppressorFitted ? 2.5f : 1f)), pos, listener, (1f + overheat * 0.15f) * sup);
+                    if (!_suppressorFitted && dist < 30f && (_shotCounter % 3 == 0)) LR2Audio.PlayAt(a.TailFor(_indoors), pos, 0.6f);
+                    if (dist < 20f) LR2Audio.Duck(0.25f * sup);
+                }
             }
-            if (_shotCounter % 2 == 0 || !_triggerHeld) PlayEchoes(pos, a.TailFor(_indoors));
+            if (!_suppressorFitted && (_shotCounter % 2 == 0 || !_triggerHeld)) PlayEchoes(pos, a.TailFor(_indoors));
         }
 
         private void EnsureHeatFX()
@@ -937,6 +1104,7 @@ namespace LR2.Weapons
             if (_barrelGlowMat != null) Destroy(_barrelGlowMat);
             if (_runtimeAdsSettings != null) Destroy(_runtimeAdsSettings);
             if (_runtimeProfile != null) Destroy(_runtimeProfile);
+            if (_grenadeRuntime != null) Destroy(_grenadeRuntime);
         }
 
         private static readonly RaycastHit[] EchoHits = new RaycastHit[1];
@@ -993,7 +1161,10 @@ namespace LR2.Weapons
             _reloadDuration = hasClip
                 ? reloadClip.clip.length / _activeReloadRate
                 : (definition != null ? (_reloadEmpty ? definition.emptyReloadTime : definition.reloadTime) / reloadSpeedMultiplier : 2.4f);
-            _reloadEndAt = tacticalNow ? Mathf.Clamp(cues.magInAt + Mathf.Min(tacticalEndAfterMagIn, 0.005f), 0.3f, 1f) : 1f;
+            float emptyEnd = (hasClip && cues != null) ? Mathf.Clamp(cues.emptyReloadEndAt, 0.60f, 0.96f) : (hasClip ? 0.84f : 1f);
+            _reloadEndAt = tacticalNow
+                ? Mathf.Clamp(cues.magInAt + Mathf.Min(tacticalEndAfterMagIn, 0.005f), 0.3f, 0.92f)
+                : emptyEnd;
             _reloadStart = Time.time;
             IsReloading = true;
             _magOutPlayed = _magInPlayed = _boltPlayed = false;
@@ -1066,17 +1237,17 @@ namespace LR2.Weapons
             }
             if (t < _reloadEndAt) return;
 
-            bool tactical = _reloadEndAt < 1f;
+            bool earlyExit = _reloadEndAt < 0.99f;
+            bool tactical = _reloadEmpty == false && earlyExit;
             int need = ReloadCapacity - AmmoInMagazine;
             int take = Mathf.Min(need, ReserveAmmo);
             AmmoInMagazine += take;
             ReserveAmmo -= take;
             IsReloading = false;
-            if (tactical)
+            if (earlyExit)
             {
-                // Cut before the charging-handle part of the clip and blend the arms back to ready
-                // (0.3 s, with ReloadMotionBridge's 0.35 s ease-out: no end-of-reload jump, B16/D40).
-                if (_playables != null) _playables.StopAnimation(TacticalBlendOut);
+                // Cut before the robot's recovery gun rotation at the tail of the clip and smoothly blend back to ready (B136k).
+                if (_playables != null) _playables.StopAnimation(tactical ? TacticalBlendOut : EmptyBlendOut);
                 if (_weaponAnimator != null) { _weaponAnimator.Rebind(); _weaponAnimator.Play("Empty", 0, 0f); _weaponAnimator.Update(0f); }
             }
             if (_weaponAnimator != null) _weaponAnimator.speed = 1f;

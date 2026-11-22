@@ -90,6 +90,66 @@ MonoBehaviour:
     maxDistance: 80
     category: 1
     priority: 128
+  firePlayerSuppressed:
+    clips:
+    - {fileID: 8300000, guid: 71d56c103265d6a4192a747d0eda5bfb, type: 3}
+    - {fileID: 8300000, guid: 1d200ffdb9653834db2d9968aac6034c, type: 3}
+    - {fileID: 8300000, guid: c7701002b84440344b7b0d57c6ec6728, type: 3}
+    - {fileID: 8300000, guid: 766758909b995874dbef0768aa0aaeb0, type: 3}
+    - {fileID: 8300000, guid: ff4ea5c047ee06c489bc914db94547b2, type: 3}
+    - {fileID: 8300000, guid: 9e12a6a72e3d7884eaf95e0e4bcec93d, type: 3}
+    volume: 0.78
+    pitch: {x: 0.97, y: 1.03}
+    spatialBlend: 0.15
+    minDistance: 1.5
+    maxDistance: 25
+    category: 1
+    priority: 128
+  fireNpcSuppressed:
+    clips:
+    - {fileID: 8300000, guid: 5fe3e8ee0382243419e93fec03da72d8, type: 3}
+    - {fileID: 8300000, guid: f9c6ccb3a3d257a41af49ee6cbfb3d47, type: 3}
+    - {fileID: 8300000, guid: 7bfd16b9c03919443ab6f0ae76db2d7c, type: 3}
+    - {fileID: 8300000, guid: c02b55ce59a7d4143afeb9db57c60ba4, type: 3}
+    - {fileID: 8300000, guid: 328db2e28b1b76044a53d59b135ed07f, type: 3}
+    - {fileID: 8300000, guid: 1ceeccf0bde451241bc0f0c704bbaaf3, type: 3}
+    volume: 0.62
+    pitch: {x: 0.97, y: 1.03}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 35
+    category: 1
+    priority: 128
+  fireTailSuppressed:
+    clips:
+    - {fileID: 8300000, guid: 5926db63bb10df34fa78f8ca64532693, type: 3}
+    - {fileID: 8300000, guid: 6c44e6aa8a921a64ab05fe0279e135f2, type: 3}
+    - {fileID: 8300000, guid: 19de4abec9eb67540acb6121049da225, type: 3}
+    - {fileID: 8300000, guid: e4aff04380e2fd748b923c89e813187a, type: 3}
+    - {fileID: 8300000, guid: b2d9ed8eb6089dd43a57ed9d41a2cc65, type: 3}
+    - {fileID: 8300000, guid: 85c9305752dfdaf42b06fde8453b1bdc, type: 3}
+    volume: 0.34
+    pitch: {x: 0.97, y: 1.03}
+    spatialBlend: 0.35
+    minDistance: 1.5
+    maxDistance: 45
+    category: 1
+    priority: 128
+  fireTailInteriorSuppressed:
+    clips:
+    - {fileID: 8300000, guid: 5fab00f01c9cc664ba25b63ad78b1cff, type: 3}
+    - {fileID: 8300000, guid: fa4e771c208a6b945a0ecf69fac17d8c, type: 3}
+    - {fileID: 8300000, guid: ecf86194d0bbbfd468ab0224652cc5ba, type: 3}
+    - {fileID: 8300000, guid: 13d03ed256492e44b99c544e8fdeb58b, type: 3}
+    - {fileID: 8300000, guid: 86334d94c8ca3ee4894c3fc3b918aafa, type: 3}
+    - {fileID: 8300000, guid: 045b7c61382d8244f8dbaffcc69e61c9, type: 3}
+    volume: 0.44
+    pitch: {x: 0.97, y: 1.03}
+    spatialBlend: 0.35
+    minDistance: 1.5
+    maxDistance: 35
+    category: 1
+    priority: 128
   fireNpcClose:
     clips:
     - {fileID: 8300000, guid: a2c1f43668ab3734281c87aed0f16ece, type: 3}
@@ -224,6 +284,7 @@ MonoBehaviour:
     maxDistance: 10
     category: 0
     priority: 128
-  magOutAt: 0.18
-  magInAt: 0.55
-  boltAt: 0.8
+  magOutAt: 0.14
+  magInAt: 0.47
+  boltAt: 0.66
+  emptyReloadEndAt: 0.82

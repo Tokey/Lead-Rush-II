@@ -16,6 +16,8 @@ namespace LR2.World
         private const float MaxHandError = 0.03f;
         private const float MaxDeathAimBlend = 0.001f;
         private const float MinWeaponForwardDot = -0.08f;
+        private const float CloseEnemyDistance = 0.45f;
+        private const float CloseEnemyDistanceTolerance = 0.05f;
         private const float MaxMotionFootSlideSpeed = 0.35f;
         private const int MaxMusicPriority = 32;
         private sealed class ReloadIdlePose
@@ -104,6 +106,33 @@ namespace LR2.World
             return $"{(pass ? "PASS" : "FAIL")} Hands.OnGun: left={left:0.000}m right={right:0.000}m max={MaxHandError:0.000}m";
         }
 
+        /// <summary>
+        /// B136: Kinemation's robot solves its own arms onto the gun's IK targets (IK RightHand / IK LeftHand under the IK weapon
+        /// bone), so the hands must sit on those targets after the frame's animation; also reports the distance to the gun.
+        /// </summary>
+        public static string CheckHandsOnGunRobot(SoldierController soldier, LR2Firearm gun)
+        {
+            if (soldier == null || gun == null) return "FAIL Hands.OnGun: missing soldier or firearm";
+            var anim = soldier.Animator;
+            Transform lh = LR2Bones.Get(anim, HumanBodyBones.LeftHand), rh = LR2Bones.Get(anim, HumanBodyBones.RightHand);
+            Transform lt = FindChildNamed(soldier.transform, "IK LeftHand"), rt = FindChildNamed(soldier.transform, "IK RightHand");
+            if (lh == null || rh == null) return "FAIL Hands.OnGun: robot hand bones not found";
+            float left = lt != null ? Vector3.Distance(lh.position, lt.position) : -1f;
+            float right = rt != null ? Vector3.Distance(rh.position, rt.position) : -1f;
+            Bounds b = new Bounds(gun.transform.position, Vector3.zero);
+            bool hasB = false;
+            foreach (var r in gun.GetComponentsInChildren<Renderer>())
+            {
+                if (r == null || !r.enabled || r is ParticleSystemRenderer || r is LineRenderer) continue;
+                if (!hasB) { b = r.bounds; hasB = true; } else b.Encapsulate(r.bounds);
+            }
+            float lg = hasB ? Vector3.Distance(lh.position, b.ClosestPoint(lh.position)) : -1f;
+            float rg = hasB ? Vector3.Distance(rh.position, b.ClosestPoint(rh.position)) : -1f;
+            bool pass = left >= 0f && right >= 0f && left < MaxHandError && right < MaxHandError && rg < MaxHandError;
+            return $"{(pass ? "PASS" : "FAIL")} Hands.OnGun (robot): IK target error left={left:0.000}m right={right:0.000}m, " +
+                   $"to gun left={lg:0.000}m right={rg:0.000}m max={MaxHandError:0.000}m";
+        }
+
         public static string CheckHandsOnGun(RetargetProxy proxy, LR2Firearm gun)
         {
             if (proxy == null) return "FAIL Hands.OnGun: missing retarget proxy";
@@ -177,6 +206,22 @@ namespace LR2.World
             return $"{(pass ? "PASS" : "FAIL")} Death.CloseWeaponSafety: eyePlane={forwardDot:0.000}m min={MinWeaponForwardDot:0.000}m forbiddenMask=0x{forbiddenBits:X}";
         }
 
+        public static string CheckCloseEnemyDistance(Vector3 playerPosition, Vector3 enemyPosition,
+            Vector3 aimForward, float targetDistance = CloseEnemyDistance)
+        {
+            if (aimForward.sqrMagnitude <= 1e-6f)
+                return "FAIL Death.CloseEnemyStaged: zero aim direction";
+
+            Vector3 forward = aimForward.normalized;
+            Vector3 delta = enemyPosition - playerPosition;
+            float distance = delta.magnitude;
+            float forwardDistance = Vector3.Dot(delta, forward);
+            float lateralDistance = Vector3.ProjectOnPlane(delta, forward).magnitude;
+            bool pass = forwardDistance > 0f && lateralDistance <= 0.08f &&
+                        Mathf.Abs(distance - targetDistance) <= CloseEnemyDistanceTolerance;
+            return $"{(pass ? "PASS" : "FAIL")} Death.CloseEnemyStaged: distance={distance:0.000}m forward={forwardDistance:0.000}m lateral={lateralDistance:0.000}m target={targetDistance:0.000}m tolerance={CloseEnemyDistanceTolerance:0.000}m";
+        }
+
         public static string CheckMusicSource(AudioSource source)
         {
             if (source == null)
@@ -240,6 +285,22 @@ namespace LR2.World
             return $"{(pass ? "PASS" : "FAIL")} ADS.SpeedAndFovSync: gun={weaponName} adsTime={adsTime:0.00}s aimingSpeed={aimingSpeed:0.00}/s inGun={inGunMs:0}ms inFov={inFovMs:0}ms outGun={outGunMs:0}ms outFov={outFovMs:0}ms max={maxMs:0}ms";
         }
 
+        public static string CheckTracerVisibilityState(bool hasTracer, float width, float length, float speed,
+            float minPixels, float ignitionDistance, float intensity, bool textureReadable, float headAlpha, float tailAlpha)
+        {
+            bool uvHeadBright = textureReadable && headAlpha > tailAlpha;
+            bool pass = hasTracer && width >= 0.025f && length >= 7f && speed > 0f && speed <= 420f &&
+                        minPixels >= 2f && ignitionDistance >= 0f && ignitionDistance <= 1.2f &&
+                        intensity >= 120f && uvHeadBright;
+            return $"{(pass ? "PASS" : "FAIL")} FX.TracerVisibility: present={hasTracer} w={width:0.000}m len={length:0.0}m speed={speed:0}m/s minPx={minPixels:0.0} ign={ignitionDistance:0.0}m intensity={intensity:0} texReadable={textureReadable} headA={headAlpha:0.00} tailA={tailAlpha:0.00}";
+        }
+
+        public static string CheckMainMenuHeroVisibleState(bool heroFound, int visibleHeroRenderers, int visibleHostileRenderers)
+        {
+            bool pass = heroFound && visibleHeroRenderers > 0 && visibleHostileRenderers > 0;
+            return $"{(pass ? "PASS" : "FAIL")} MainMenu.HeroVisible: hero={heroFound} visibleHeroRenderers={visibleHeroRenderers} visibleHostileRenderers={visibleHostileRenderers}";
+        }
+
         public static string[] CheckB57KnownBadFixtures()
         {
             string deathBad = CheckDeathAimResetState(true, true, 1f, true, true, true, true);
@@ -250,21 +311,32 @@ namespace LR2.World
                 Vector3.forward, LR2Layers.EnvironmentMask | (1 << LR2Layers.Character));
             string weaponGood = CheckCloseWeaponSafety(Vector3.forward * 0.05f, Vector3.zero,
                 Vector3.forward, LR2Layers.EnvironmentMask);
+            string closeEnemyBad = CheckCloseEnemyDistance(Vector3.zero, Vector3.back * CloseEnemyDistance,
+                Vector3.forward);
+            string closeEnemyGood = CheckCloseEnemyDistance(Vector3.zero, Vector3.forward * CloseEnemyDistance,
+                Vector3.forward);
             string gainBad = CheckMusicGainDuringGunfire(0.30f, 0.20f);
             string gainGood = CheckMusicGainDuringGunfire(0.20f, 0.30f);
             string musicSourceBad = CheckMusicSourceState("known-bad", 128, false, false, false);
             string musicSourceGood = CheckMusicSourceState("known-good", 8, true, true, true);
             string slideBad = CheckMotionFootSlide(1.50f);
             string slideGood = CheckMotionFootSlide(0.10f);
+            string tracerBad = CheckTracerVisibilityState(true, 0.014f, 4f, 620f, 1.4f, 2.5f, 44f, true, 0.20f, 0.80f);
+            string tracerGood = CheckTracerVisibilityState(true, 0.028f, 8.5f, 360f, 2.6f, 0.8f, 160f, true, 0.90f, 0.20f);
+            string heroBad = CheckMainMenuHeroVisibleState(true, 0, 0);
+            string heroGood = CheckMainMenuHeroVisibleState(true, 2, 1);
 
             return new[]
             {
                 $"{(deathBad.StartsWith("FAIL", StringComparison.Ordinal) && deathGood.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL")} QA.KnownBad.DeathAimReset: badCase=({deathBad}) goodCase=({deathGood})",
                 $"{(adsBad.StartsWith("FAIL", StringComparison.Ordinal) && adsGood.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL")} QA.KnownBad.AdsSpeedAndFovSync: badCase=({adsBad}) goodCase=({adsGood})",
                 $"{(weaponBad.StartsWith("FAIL", StringComparison.Ordinal) && weaponGood.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL")} QA.KnownBad.CloseWeaponSafety: badCase=({weaponBad}) goodCase=({weaponGood})",
+                $"{(closeEnemyBad.StartsWith("FAIL", StringComparison.Ordinal) && closeEnemyGood.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL")} QA.KnownBad.CloseEnemyStaging: badCase=({closeEnemyBad}) goodCase=({closeEnemyGood})",
                 $"{(gainBad.StartsWith("FAIL", StringComparison.Ordinal) && gainGood.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL")} QA.KnownBad.MusicGain: badCase=({gainBad}) goodCase=({gainGood})",
                 $"{(musicSourceBad.StartsWith("FAIL", StringComparison.Ordinal) && musicSourceGood.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL")} QA.KnownBad.MusicSourcePriority: badCase=({musicSourceBad}) goodCase=({musicSourceGood})",
-                $"{(slideBad.StartsWith("FAIL", StringComparison.Ordinal) && slideGood.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL")} QA.KnownBad.FootSlide: badCase=({slideBad}) goodCase=({slideGood})"
+                $"{(slideBad.StartsWith("FAIL", StringComparison.Ordinal) && slideGood.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL")} QA.KnownBad.FootSlide: badCase=({slideBad}) goodCase=({slideGood})",
+                $"{(tracerBad.StartsWith("FAIL", StringComparison.Ordinal) && tracerGood.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL")} QA.KnownBad.FX.TracerVisibility: badCase=({tracerBad}) goodCase=({tracerGood})",
+                $"{(heroBad.StartsWith("FAIL", StringComparison.Ordinal) && heroGood.StartsWith("PASS", StringComparison.Ordinal) ? "PASS" : "FAIL")} QA.KnownBad.MainMenu.HeroVisible: badCase=({heroBad}) goodCase=({heroGood})"
             };
         }
 

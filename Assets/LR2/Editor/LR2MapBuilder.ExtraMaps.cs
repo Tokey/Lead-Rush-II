@@ -56,14 +56,14 @@ namespace LR2.EditorTools
                 float innerDoor = 2.4f;
                 Vector4 dSpec(float off) => new Vector4(off, innerDoor, 0f, 2.5f);
                 Vector4 wSpec(float off) => new Vector4(off, 1.8f, 0.95f, 2.4f);
-                Wall("WallN", b, new Vector3(x0, 0.04f, z1), new Vector3(x1, 0.04f, z1), hgt, th, _m.wallPlaster, d < 14f ? dSpec(w * 0.5f) : wSpec(w * 0.3f), dSpec(w * 0.72f));
+                Wall("WallN", b, new Vector3(x0, 0.04f, z1), new Vector3(x1, 0.04f, z1), hgt, th, _m.wallPlaster, !glassOnSouthWall ? wSpec(w * 0.3f) : (d < 14f ? dSpec(w * 0.5f) : wSpec(w * 0.3f)), dSpec(w * 0.72f));
                 Wall("WallS", b, new Vector3(x0, 0.04f, z0), new Vector3(x1, 0.04f, z0), hgt, th, _m.wallPlaster, dSpec(w * 0.35f), wSpec(w * 0.75f));
                 Wall("WallW", b, new Vector3(x0, 0.04f, z0), new Vector3(x0, 0.04f, z1), hgt, th, _m.wallPlaster, dSpec(d * 0.55f));
                 Wall("WallE", b, new Vector3(x1, 0.04f, z0), new Vector3(x1, 0.04f, z1), hgt, th, _m.wallPlaster, dSpec(d * 0.45f), wSpec(d * 0.8f));
                 // Breakable glass fitted precisely inside the street-facing window frame (never blocks doorways)
                 float gx = x0 + (glassOnSouthWall ? w * 0.75f : w * 0.3f);
                 float gz = glassOnSouthWall ? z0 : z1;
-                Box("Glass_" + name, b, new Vector3(gx, 1.71f, gz), new Vector3(1.8f, 1.45f, 0.04f), _m.glass, LR2Layers.Default, SurfaceType.Glass);
+                Box("Glass_" + name, b, new Vector3(gx, 1.71f, gz), new Vector3(1.74f, 1.45f, 0.04f), _m.glass, LR2Layers.Default, SurfaceType.Glass);
                 if (brokenRoof)
                 {
                     var rw = Box("RoofWest", b, new Vector3(x0 + w * 0.26f, hgt + 0.14f, cz), new Vector3(w * 0.52f, 0.22f, d + 0.4f), _m.concrete, LR2Layers.Default, SurfaceType.Concrete);
@@ -271,6 +271,9 @@ namespace LR2.EditorTools
             // Cross-intersection rim fills separate character silhouettes from sandstone walls at Central Intersection (#0) without extra shadow casters.
             AddLight(_lighting, "CentralCrossRimW", new Vector3(-4.2f, 3.6f, 0f), Quaternion.identity, LightType.Point, 3400f, 3800f, 13f, 0f, false);
             AddLight(_lighting, "CentralCrossRimE", new Vector3(4.2f, 3.6f, 0f), Quaternion.identity, LightType.Point, 6200f, 2800f, 13f, 0f, false);
+            // B92: shadowless localized practical accent lights
+            AddLight(_lighting, "Accent_PharmacyDoorNE", new Vector3(12.2f, 3.4f, 11.2f), Quaternion.identity, LightType.Point, 4200f, 3200f, 15f, 0f, false);
+            AddLight(_lighting, "Accent_ApartmentAlleySW", new Vector3(-25.2f, 3.6f, -15.5f), Quaternion.identity, LightType.Point, 5600f, 3000f, 15f, 0f, false);
             BuildCustomLighting("LR2_Deadsector_Profile", sunElev: 25f, sunAz: 225f, sunLux: 20000f, sunTemp: 4300f,
                 fogMfp: 130f, fogColor: new Color(0.46f, 0.50f, 0.54f), exposureComp: 0.28f, contrast: 14f, saturation: -14f,
                 rainDefaultPreset: 2, evMin: 2.6f, evMax: 12.2f,
@@ -467,6 +470,9 @@ namespace LR2.EditorTools
             AddLight(_lighting, "TrenchFillN", new Vector3(0f, 1.8f, 6.5f), Quaternion.identity, LightType.Point, 5200f, 2600f, 14f, 0f, false);
             AddLight(_lighting, "TrenchFillS", new Vector3(0f, 1.8f, -6.5f), Quaternion.identity, LightType.Point, 5200f, 2600f, 14f, 0f, false);
             AddLight(_lighting, "ContAlleyFillW", new Vector3(-19.5f, 3.8f, 0f), Quaternion.identity, LightType.Point, 5200f, 2600f, 14f, 0f, false);
+            // B92: shadowless localized practical accent lights
+            AddLight(_lighting, "Accent_CatwalkMid", new Vector3(18.5f, 5.2f, 0f), Quaternion.identity, LightType.Point, 4600f, 3200f, 16f, 0f, false);
+            AddLight(_lighting, "Accent_WestYardBounce", new Vector3(-14.5f, 3.6f, 9.5f), Quaternion.identity, LightType.Point, 5400f, 3000f, 15f, 0f, false);
             BuildCustomLighting("LR2_Foundry_Profile", sunElev: 34f, sunAz: 245f, sunLux: 24000f, sunTemp: 4300f,
                 fogMfp: 140f, fogColor: new Color(0.46f, 0.49f, 0.50f), exposureComp: 0.25f, contrast: 16f, saturation: -6f,
                 rainDefaultPreset: 0, evMin: 2.6f, evMax: 12.2f,

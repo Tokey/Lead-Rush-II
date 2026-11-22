@@ -10,8 +10,10 @@ Run commands from the Unity project root unless a command explicitly names a pro
 | LR2 parallel Unity worker | Junctions `Assets`/`Packages`/`ProjectSettings` to `H:\Unity Projects\Builds\LR2_ParallelWorker` so a second `Unity.exe` builds or tests concurrently | `powershell -ExecutionPolicy Bypass -File Tools\LR2ParallelWorker.ps1` | Non-blocking builds, visible QA, or `-lr2PoseCheck` while main Editor is open |
 | LR2 content builder | Builds FX, audio, weapons and soldier content | `LR2ContentBuilder` methods through `LR2BuildPipeline` | Runtime assets under `Assets/LR2` |
 | LR2 map builder | Creates the map scenes and map presentation | `LR2MapBuilder` / `LR2BuildPipeline` | Four map scenes plus preview assets |
+| LR2 scope & grenade builder | Upgrades PiP optic materials to circular `LR2/PipScope` & binds `AA_LR2_GrenadeThrow` | `LR2ScopeBuilder.UpgradePipScopesAndGrenades` | Circular clipped scope materials + grenade throw clip |
+| LR2 prop & spawn audit | Audits thin geometry, squashed pack props (>2.2x), prop overlap, floating props (>8 cm) & spawn capsule clearance | Unity menu `LR2 > Prop Audit` / `LR2.EditorTools.LR2PropAudit.RunBatch` | `Logs/LR2_PropAudit/report.txt` |
 | LR2 glass builder | Creates clean, dirty and cracked HDRP glass materials | Unity menu `LR2 > Build Glass Materials` | `M_LR2_Glass_*` materials and mask textures |
-| README/media builders | Creates and refreshes in-game screenshots and previews | `LR2MapPreviewCapture` and QA capture helpers | `Docs/Media` and map preview PNGs |
+| README/media builders | Creates and refreshes in-game screenshots, previews & 24-frame combat GIF sequences (`-lr2GifDir`) | `LR2MapPreviewCapture` and `LR2ReadmeMediaRunner` | `Docs/Media`, `Temp/GifFrames` / `-lr2GifDir`, and map preview PNGs |
 
 ## QA and smoke tests
 
@@ -84,9 +86,9 @@ Run commands from the Unity project root unless a command explicitly names a pro
 
 ## Tuning ADS sway (Kinemation animator layers)
 
-Every LR2 rifle (MK18, AK-12, AK-74N, FAL) uses Kinemation's `Assets/KinemationDemo/AnimatorProfiles/AnimatorProfile_Rifle_Humanoid`
-and the MK23 uses `AnimatorProfile_Pistol_Humanoid` (the soldiers are Humanoid rigs; `AnimatorProfile_Mk18` is the demo's Generic-rig
-profile and is not used). Select the profile and press **Edit Layer** next to a layer, as in Kinemation's videos. All 13 layers are there.
+- **Rig note (`B136`, `2026-11-22`):** Soldiers run on Kinemation's OG `FPSGenericPlayer` Generic rig (`LR2ContentBuilder.Robot.cs`) with its native `AnimatorProfile` Generic weapon profiles (`LR2ScopeBuilder.UpgradePipScopesAndGrenades` upgrades PiP scope materials to `LR2/PipScope` and binds `AA_LR2_GrenadeThrow`).
+Every LR2 rifle (MK18, AK-12, AK-74N, FAL) uses Kinemation's `Assets/KinemationDemo/AnimatorProfiles/AnimatorProfile_Rifle_Humanoid` (or OG Generic profile under `B136`)
+and the MK23 uses `AnimatorProfile_Pistol_Humanoid`. Select the profile and press **Edit Layer** next to a layer, as in Kinemation's videos. All 13 layers are there.
 
 | What to change | Where |
 |---|---|

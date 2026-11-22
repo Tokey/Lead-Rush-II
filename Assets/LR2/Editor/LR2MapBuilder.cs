@@ -978,6 +978,17 @@ namespace LR2.EditorTools
 
             if (has)
             {
+                static Vector3 ClampSquash(Vector3 v)
+                {
+                    float x = Mathf.Max(0.05f, v.x), y = Mathf.Max(0.05f, v.y), z = Mathf.Max(0.05f, v.z);
+                    float g = Mathf.Pow(x * y * z, 1f / 3f);
+                    const float maxHalf = 1.42f; // <= 2.02x max/min (cleanly under LR2PropAudit 2.2x threshold)
+                    return new Vector3(
+                        Mathf.Clamp(x, g / maxHalf, g * maxHalf),
+                        Mathf.Clamp(y, g / maxHalf, g * maxHalf),
+                        Mathf.Clamp(z, g / maxHalf, g * maxHalf));
+                }
+
                 bool targetWideX = targetSize.x >= targetSize.z;
                 bool meshWideX = local.size.x >= local.size.z;
                 bool rotate90 = Mathf.Max(targetSize.x, targetSize.z) > 1.3f * Mathf.Min(targetSize.x, targetSize.z)
@@ -989,17 +1000,17 @@ namespace LR2.EditorTools
                     float mx = Mathf.Max(0.05f, local.size.z);
                     float my = Mathf.Max(0.05f, local.size.y);
                     float mz = Mathf.Max(0.05f, local.size.x);
-                    Vector3 s = new Vector3(targetSize.x / mx, targetSize.y / my, targetSize.z / mz);
+                    Vector3 s = ClampSquash(new Vector3(targetSize.x / mx, targetSize.y / my, targetSize.z / mz));
                     vis.transform.localScale = new Vector3(s.z, s.y, s.x);
                     Vector3 rotatedCenter = Quaternion.Euler(0f, 90f, 0f) * new Vector3(local.center.x * s.z, local.center.y * s.y, local.center.z * s.x);
                     vis.transform.localPosition = -rotatedCenter;
                 }
                 else
                 {
-                    Vector3 s = new Vector3(
+                    Vector3 s = ClampSquash(new Vector3(
                         targetSize.x / Mathf.Max(0.05f, local.size.x),
                         targetSize.y / Mathf.Max(0.05f, local.size.y),
-                        targetSize.z / Mathf.Max(0.05f, local.size.z));
+                        targetSize.z / Mathf.Max(0.05f, local.size.z)));
                     vis.transform.localScale = s;
                     vis.transform.localPosition = -Vector3.Scale(local.center, s);
                 }
@@ -1646,8 +1657,8 @@ namespace LR2.EditorTools
             ApplyHdriSky(ve, profile, "Assets/LeartesStudios/Art/Textures/T_HDRI_01.HDR", exposureEv: 11.6f, rotationDeg: 38f);
             // Global indirect/sky visibility floor so dark shadows & sheltered walls keep clear enemy silhouettes
             var ilcGlobal = profile.Add<IndirectLightingController>(true);
-            ilcGlobal.indirectDiffuseLightingMultiplier.Override(1.95f);
-            ilcGlobal.reflectionLightingMultiplier.Override(1.30f);
+            ilcGlobal.indirectDiffuseLightingMultiplier.Override(2.15f);
+            ilcGlobal.reflectionLightingMultiplier.Override(1.35f);
             var fog = profile.Add<Fog>(true);
             fog.enabled.Override(true);
             fog.meanFreePath.Override(_cfg.fogMeanFreePath);
@@ -1660,8 +1671,8 @@ namespace LR2.EditorTools
             fog.maxFogDistance.Override(3000f);
             var exposure = profile.Add<Exposure>(true);
             exposure.mode.Override(ExposureMode.AutomaticHistogram);
-            exposure.compensation.Override(Mathf.Max(_cfg.exposureCompensation, 0.25f));
-            exposure.limitMin.Override(Mathf.Min(_cfg.exposureLimitMin, 2.6f));
+            exposure.compensation.Override(Mathf.Max(_cfg.exposureCompensation, 0.45f));
+            exposure.limitMin.Override(Mathf.Min(_cfg.exposureLimitMin, 2.4f));
             exposure.limitMax.Override(Mathf.Min(_cfg.exposureLimitMax, 12.2f));
             exposure.adaptationMode.Override(AdaptationMode.Progressive);
             exposure.adaptationSpeedDarkToLight.Override(2.8f);
@@ -1756,6 +1767,13 @@ namespace LR2.EditorTools
             AddLight(_lighting, "SaltworksPlazaFillN", new Vector3(0f, 4.5f, 12f), Quaternion.identity, LightType.Point, 5000f, 3800f, 20f, 0f, false);
             AddLight(_lighting, "SaltworksPlazaFillW", new Vector3(-12.5f, 4.5f, 6f), Quaternion.identity, LightType.Point, 4800f, 3600f, 20f, 0f, false);
             AddLight(_lighting, "SaltworksPlazaFillE", new Vector3(12.5f, 4.5f, 0f), Quaternion.identity, LightType.Point, 4800f, 3600f, 20f, 0f, false);
+            // B92: shadowless practical accent lights at key dark corners & doorways
+            AddLight(_lighting, "Accent_QuayCraneW", new Vector3(-20.5f, 3.8f, 16.5f), Quaternion.identity, LightType.Point, 5600f, 3400f, 16f, 0f, false);
+            AddLight(_lighting, "Accent_ControlStair", new Vector3(4.5f, 4.2f, -3.5f), Quaternion.identity, LightType.Point, 4800f, 3200f, 14f, 0f, false);
+            AddLight(_lighting, "Accent_WarehouseSouthDoor", new Vector3(0f, 3.6f, -21.8f), Quaternion.identity, LightType.Point, 4200f, 3400f, 16f, 0f, false);
+            AddLight(_lighting, "Accent_ContainerAlleyN", new Vector3(19.5f, 3.8f, 11.5f), Quaternion.identity, LightType.Point, 5400f, 3200f, 15f, 0f, false);
+            AddLight(_lighting, "Accent_WestWorkshopYard", new Vector3(-13.5f, 3.6f, 2.5f), Quaternion.identity, LightType.Point, 3800f, 3200f, 16f, 0f, false);
+            AddLight(_lighting, "Accent_EastContainerAlley", new Vector3(12.5f, 3.6f, 0.5f), Quaternion.identity, LightType.Point, 4000f, 3200f, 16f, 0f, false);
 
             foreach (var bp in new[] { new Vector3(-11.5f, 0f, 7.5f), new Vector3(11.5f, 0f, -4.5f), new Vector3(-4.5f, 0f, 17f), new Vector3(7.5f, 0f, 10.5f) })
                 SpawnBurningBarrel(_lighting, _props, G(bp));
@@ -1951,12 +1969,12 @@ namespace LR2.EditorTools
             Spawn(new Vector3(24f, 0.05f, -11f), -60f, TeamId.Bravo);
             Spawn(new Vector3(23f, 0.05f, 9.5f), -120f, TeamId.Bravo);
             Spawn(new Vector3(25f, 0.05f, -3f), -90f, TeamId.Bravo);
-            Spawn(new Vector3(17.5f, 0.05f, -15.5f), -45f, TeamId.Bravo);
+            Spawn(new Vector3(16.0f, 0.05f, -17.5f), -45f, TeamId.Bravo);
             Spawn(new Vector3(23.5f, 0.05f, 4f), -90f, TeamId.Bravo);
             Spawn(new Vector3(17f, 0.05f, 15f), -135f, TeamId.Bravo);
             Spawn(new Vector3(0f, 0.05f, 19.5f), 180f, TeamId.None);
-            Spawn(new Vector3(-10f, 0.05f, -20f), 0f, TeamId.None);
-            Spawn(new Vector3(10f, 0.05f, -20f), 0f, TeamId.None);
+            Spawn(new Vector3(-8.5f, 0.05f, -16.5f), 0f, TeamId.None);
+            Spawn(new Vector3(8.5f, 0.05f, -16.5f), 0f, TeamId.None);
             Spawn(new Vector3(0f, 0.05f, -6f), 0f, TeamId.None, false);
 
             // Tactical points
@@ -2377,12 +2395,67 @@ namespace LR2.EditorTools
                 if (bad)
                 {
                     Object.DestroyImmediate(tr.gameObject);
+                    candidates.RemoveAt(i);
                     removed++;
                 }
             }
 
+            // B99: Final grounding pass after MTV nudges so no surviving movable prop floats above floors/terrain
+            int grounded = 0;
+            for (int i = candidates.Count - 1; i >= 0; i--)
+            {
+                var tr = candidates[i];
+                if (tr == null) continue;
+                bool isOvergrowth = nature != null && tr.parent != null && tr.parent.name == "Overgrowth";
+                if (isOvergrowth || !TryBounds(tr, out var b)) continue;
+                bool isPropGroup = props != null && tr.IsChildOf(props);
+                Vector3 probe = new Vector3(b.center.x, b.min.y + 0.35f, b.center.z);
+                if (RaycastStaticFloor(probe, 4.0f, out var gHit))
+                {
+                    float gap = b.min.y - gHit.point.y;
+                    if (gap > 0.02f || gap < -0.18f)
+                    {
+                        tr.position += Vector3.up * (gHit.point.y - b.min.y - 0.01f);
+                        grounded++;
+                    }
+                }
+                else if (isPropGroup)
+                {
+                    Object.DestroyImmediate(tr.gameObject);
+                    removed++;
+                }
+            }
+
+            // B85: Guarantee every SpawnPoint clears the soldier capsule after final prop placement
+            if (spawns != null)
+            {
+                Physics.SyncTransforms();
+                foreach (var sp in spawns.GetComponentsInChildren<SpawnPoint>(true))
+                {
+                    if (sp == null || SpawnPoint.IsClear(sp.transform.position)) continue;
+                    Vector3 orig = sp.transform.position;
+                    bool fixedSp = false;
+                    for (float r = 0.5f; r <= 2.75f && !fixedSp; r += 0.5f)
+                    {
+                        for (int k = 0; k < 12; k++)
+                        {
+                            float ang = k * (360f / 12f) * Mathf.Deg2Rad;
+                            Vector3 probe = orig + new Vector3(Mathf.Cos(ang) * r, 0f, Mathf.Sin(ang) * r);
+                            if (RaycastStaticFloor(probe + Vector3.up * 1.5f, 3.0f, out var floorHit))
+                                probe.y = floorHit.point.y + 0.05f;
+                            if (SpawnPoint.IsClear(probe))
+                            {
+                                sp.transform.position = probe;
+                                fixedSp = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             Physics.SyncTransforms();
-            Debug.Log($"[LR2] Anti-clip ({mapName}): adjusted={adjusted}, removed={removed} overlapping props.");
+            Debug.Log($"[LR2] Anti-clip ({mapName}): adjusted={adjusted}, grounded={grounded}, removed={removed} overlapping/floating props.");
         }
 
         // ================================================================================================= destructible objects
@@ -2717,40 +2790,56 @@ namespace LR2.EditorTools
                 var skullMask = AssetDatabase.LoadAssetAtPath<Material>("Assets/LR2/Materials/Characters/M_FaceMask_GhostSkull.mat");
                 var enemyMask = AssetDatabase.LoadAssetAtPath<Material>("Assets/LR2/Materials/Characters/M_FaceMask_EnemyMarauder.mat");
                 var sv = hero.GetComponent<SoldierVisuals>();
-                if (sv != null)
-                {
-                    sv.SetGear(alliedUniform, enemyUniform, skullMask, enemyMask);
-                    sv.ApplyMaterialsNow(true);
-                }
                 var swatVis = hero.transform.Find("SWAT_Visual");
-                foreach (var r in hero.GetComponentsInChildren<Renderer>(true))
+                if (swatVis != null)
                 {
-                    bool underSwat = swatVis != null && r.transform.IsChildOf(swatVis);
-                    bool underWeapon = r.transform.GetComponentInParent<Weapons.LR2Item>(true) != null;
-                    if (!underSwat && (!underWeapon || r is SkinnedMeshRenderer)) r.enabled = false;
-                    else r.enabled = true;
-                }
-                foreach (var smr in hero.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-                {
-                    if (swatVis != null && !smr.transform.IsChildOf(swatVis)) continue;
-                    var mats = smr.sharedMaterials;
-                    bool changed = false;
-                    for (int mi = 0; mi < mats.Length; mi++)
+                    if (sv != null)
                     {
-                        if (mats[mi] == null) continue;
-                        string mn = mats[mi].name.ToLowerInvariant();
-                        if ((mn.Contains("head") || mn.Contains("facemask") || mn.Contains("skull") || mn.Contains("balaclava")) && skullMask != null)
-                        {
-                            mats[mi] = skullMask;
-                            changed = true;
-                        }
-                        else if ((mn.Contains("body") || mn.Contains("uniform")) && alliedUniform != null)
-                        {
-                            mats[mi] = alliedUniform;
-                            changed = true;
-                        }
+                        sv.SetGear(alliedUniform, enemyUniform, skullMask, enemyMask);
+                        sv.ApplyMaterialsNow(true);
                     }
-                    if (changed) smr.sharedMaterials = mats;
+                    foreach (var r in hero.GetComponentsInChildren<Renderer>(true))
+                    {
+                        bool underSwat = r.transform.IsChildOf(swatVis);
+                        bool underWeapon = r.transform.GetComponentInParent<Weapons.LR2Item>(true) != null;
+                        if (!underSwat && (!underWeapon || r is SkinnedMeshRenderer)) r.enabled = false;
+                        else r.enabled = true;
+                    }
+                    foreach (var smr in hero.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    {
+                        if (!smr.transform.IsChildOf(swatVis)) continue;
+                        var mats = smr.sharedMaterials;
+                        bool changed = false;
+                        for (int mi = 0; mi < mats.Length; mi++)
+                        {
+                            if (mats[mi] == null) continue;
+                            string mn = mats[mi].name.ToLowerInvariant();
+                            if ((mn.Contains("head") || mn.Contains("facemask") || mn.Contains("skull") || mn.Contains("balaclava")) && skullMask != null)
+                            {
+                                mats[mi] = skullMask;
+                                changed = true;
+                            }
+                            else if ((mn.Contains("body") || mn.Contains("uniform")) && alliedUniform != null)
+                            {
+                                mats[mi] = alliedUniform;
+                                changed = true;
+                            }
+                        }
+                        if (changed) smr.sharedMaterials = mats;
+                    }
+                }
+                else
+                {
+                    // B136 (Kinemation robot rig): keep teamSwaps intact for HeroSoldier (allied blue) and MenuCinematic clones (hostiles crimson),
+                    // and make all body + head renderers visible in the third-person menu scene.
+                    if (sv != null) sv.ApplyMaterialsNow(true);
+                    foreach (var r in hero.GetComponentsInChildren<Renderer>(true))
+                    {
+                        bool underWeapon = r.transform.GetComponentInParent<Weapons.LR2Item>(true) != null;
+                        if (underWeapon) continue;
+                        r.enabled = true;
+                        r.shadowCastingMode = ShadowCastingMode.On;
+                    }
                 }
             }
 

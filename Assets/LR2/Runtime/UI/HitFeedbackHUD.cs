@@ -60,7 +60,17 @@ namespace LR2.UI
         public bool IsShowingWorldImpactPip => _hasWorldPoint && (Time.unscaledTime - _pipTime) < 0.36f;
 
         private static SurfaceLibrary _surfaceLib;
-        private static AudioClip _bodyPunch, _headCrack, _killSlam, _killStamp, _armorBreak;
+        private static AudioClip _bodyPunch, _headCrack, _killSlam, _killStamp, _targetArmorBreak, _selfArmorBreak;
+        public static bool HasDistinctArmorBreakClips
+        {
+            get
+            {
+                EnsureClips();
+                return _targetArmorBreak != null && _selfArmorBreak != null && _targetArmorBreak != _selfArmorBreak;
+            }
+        }
+        public static int SelfArmorBreakCount { get; private set; }
+        public static int TargetArmorBreakCount { get; private set; }
         /// <summary>Armour-hit tint for the hitmarker arms (cool steel blue, Warzone-style).</summary>
         public Color armorColor = new Color(0.62f, 0.84f, 1f, 1f);
         private static Sprite _skullSprite, _skullRimSprite, _pipSprite;
@@ -207,12 +217,13 @@ namespace LR2.UI
         {
             if (_player == null) _player = Combatant.FindLocalPlayer();
             if (_player == null) return;
-            // B74: the victim hears its own plate shatter (duller, closer) regardless of the hitmarker-sound toggle.
-            if (e.victim == _player && e.armorBroken && !e.killed)
+            // B74 / 11-22: distinct armor-break SFX for self (heavy close vest rupture + warning pulse) vs target.
+            if (e.victim == _player && e.armorBroken)
             {
                 EnsureClips();
-                PlayRaw(_armorBreak, 0.95f * volume, Random.Range(0.80f, 0.86f), 0f);
-                return;
+                PlayRaw(_selfArmorBreak, 1.05f * volume, Random.Range(0.97f, 1.03f), 0f);
+                SelfArmorBreakCount++;
+                if (!e.killed) return;
             }
             if (e.attacker != _player || e.victim == _player || e.damage <= 0f) return;
             TriggerFeedback(e.zone == HitZone.Head, e.killed, e.point, e.zone, e.armorDamage > 0f, e.armorBroken);
@@ -346,7 +357,11 @@ namespace LR2.UI
         {
             EnsureClips();
             // B74 armour layer on top of the normal confirm: a plate "tink" while armour soaks, a ceramic shatter when it breaks.
-            if (armorBroke && !killed) PlayRaw(_armorBreak, 1.0f * volume, Random.Range(0.97f, 1.03f), 0f);
+            if (armorBroke)
+            {
+                PlayRaw(_targetArmorBreak, 1.05f * volume, Random.Range(0.98f, 1.04f), 0f);
+                TargetArmorBreakCount++;
+            }
             else if (armorHit && !killed && !head)
             {
                 var cs = LR2CommonSounds.Instance;
@@ -411,7 +426,8 @@ namespace LR2.UI
 
         private static void EnsureClips()
         {
-            if (_bodyPunch != null && _headCrack != null && _killSlam != null && _killStamp != null && _armorBreak != null) return;
+            if (_bodyPunch != null && _headCrack != null && _killSlam != null && _killStamp != null &&
+                _targetArmorBreak != null && _selfArmorBreak != null) return;
             const int sr = 44100;
             var rng = new System.Random(1337);
 
@@ -458,33 +474,56 @@ namespace LR2.UI
                 return (float)System.Math.Tanh((low + mid + bite) * 1.35f);
             });
 
-            _armorBreak = SynthArmorBreak(sr);
+            _targetArmorBreak = SynthTargetArmorBreak(sr);
+            _selfArmorBreak = SynthSelfArmorBreak(sr);
         }
 
-        // B74 armour plate shatter: broadband ceramic crack, a second split ~45 ms later, inharmonic plate ring,
-        // decaying debris crackle and a short low body thump. Deterministic seed so every build sounds the same.
-        private static AudioClip SynthArmorBreak(int sr)
+        // Target armor break: bright, crisp ceramic/glass shatter + high confirm harmonic snap so breaking an enemy's plates pops cleanly.
+        private static AudioClip SynthTargetArmorBreak(int sr)
         {
             var rng = new System.Random(4242);
             float prevNoise = 0f, crackle = 0f;
-            return Synth("LR2_HF_ArmorBreak", 0.42f, sr, t =>
+            return Synth("LR2_HF_TargetArmorBreak", 0.40f, sr, t =>
             {
                 float n = (float)(rng.NextDouble() * 2.0 - 1.0);
-                float hp = n - prevNoise; // first difference = crude high-pass, keeps the crack bright
+                float hp = n - prevNoise;
                 prevNoise = n;
-                float crack = hp * Mathf.Exp(-t * 95f) * 0.85f;
-                float split = t > 0.045f ? hp * Mathf.Exp(-(t - 0.045f) * 120f) * 0.6f : 0f;
-                float ring = (Mathf.Sin(2f * Mathf.PI * 1730f * t) * 0.20f
-                            + Mathf.Sin(2f * Mathf.PI * 2610f * t) * 0.17f
-                            + Mathf.Sin(2f * Mathf.PI * 3890f * t) * 0.14f
-                            + Mathf.Sin(2f * Mathf.PI * 5270f * t) * 0.10f
-                            + Mathf.Sin(2f * Mathf.PI * 7020f * t) * 0.07f) * Mathf.Exp(-t * 22f);
-                if (rng.NextDouble() < 0.0035 * Mathf.Exp(-t * 7f)) crackle = 0.45f + (float)rng.NextDouble() * 0.55f;
-                crackle *= 0.93f;
-                float debris = n * crackle * 0.55f;
-                float f = Mathf.Lerp(150f, 55f, Mathf.Clamp01(t * 14f));
-                float thump = (float)System.Math.Tanh(Mathf.Sin(2f * Mathf.PI * f * t) * 1.8f) * Mathf.Exp(-t * 30f) * 0.55f;
-                return (float)System.Math.Tanh((crack + split + ring + debris + thump) * 1.25f);
+                float crack = hp * Mathf.Exp(-t * 105f) * 0.90f;
+                float split = t > 0.040f ? hp * Mathf.Exp(-(t - 0.040f) * 130f) * 0.65f : 0f;
+                float chime = (Mathf.Sin(2f * Mathf.PI * 1480f * t) * 0.28f
+                             + Mathf.Sin(2f * Mathf.PI * 2220f * t) * 0.24f
+                             + Mathf.Sin(2f * Mathf.PI * 3520f * t) * 0.16f
+                             + Mathf.Sin(2f * Mathf.PI * 5680f * t) * 0.10f) * Mathf.Exp(-t * 19f);
+                if (rng.NextDouble() < 0.004 * Mathf.Exp(-t * 6.5f)) crackle = 0.50f + (float)rng.NextDouble() * 0.50f;
+                crackle *= 0.92f;
+                float shards = hp * crackle * 0.62f;
+                float punch = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(210f, 80f, Mathf.Clamp01(t * 18f)) * t) * Mathf.Exp(-t * 36f) * 0.38f;
+                return (float)System.Math.Tanh((crack + split + chime + shards + punch) * 1.32f);
+            });
+        }
+
+        // Self armor break: heavy close-chest vest rupture + muffled hollow ceramic crunch + two-tone armor-depleted warning drop.
+        private static AudioClip SynthSelfArmorBreak(int sr)
+        {
+            var rng = new System.Random(8484);
+            float lp = 0f, ripLp = 0f;
+            return Synth("LR2_HF_SelfArmorBreak", 0.52f, sr, t =>
+            {
+                float n = (float)(rng.NextDouble() * 2.0 - 1.0);
+                // Heavy chest impact & vest rip
+                float chestF = Mathf.Lerp(190f, 44f, Mathf.Clamp01(t * 11f));
+                float chest = (float)System.Math.Tanh(Mathf.Sin(2f * Mathf.PI * chestF * t) * 2.1f) * Mathf.Exp(-t * 16f) * 0.85f;
+                ripLp += 0.14f * (n - ripLp);
+                float hollow = (Mathf.Sin(2f * Mathf.PI * 410f * t) * 0.30f + Mathf.Sin(2f * Mathf.PI * 665f * t) * 0.22f) * Mathf.Exp(-t * 24f);
+                float rip = ripLp * Mathf.Exp(-t * 14f) * 0.72f;
+                // Distinct descending two-tone self warning pulse (520 Hz -> 310 Hz at t=0.14s)
+                float toneF = t < 0.14f ? 520f : 310f;
+                float toneLocal = t < 0.14f ? t : (t - 0.14f);
+                float toneEnv = Mathf.Clamp01(toneLocal / 0.008f) * Mathf.Exp(-toneLocal * 9.5f);
+                float alert = (Mathf.Sin(2f * Mathf.PI * toneF * toneLocal) * 0.36f + Mathf.Sin(2f * Mathf.PI * toneF * 0.5f * toneLocal) * 0.20f) * toneEnv;
+                float combined = chest + hollow + rip + alert;
+                lp += 0.28f * (combined - lp);
+                return (float)System.Math.Tanh(lp * 1.35f);
             });
         }
 
@@ -597,7 +636,9 @@ namespace LR2.UI
             Instance = null;
             _replayOverlay = null;
             _surfaceLib = null;
-            _bodyPunch = _headCrack = _killSlam = _killStamp = _armorBreak = null;
+            _bodyPunch = _headCrack = _killSlam = _killStamp = _targetArmorBreak = _selfArmorBreak = null;
+            SelfArmorBreakCount = 0;
+            TargetArmorBreakCount = 0;
             _skullSprite = _skullRimSprite = _pipSprite = null;
         }
     }

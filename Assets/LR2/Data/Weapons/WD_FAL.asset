@@ -61,7 +61,7 @@ MonoBehaviour:
   adsRecoilMultiplier: 0.6
   audibleRadius: 70
   suppressed: 0
-  audio: {fileID: 11400000, guid: dfe04486210241e479c7bc0048d7b970, type: 2}
+  audio: {fileID: 11400000, guid: fbb5f2704b5ed194abc150a03265baa2, type: 2}
   tracerEvery: 1
   shellPrefab: {fileID: 7496392848592200594, guid: c114d37c6341b414aa4cb01b076e2836, type: 3}
   muzzleFlashPrefab: {fileID: 8025995091943808216, guid: 1b26fa37b150091409de8b6e8aea82d1, type: 3}

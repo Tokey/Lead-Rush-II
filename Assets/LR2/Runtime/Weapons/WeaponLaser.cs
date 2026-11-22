@@ -160,14 +160,16 @@ namespace LR2.Weapons
             }
             SyncLaserColor();
 
-            Transform muzzle = _externalMuzzle != null ? _externalMuzzle : _firearm.Muzzle;
+            // B136: the beam leaves the laser device's emitter (LR2Firearm.LaserOrigin), not the muzzle
+            Transform muzzle = _externalMuzzle != null ? _externalMuzzle : _firearm.LaserOrigin;
             if (muzzle == null)
             {
                 SetVisible(false);
                 return;
             }
 
-            Vector3 start = muzzle.position + muzzle.forward * 0.04f;
+            bool fromDevice = muzzle.name == "LaserEmitter";
+            Vector3 start = muzzle.position + muzzle.forward * (fromDevice ? 0.003f : 0.04f);
             Vector3 end = start + muzzle.forward * MaxDistance;
             bool hitFound = false;
             int hitCount = Physics.RaycastNonAlloc(start, muzzle.forward, Hits, MaxDistance, LR2Layers.BulletMask,

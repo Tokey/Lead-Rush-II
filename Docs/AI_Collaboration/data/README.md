@@ -10,17 +10,19 @@ developer's prompts, the board archive and git; their `source` says so.
 | Column | Meaning |
 |---|---|
 | `id` | Unique ID (`C..` Claude Code, `G..` Antigravity/"Gemini", `P..` Copilot, `X..` Codex) |
-| `when` | Local time (America/New_York) the work was delivered, `YYYY-MM-DD HH:MM` |
+| `when` | Local time (America/New_York) the work or task state was recorded, `YYYY-MM-DD HH:MM` |
 | `agent` | Board name: Claude, Gemini, Copilot, Codex |
 | `model` | Exact model id, or the developer's name for it (e.g. `argon`), or `unknown` |
 | `title` | What was built or fixed |
 | `kind` | feature, fix, tune, tooling, docs, review |
 | `board_id` | Tracker ID (B.., P..) if any |
-| `outcome` | verified, reopened, ready-for-review, open, delivered (pre-tracker work that shipped without review) |
+| `outcome` | verified, reopened, ready-for-review, open, in-progress, partial, delivered (pre-tracker work that shipped without review) |
 | `source` | Where the row comes from (board row, log time, prompt time, reconstruction) |
 | `difficulty` | `small`, `standard`, `hard`, or `unrated` |
 | `difficulty_timing` | `retrospective-peer-consensus` for the audited historic rows; `pre-work-peer-consensus` for future ratings made before implementation |
 | `difficulty_basis` | Consensus score and short evidence note based on scope/integration, uncertainty, and verification burden |
+
+`open` and `in-progress` rows are pending and excluded from delivered-task counts and completion credit. `partial` records work that shipped only in part; it remains a counted task row but earns no completion credit until it reaches a completed outcome.
 
 Difficulty ratings use the rubric in [`../specs/B66_Task_Difficulty.md`](../specs/B66_Task_Difficulty.md). At the developer's request, three independent peer reviews rated the existing task definitions retrospectively; the median total sets the band. [`task_difficulty_reviews.csv`](task_difficulty_reviews.csv) preserves their dimension scores and consensus. These ratings estimate requested scope, not actual effort. Future tasks should be rated before implementation. Any missing or `unrated` value receives the standard 1x multiplier.
 

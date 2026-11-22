@@ -11,7 +11,7 @@ namespace LR2.FX
         {
             var lib = SurfaceLibrary.Instance;
             if (lib == null || lib.tracerPrefab == null) return;
-            if ((to - from).sqrMagnitude < 9f) return;
+            if ((to - from).sqrMagnitude < 2.25f) return;
             var tracer = LR2Pool.Spawn(lib.tracerPrefab, from, Quaternion.identity);
             var t = tracer != null ? tracer.GetComponent<Tracer>() : null;
             if (t != null) t.Launch(from, to, isFriendlyTeam);

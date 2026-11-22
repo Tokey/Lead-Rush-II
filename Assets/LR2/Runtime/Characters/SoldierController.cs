@@ -48,6 +48,14 @@ namespace LR2.Characters
         [Tooltip("Eye socket used as aim origin for bots (falls back to the camera transform / head).")]
         [SerializeField] private Transform eyeSocket;
 
+        [Header("Grenades (B136)")]
+        [Tooltip("Frag grenades per life.")]
+        [SerializeField, Range(0, 5)] private int grenadesPerLife = 2;
+        [SerializeField] private GameObject grenadePrefab;
+        [Tooltip("Fraction of the throw animation at which the grenade leaves the hand.")]
+        [SerializeField, Range(0.1f, 0.9f)] private float grenadeReleaseAt = 0.42f;
+        [SerializeField] private float grenadeThrowSpeed = 17f;
+
         [Header("Death")]
         [SerializeField] private float deathCamDistance = 3.4f;
         [SerializeField] private float deathCamHeight = 1.6f;
@@ -90,6 +98,12 @@ namespace LR2.Characters
         public bool IsDead => Health != null && !Health.IsAlive;
         public bool IsLocalPlayer => Combatant != null && Combatant.IsLocalPlayer;
         public bool IsSwitchingWeapon => _switching;
+        /// <summary>B136: the gun is held up in Kinemation's inspect pose; 1/2/3 cycle barrel / grip / sight.</summary>
+        public bool IsEditingAttachments => _editingAttachments;
+        /// <summary>B136: a grenade throw animation is playing (hands busy).</summary>
+        public bool IsThrowingGrenade => _throwing;
+        /// <summary>B136: frag grenades left this life.</summary>
+        public int GrenadesLeft => _grenadesLeft;
         public bool InteractTriggeredFrame { get; private set; }
         public LR2Item ActiveItem => _items.Count > 0 ? _items[_activeIndex] : null;
         public LR2Firearm ActiveFirearm => ActiveItem as LR2Firearm;
@@ -98,7 +112,7 @@ namespace LR2.Characters
         public float ScopeSensitivity => UserInput != null && _sensIndex >= 0 ? Mathf.Max(0.05f, UserInput.GetValue<float>(_sensIndex)) : 1f;
 
         /// <summary>False while sprinting or during the sprint-out / swap window.</summary>
-        public bool CanShootNow => !IsDead && !IsSprinting && Time.time >= _sprintOutUntil && !_switching;
+        public bool CanShootNow => !IsDead && !IsSprinting && Time.time >= _sprintOutUntil && !_switching && !_throwing && !_editingAttachments;
 
         private readonly List<LR2Item> _items = new List<LR2Item>();
         private CharacterController _controller;
@@ -137,6 +151,12 @@ namespace LR2.Characters
         private bool _initialized;
         private float _nextHurtVoiceAt;
         private IkMotionLayerSettings _runtimeAimingMotion;
+        // B136: Kinemation demo features
+        private bool _editingAttachments;
+        private bool _throwing, _grenadeReleased;
+        private float _throwStart, _throwEnd, _throwRelease;
+        private int _grenadesLeft;
+        private int _inspectLayer = -2;
 
         // death cam / weapon drop
         private Transform _camParent;
@@ -148,16 +168,25 @@ namespace LR2.Characters
         public GameObject DroppedWeapon => _droppedWeapon;
 
         private static readonly int FullBodyWeightHash = Animator.StringToHash("FullBodyWeight");
-        // default state of each driver Animator layer (FPSAnimator_Humanoid: Base Layer, TurnInPlace, IK)
+        // Default state of every Animator layer, for both Kinemation controllers (full paths, so each only matches its own
+        // layer): humanoid driver = Base Layer, TurnInPlace, IK; B136 generic robot = Locomotion, TurnInPlace, InAir, IK, AdditiveIK.
         private static readonly int[] DefaultStateHashes =
         {
-            Animator.StringToHash("Base Layer.Standing"), Animator.StringToHash("TurnInPlace.Empty"), Animator.StringToHash("IK.Standing")
+            Animator.StringToHash("Base Layer.Standing"), Animator.StringToHash("Locomotion.Standing"), Animator.StringToHash("TurnInPlace.Empty"),
+            Animator.StringToHash("InAir.Empty"), Animator.StringToHash("IK.Standing"), Animator.StringToHash("AdditiveIK.Empty")
         };
         private static readonly int SlideHash = Animator.StringToHash("Sliding");
         private static readonly int ProneWeightHash = Animator.StringToHash("ProneWeight");
-        private static readonly int ProneTreeHash = Animator.StringToHash("Base Layer.ProneTree");
-        private static readonly int CrouchToProneHash = Animator.StringToHash("Base Layer.C_CrouchToProne_Humanoid");
-        private static readonly int ProneToCrouchHash = Animator.StringToHash("Base Layer.C_ProneToCrouch_Humanoid");
+        private static readonly int InspectStartHash = Animator.StringToHash("AdditiveIK.InspectStart");
+        private static readonly int InspectEndHash = Animator.StringToHash("AdditiveIK.InspectEnd");
+        // prone tree / transitions of the humanoid driver and of the generic robot (B136)
+        private static readonly int[] ProneMotionHashes =
+        {
+            Animator.StringToHash("Base Layer.ProneTree"), Animator.StringToHash("Base Layer.C_CrouchToProne_Humanoid"),
+            Animator.StringToHash("Base Layer.C_ProneToCrouch_Humanoid"),
+            Animator.StringToHash("Locomotion.Prone"), Animator.StringToHash("Locomotion.C_CrouchToProne"),
+            Animator.StringToHash("Locomotion.C_ProneToCrouch")
+        };
         /// <summary>Seconds for the FullBodyWeight / ProneWeight gates to open or close (D57).</summary>
         private const float CurveGateSeconds = 0.25f;
 
@@ -185,6 +214,7 @@ namespace LR2.Characters
                 Health.Damaged += OnDamaged;
                 Health.Died += OnDied;
             }
+            if (GetComponent<PainVoice>() == null) gameObject.AddComponent<PainVoice>();
         }
 
         private void OnDestroy()
@@ -228,20 +258,22 @@ namespace LR2.Characters
             var rig = GetComponentInChildren<KRigComponent>();
             if (rig != null && settings != null) _weaponBone = rig.GetRigTransform(settings.weaponBone);
             if (_weaponBone == null) _weaponBone = transform;
+            // B136: LR2Bones also resolves the generic Kinemation robot (GetBoneTransform only works on humanoid avatars)
             if (eyeSocket == null)
             {
-                var head = Animator != null && Animator.isHuman ? Animator.GetBoneTransform(HumanBodyBones.Head) : null;
+                var head = LR2Bones.Get(Animator, HumanBodyBones.Head);
                 eyeSocket = head != null ? head : (ViewCamera != null ? ViewCamera.transform : transform);
             }
             if (Combatant != null && Combatant.EyePoint == null)
             {
-                Transform head = Animator != null && Animator.isHuman ? Animator.GetBoneTransform(HumanBodyBones.Head) : null;
-                Transform chest = Animator != null && Animator.isHuman ? Animator.GetBoneTransform(HumanBodyBones.Chest) : null;
+                Transform head = LR2Bones.Get(Animator, HumanBodyBones.Head);
+                Transform chest = LR2Bones.Get(Animator, HumanBodyBones.Chest);
                 Combatant.SetAimPoints(ViewCamera != null && IsLocalPlayer ? ViewCamera.transform : eyeSocket, head, chest);
             }
 
             InitializeMovement();
             InitializeWeapons();
+            _grenadesLeft = grenadesPerLife; // B136
             _sensIndex = UserInput != null ? UserInput.GetPropertyIndex("SensitivityMultiplier") : -1;
             _pitch = 0f;
             _yawAccum = transform.eulerAngles.y;
@@ -321,9 +353,9 @@ namespace LR2.Characters
             _items.Clear();
             if (settings == null || settings.weaponPrefabs == null) return;
 
-            // Loadout slots: weaponPrefabs holds [0:Mk18, 1:Mk23, 2:AK12, 3:AK74N, 4:FAL].
-            // Equip the player's chosen primary rifle cleanly in slot 0 (default = MK18 Mod 1) + Mk23 suppressed sidearm in slot 1.
-            var spawnList = new List<GameObject>(2);
+            // Loadout slots: weaponPrefabs holds [0:Mk18, 1:Mk23, 2:AK12, 3:AK74N, 4:FAL, 5:Knife, 6:Torch].
+            // Slot 0 = the chosen primary rifle (default MK18), 1 = MK23 sidearm, 2 = knife (key 3), 3 = torch (key 4) (B136).
+            var spawnList = new List<GameObject>(4);
             if (settings.weaponPrefabs.Count >= 2)
             {
                 int[] rifleSlotMap = { 0, 2, 3, 4 };
@@ -333,6 +365,8 @@ namespace LR2.Characters
                     : 0;
                 if (settings.weaponPrefabs[primaryIdx] != null) spawnList.Add(settings.weaponPrefabs[primaryIdx]);
                 if (settings.weaponPrefabs[1] != null) spawnList.Add(settings.weaponPrefabs[1]);
+                for (int extra = 5; extra < settings.weaponPrefabs.Count && extra <= 6; extra++)
+                    if (settings.weaponPrefabs[extra] != null) spawnList.Add(settings.weaponPrefabs[extra]);
             }
             else
             {
@@ -521,15 +555,48 @@ namespace LR2.Characters
             if (_input.crouchHold != Movement.CrouchHeld) Movement.SetCrouchHeld(_input.crouchHold);
             if (_input.slide) Movement.RequestSlide();
 
-            // Lean (Kinemation lean layer)
+            // Lean (Kinemation lean layer: +Z rotation = lean LEFT, so Q (-1) -> +leanAngle, E (+1) -> -leanAngle)
             if (UserInput != null && settings != null && !Mathf.Approximately(_input.lean, _lastLean))
             {
-                UserInput.SetValue(FPSANames.LeanInput, _input.lean * settings.leanAngle);
+                UserInput.SetValue(FPSANames.LeanInput, -_input.lean * settings.leanAngle);
                 PlayTransitionMotion(settings.leanMotion);
                 _lastLean = _input.lean;
             }
 
+            UpdateGrenadeThrow();
             if (item == null) return;
+
+            // B136: attachment editing (Kinemation's inspect pose: I to enter, then 1 barrel / 2 grip / 3 sight)
+            if (_input.inspect) SetAttachmentEditing(!_editingAttachments);
+            if (_editingAttachments)
+            {
+                bool leave = IsSprinting || _input.fire || _input.aim || _input.reload || _input.grenade || busySwitch ||
+                             _input.weaponSlot >= 0 || _input.nextWeapon || !item.HasEditableAttachments;
+                if (leave) SetAttachmentEditing(false);
+                else
+                {
+                    if (_input.attachmentSlot > 0) item.OnAttachmentChanged(_input.attachmentSlot);
+                    ReleaseTrigger();
+                    return;
+                }
+            }
+
+            // B136: grenade throw (G); the hands are busy until the throw animation ends
+            if (_input.grenade) TryThrowGrenade();
+            if (_throwing)
+            {
+                ReleaseTrigger();
+                if (_isAiming) SetAim(false);
+                return;
+            }
+
+            // B136: fire-mode switch (B) and sight-group cycling while aiming (V), as in Kinemation's demo
+            if (_input.fireMode) item.OnChangeFireMode();
+            if (_input.cycleScope && _isAiming)
+            {
+                item.OnCycleScope();
+                PlayAimingMotion();
+            }
 
             // Fire
             bool canFire = CanShootNow && !busySwitch;
@@ -547,8 +614,8 @@ namespace LR2.Characters
                 item.OnFireReleased();
             }
 
-            // Aim (ADS)
-            bool wantAim = _input.aim && !IsSprinting && !busySwitch && !IsReloading;
+            // Aim (ADS); the knife and the torch have no sight picture (B136)
+            bool wantAim = _input.aim && !IsSprinting && !busySwitch && !IsReloading && item.SupportsAds;
             if (wantAim && !_isAiming) SetAim(true);
             else if (!wantAim && _isAiming) SetAim(false);
 
@@ -572,28 +639,99 @@ namespace LR2.Characters
                 item.OnAimReleased();
                 _isAiming = false;
             }
-            if (settings != null && settings.aimingMotion != null)
-            {
-                var ikSrc = settings.aimingMotion;
-                if (_runtimeAimingMotion == null)
-                {
-                    _runtimeAimingMotion = Instantiate(ikSrc);
-                    _runtimeAimingMotion.hideFlags = HideFlags.HideAndDontSave;
-                }
-                float adsTime = ActiveFirearm != null ? ActiveFirearm.EffectiveAdsTime : 0.21f;
-                float targetRate = Mathf.Clamp(0.45f / adsTime, 1.8f, 3.6f);
-                _runtimeAimingMotion.playRate = targetRate;
-                _runtimeAimingMotion.blendTime = Mathf.Clamp(ikSrc.blendTime * (ikSrc.playRate / Mathf.Max(0.1f, targetRate)), 0.05f, 0.3f);
-                PlayTransitionMotion(_runtimeAimingMotion);
-            }
+            PlayAimingMotion();
             var s = LR2CommonSounds.Instance;
             if (s != null) LR2Audio.PlayAt(aim ? s.adsIn : s.adsOut, transform.position, IsLocalPlayer ? 1f : 0.6f);
+        }
+
+        /// <summary>Kinemation's aiming IK motion, played at LR2's shortened ADS rate (1.8 to 3.6x).</summary>
+        private void PlayAimingMotion()
+        {
+            if (settings == null || settings.aimingMotion == null) return;
+            var ikSrc = settings.aimingMotion;
+            if (_runtimeAimingMotion == null)
+            {
+                _runtimeAimingMotion = Instantiate(ikSrc);
+                _runtimeAimingMotion.hideFlags = HideFlags.HideAndDontSave;
+            }
+            float adsTime = ActiveFirearm != null ? ActiveFirearm.EffectiveAdsTime : 0.21f;
+            float targetRate = Mathf.Clamp(0.45f / adsTime, 1.8f, 3.6f);
+            _runtimeAimingMotion.playRate = targetRate;
+            _runtimeAimingMotion.blendTime = Mathf.Clamp(ikSrc.blendTime * (ikSrc.playRate / Mathf.Max(0.1f, targetRate)), 0.05f, 0.3f);
+            PlayTransitionMotion(_runtimeAimingMotion);
+        }
+
+        private void ReleaseTrigger()
+        {
+            if (!_firePressed) return;
+            _firePressed = false;
+            if (ActiveItem != null) ActiveItem.OnFireReleased();
+        }
+
+        // ------------------------------------------------------------------ B136: attachment editing + grenades
+        private void SetAttachmentEditing(bool on)
+        {
+            if (on == _editingAttachments || Animator == null) return;
+            var item = ActiveItem;
+            if (on && (item == null || !item.HasEditableAttachments || IsReloading || _switching || IsSprinting || _throwing || IsDead)) return;
+            if (_inspectLayer == -2) _inspectLayer = Animator.GetLayerIndex("AdditiveIK");
+            int hash = on ? InspectStartHash : InspectEndHash;
+            bool hasState = _inspectLayer >= 0 && Animator.HasState(_inspectLayer, hash);
+            if (on && !hasState) return; // the humanoid driver's controller has no inspect pose
+            _editingAttachments = on;
+            if (on)
+            {
+                if (_isAiming) SetAim(false);
+                ReleaseTrigger();
+            }
+            if (hasState) Animator.CrossFade(hash, on ? 0.2f : 0.3f, _inspectLayer);
+        }
+
+        private void TryThrowGrenade()
+        {
+            var item = ActiveItem;
+            if (_throwing || _switching || IsDead || _grenadesLeft <= 0 || item == null || item.IsBusy) return;
+            if (IsSprinting) Movement.StopSprint();
+            if (_isAiming) SetAim(false);
+            ReleaseTrigger();
+            if (!item.OnGrenadeThrow()) return;
+            float dur = Mathf.Max(0.3f, item.GrenadeThrowDuration);
+            _throwing = true;
+            _grenadeReleased = false;
+            _throwStart = Time.time;
+            _throwEnd = _throwStart + dur;
+            _throwRelease = _throwStart + dur * Mathf.Clamp01(grenadeReleaseAt / 0.8f); // the duration is 80 % of the clip
+        }
+
+        private void UpdateGrenadeThrow()
+        {
+            if (!_throwing) return;
+            if (!_grenadeReleased && Time.time >= _throwRelease)
+            {
+                _grenadeReleased = true;
+                ReleaseGrenade();
+            }
+            if (Time.time >= _throwEnd) _throwing = false;
+        }
+
+        private void ReleaseGrenade()
+        {
+            if (_grenadesLeft <= 0) return;
+            _grenadesLeft--;
+            Vector3 eye = AimOrigin, dir = AimDirection;
+            Vector3 spawn = eye + dir * 0.45f - transform.right * 0.16f - Vector3.up * 0.08f;
+            var hand = LR2Bones.Get(Animator, HumanBodyBones.LeftHand);
+            if (hand != null && (hand.position - eye).sqrMagnitude < 0.8f * 0.8f) spawn = hand.position;
+            if (Physics.Linecast(eye, spawn, out var block, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore))
+                spawn = block.point - (spawn - eye).normalized * 0.12f;
+            Vector3 velocity = (dir + Vector3.up * 0.12f).normalized * grenadeThrowSpeed + (Movement != null ? Movement.Velocity * 0.6f : Vector3.zero);
+            LR2Grenade.Throw(grenadePrefab, Combatant, spawn, velocity);
         }
 
         public bool RequestReload()
         {
             var item = ActiveItem;
-            if (item == null || _switching || IsDead) return false;
+            if (item == null || _switching || IsDead || _throwing || _editingAttachments) return false;
             if (_isAiming) SetAim(false);
             return item.OnReload();
         }
@@ -601,8 +739,9 @@ namespace LR2.Characters
         // ------------------------------------------------------------------ weapons
         private void BeginWeaponSwitch(int index)
         {
-            if (index == _activeIndex || index < 0 || index >= _items.Count || _switching) return;
+            if (index == _activeIndex || index < 0 || index >= _items.Count || _switching || _throwing) return;
             if (Time.time - _lastSwitchTime < weaponSwapCooldown) return;
+            SetAttachmentEditing(false);
             _lastSwitchTime = Time.time;
             if (_isAiming) SetAim(false);
             if (_firePressed)
@@ -641,6 +780,7 @@ namespace LR2.Characters
         public void RefillAmmo()
         {
             foreach (var item in _items) item.RefillAmmo();
+            _grenadesLeft = grenadesPerLife; // B136
         }
 
         public int AddReserveAmmo(int rounds)
@@ -761,10 +901,10 @@ namespace LR2.Characters
         {
             if (Animator == null || !Animator.isActiveAndEnabled) return false;
             int cur = Animator.GetCurrentAnimatorStateInfo(0).fullPathHash;
-            if (cur == ProneTreeHash || cur == CrouchToProneHash || cur == ProneToCrouchHash) return true;
+            if (Array.IndexOf(ProneMotionHashes, cur) >= 0) return true;
             if (!Animator.IsInTransition(0)) return false;
             int next = Animator.GetNextAnimatorStateInfo(0).fullPathHash;
-            return next == ProneTreeHash || next == CrouchToProneHash || next == ProneToCrouchHash;
+            return Array.IndexOf(ProneMotionHashes, next) >= 0;
         }
 
         /// <summary>D57: decide when the arms follow the body animation and hand Kinemation the gated curve values.</summary>
@@ -795,18 +935,33 @@ namespace LR2.Characters
         private void ResetAnimationState()
         {
             _lookWeight = _lookTarget = _stabWeight = _stabTarget = _playablesWeight = 1f; // a new life starts settled
+            _lastLean = 0f;
             if (UserInput != null)
             {
                 UserInput.SetValue(FPSANames.StabilizationWeight, 1f);
                 UserInput.SetValue("LookLayerWeight", 1f);
                 UserInput.SetValue(FPSANames.PlayablesWeight, 1f);
+                UserInput.SetValue(FPSANames.LeanInput, 0f);
+                UserInput.SetValue(FPSANames.MouseDeltaInput, Vector4.zero);
+                UserInput.SetValue(FPSANames.MouseInput, new Vector4(_yawAccum, 0f, 0f, 0f));
+                UserInput.SetValue(FPSANames.TurnOffset, 0f);
             }
             if (Movement != null) Movement.ResetAnimatorParams();
             if (Animator != null && Animator.isActiveAndEnabled && Animator.runtimeAnimatorController != null)
             {
-                for (int layer = 0; layer < Animator.layerCount && layer < DefaultStateHashes.Length; layer++)
-                    if (Animator.HasState(layer, DefaultStateHashes[layer])) Animator.Play(DefaultStateHashes[layer], layer, 0f);
+                for (int layer = 0; layer < Animator.layerCount; layer++)
+                    foreach (int h in DefaultStateHashes)
+                        if (Animator.HasState(layer, h)) { Animator.Play(h, layer, 0f); break; }
+                Animator.Update(0f);
             }
+            for (int i = 0; i < _items.Count; i++)
+            {
+                if (_items[i] == null) continue;
+                _items[i].transform.localPosition = Vector3.zero;
+                _items[i].transform.localRotation = Quaternion.identity;
+            }
+            _editingAttachments = false;
+            _throwing = false;
             if (_proxy != null) _proxy.ResetTransientState();
             // the body-curve gates start closed: a stale prone/sprint curve must not reach the new life's first frame
             _fullBodyGate = _proneGate = 0f;
@@ -818,6 +973,8 @@ namespace LR2.Characters
         {
             _killer = info.attacker;
             _deathPos = transform.position;
+            _editingAttachments = false; // B136
+            _throwing = false;
             if (_firePressed && ActiveItem != null) ActiveItem.OnFireReleased();
             _firePressed = false;
             if (ActiveItem != null) ActiveItem.CancelActions();
@@ -828,8 +985,11 @@ namespace LR2.Characters
             Movement.enabled = false;
             _controller.enabled = false;
 
-            var s = LR2CommonSounds.Instance;
-            if (s != null) LR2Audio.PlayAt(s.bodyFall, transform.position, 1f, 0.45f);
+            if (GetComponent<PainVoice>() == null)
+            {
+                var s = LR2CommonSounds.Instance;
+                if (s != null) LR2Audio.PlayAt(s.bodyFall, transform.position, 1f, 0.45f);
+            }
 
             if (CameraController != null) CameraController.enabled = false;
             if (IsLocalPlayer)
@@ -947,13 +1107,13 @@ namespace LR2.Characters
         {
             if (_droppedWeapon != null) Destroy(_droppedWeapon);
             bool wasDead = IsDead;
+            // B136h: Restore bone rest transforms + rebind Animator BEFORE rebuilding Kinemation playables so
+            // PoseSampler/BlendingLayer/AttachHandLayer never capture crumpled corpse angles into the next life.
             if (_ragdoll != null) _ragdoll.Deactivate();
-            if (Animator != null) Animator.enabled = true;
-            if (FPSAnimator != null)
+            if (Animator != null)
             {
-                FPSAnimator.enabled = true;
-                // Kinemation only rebuilds when it *sees* the Animator re-enable; it was disabled with us, so force it.
-                if (wasDead) FPSAnimator.RebuildPlayables();
+                Animator.enabled = true;
+                if (wasDead) Animator.Rebind();
             }
             EndDeathCam();
             if (CameraController != null) CameraController.enabled = true;
@@ -967,6 +1127,14 @@ namespace LR2.Characters
             _switching = false;
             _sprintOutUntil = 0f;
             _input.ClearAll();
+            ResetAnimationState();
+
+            if (FPSAnimator != null)
+            {
+                FPSAnimator.enabled = true;
+                // Kinemation only rebuilds when it *sees* the Animator re-enable; force it after bone rest + Animator reset.
+                if (wasDead) FPSAnimator.RebuildPlayables();
+            }
 
             if (Health != null) Health.Revive();
             RefillAmmo();

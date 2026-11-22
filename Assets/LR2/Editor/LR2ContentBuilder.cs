@@ -34,7 +34,7 @@ using static LR2.EditorTools.LR2EditorUtil;
 namespace LR2.EditorTools
 {
     /// <summary>Builds all LR2 content assets: materials, FX, audio, weapons, soldiers, data presets, gameplay prefabs.</summary>
-    public static class LR2ContentBuilder
+    public static partial class LR2ContentBuilder
     {
         private const string DataDir = "Assets/LR2/Data";
         private const string PrefabDir = "Assets/LR2/Prefabs";
@@ -73,6 +73,7 @@ namespace LR2.EditorTools
                 bool needs = sn.StartsWith("Universal Render Pipeline") || sn == "Hidden/InternalErrorShader" || sn == "Standard" ||
                              sn == "Standard (Specular setup)" || sn.StartsWith("Shader Graphs/") && !sn.Contains("HDRP");
                 if (!needs || sn.StartsWith("HDRP/")) continue;
+                if (IsSightMaterial(mat)) continue; // B136: reticles and scope lenses get HDRP Unlit (ConvertDemoSightMaterials)
 
                 var tex = new Dictionary<string, Texture>();
                 var floats = new Dictionary<string, float>();
@@ -139,6 +140,7 @@ namespace LR2.EditorTools
             }
             AssetDatabase.SaveAssets();
             Debug.Log($"[LR2] Converted {converted} Kinemation demo materials to HDRP/Lit.");
+            ConvertDemoSightMaterials();
         }
 
         private static Texture Get(Dictionary<string, Texture> d, string k) => d.TryGetValue(k, out var t) ? t : null;
@@ -177,7 +179,14 @@ namespace LR2.EditorTools
             var mSmoke = SaveMaterial(NewParticle(puff, new Color(0.3f, 0.3f, 0.3f, 0.6f), 1f, false), matDir + "/M_FX_Smoke.mat");
             var mBlood = SaveMaterial(NewParticle(puff, new Color(0.75f, 0.03f, 0.03f, 0.94f), 1f, false), matDir + "/M_FX_Blood.mat");
             var mBloodDrop = SaveMaterial(NewParticle(softDot, new Color(0.45f, 0.01f, 0.01f, 1f), 1f, false), matDir + "/M_FX_BloodDrop.mat");
-            var mTracer = SaveMaterial(NewParticle(tracerTex, Color.white, 44f, true), matDir + "/M_FX_Tracer.mat");
+            var mTracer = SaveMaterial(NewParticle(tracerTex, Color.white, 180f, true), matDir + "/M_FX_Tracer.mat");
+            mTracer.renderQueue = 3100;
+            // Codex R23: Ensure T_Tracer.png stays CPU-readable so QA verifies real head-bright UV alpha pixels.
+            if (AssetImporter.GetAtPath(texDir + "/T_Tracer.png") is TextureImporter tracerImp && !tracerImp.isReadable)
+            {
+                tracerImp.isReadable = true;
+                tracerImp.SaveAndReimport();
+            }
             var mMarker = SaveMaterial(NewParticle(chevron, TeamUtil.FriendlyColor, 2.5f, false), matDir + "/M_FriendlyMarker.mat");
             var mBrass = SaveMaterial(NewLit(new Color(0.78f, 0.58f, 0.25f), 0.82f, 1f), matDir + "/M_Brass.mat");
             var dHole = SaveMaterial(NewDecal(hole, Color.white), matDir + "/M_Decal_BulletHole.mat");
@@ -466,9 +475,13 @@ namespace LR2.EditorTools
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
                 {
-                    float along = x / (float)(w - 1);
+                    // UV.x=0 is LineRenderer pos 0 (HEAD), UV.x=1 is pos 1 (TAIL): head must stay bright so vertex alpha never cancels it.
+                    float along = 1f - x / (float)(w - 1);
                     float across = 1f - Mathf.Abs((y + 0.5f) / h * 2f - 1f);
-                    t.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Pow(along, 1.5f) * Mathf.Pow(across, 2f)));
+                    float core = Mathf.Pow(across, 2.2f);
+                    float halo = Mathf.Pow(across, 1.15f) * 0.55f;
+                    float alongGlow = Mathf.Lerp(0.18f, 1f, Mathf.Pow(along, 0.85f));
+                    t.SetPixel(x, y, new Color(1f, 1f, 1f, alongGlow * Mathf.Clamp01(core + halo)));
                 }
             t.Apply();
             return t;
@@ -561,8 +574,9 @@ namespace LR2.EditorTools
             if (common.hitmarker != null) { common.hitmarker.volume = 1f; common.hitmarker.pitch = new Vector2(0.97f, 1.04f); }
             if (common.hitmarkerHeadshot != null) { common.hitmarkerHeadshot.volume = 1f; common.hitmarkerHeadshot.pitch = new Vector2(0.98f, 1.03f); }
             if (common.killConfirm != null) { common.killConfirm.volume = 1f; }
-            if (common.painGrunt != null) { common.painGrunt.volume = 0.36f; common.painGrunt.pitch = new Vector2(0.84f, 0.93f); }
-            if (common.playerHurt != null) { common.playerHurt.volume = 0.34f; common.playerHurt.pitch = new Vector2(0.85f, 0.94f); }
+            if (common.bodyFall != null) { common.bodyFall.volume = 1f; common.bodyFall.pitch = new Vector2(0.95f, 1.03f); }
+            if (common.painGrunt != null) { common.painGrunt.volume = 0.18f; common.painGrunt.pitch = new Vector2(0.97f, 1.03f); }
+            if (common.playerHurt != null) { common.playerHurt.volume = 0.18f; common.playerHurt.pitch = new Vector2(0.97f, 1.03f); }
             if (common.bulletWhizz != null) { common.bulletWhizz.minDistance = 2.5f; common.bulletWhizz.maxDistance = 16f; common.bulletWhizz.pitch = new Vector2(0.94f, 1.08f); }
             if (common.bulletCrack != null) { common.bulletCrack.minDistance = 2.5f; common.bulletCrack.maxDistance = 18f; common.bulletCrack.pitch = new Vector2(0.95f, 1.06f); }
             // B126: drone blast (Common/droneExplode, private MW SFX C4 bodies; the folder is git-ignored like all LR2 audio)
@@ -576,19 +590,35 @@ namespace LR2.EditorTools
 
             var wa = LoadOrCreate<WeaponAudioProfile>(DataDir + "/Weapons/WA_AK12.asset");
             FillSoundSets(wa, audio + "/Weapons/AK12");
+            wa.magOutAt = 0.13f; wa.magInAt = 0.43f; wa.boltAt = 0.63f; wa.emptyReloadEndAt = 0.78f;
+            if (wa.firePlayerSuppressed != null) wa.firePlayerSuppressed.volume = 0.78f;
+            if (wa.fireNpcSuppressed != null) wa.fireNpcSuppressed.volume = 0.62f;
+            if (wa.fireTailSuppressed != null) wa.fireTailSuppressed.volume = 0.34f;
+            if (wa.fireTailInteriorSuppressed != null) wa.fireTailInteriorSuppressed.volume = 0.44f;
             EditorUtility.SetDirty(wa);
-            foreach (var variant in new[] { "M4", "Pistol" })
+            foreach (var variant in new[] { "M4", "FAL", "Pistol" })
             {
                 if (!AssetDatabase.IsValidFolder(audio + "/Weapons/" + variant)) continue;
                 var wv = LoadOrCreate<WeaponAudioProfile>(DataDir + $"/Weapons/WA_{variant}.asset");
                 EditorUtility.CopySerialized(wa, wv);
                 FillSoundSets(wv, audio + "/Weapons/" + variant);
-                if (variant == "Pistol")
+                if (variant == "M4")
                 {
+                    wv.magOutAt = 0.14f; wv.magInAt = 0.47f; wv.boltAt = 0.66f; wv.emptyReloadEndAt = 0.82f;
+                }
+                else if (variant == "FAL")
+                {
+                    wv.magOutAt = 0.17f; wv.magInAt = 0.55f; wv.boltAt = 0.74f; wv.emptyReloadEndAt = 0.87f;
+                }
+                else if (variant == "Pistol")
+                {
+                    wv.magOutAt = 0.16f; wv.magInAt = 0.46f; wv.boltAt = 0.64f; wv.emptyReloadEndAt = 0.76f;
                     // suppressed sidearm: no big rifle tails, much shorter reach
                     wv.fireTail.volume = 0.15f;
                     wv.fireTailInterior.volume = 0.2f;
                     wv.fireNpcDistant.volume = 0.2f;
+                    if (wv.fireTailSuppressed != null) wv.fireTailSuppressed.volume = 0.18f;
+                    if (wv.fireTailInteriorSuppressed != null) wv.fireTailInteriorSuppressed.volume = 0.24f;
                 }
                 EditorUtility.SetDirty(wv);
             }
@@ -634,7 +664,7 @@ namespace LR2.EditorTools
                 var imp = AssetImporter.GetAtPath(path) as AudioImporter;
                 if (imp == null) continue;
                 bool ambience = path.Contains("/Ambience/");
-                bool stereoOk = ambience || path.Contains("/firePlayer/") || path.Contains("/fireFirstShot/") || path.Contains("/fireTail") || path.Contains("/Common/hitmarker") || path.Contains("/Common/killConfirm");
+                bool stereoOk = ambience || path.Contains("/firePlayer/") || path.Contains("/firePlayerSuppressed/") || path.Contains("/fireFirstShot/") || path.Contains("/fireTail") || path.Contains("/Common/hitmarker") || path.Contains("/Common/killConfirm");
                 imp.forceToMono = !stereoOk;
                 imp.loadInBackground = ambience;
                 var s = imp.defaultSampleSettings;
@@ -653,6 +683,8 @@ namespace LR2.EditorTools
         private class WeaponSpec
         {
             public string id, display, source, audio = "AK12";
+            /// <summary>B136: the Kinemation GENERIC demo prefab for the robot rig (null = source).</summary>
+            public string robotSource;
             public WeaponClass cls = WeaponClass.AssaultRifle;
             public float rpm = 700f, near = 33f, mid = 27f, far = 23f, head = 1.5f, range = 32f;
             public float hip = 2.6f, ads = 0.06f, adsTime = 0.21f, sprintToFire = 0.24f, adsFov = 0.72f;
@@ -675,15 +707,16 @@ namespace LR2.EditorTools
                              rpm = 700f, near = 37.5f, mid = 33.4f, far = 21.5f, range = 28f, hip = 2.0f, adsTime = 0.18f, sprintToFire = 0.2f, kick = new Vector2(0.1f, 0.06f),
                              pattern = 0.3f, adsRecoil = 0.50f, rightGripOffset = new Vector3(-0.004f, -0.022f, 0.012f), leftGripOffset = new Vector3(0f, -0.036f, 0f) }, // B47: 5.56 recoils less than 5.45 in ADS
             new WeaponSpec { id = "Mk23", display = "MK23", source = DemoDir + "/Prefabs/Humanoid/Mk23Mod0_Scriptable_Humanoid.prefab", audio = "Pistol",
+                             robotSource = DemoDir + "/Prefabs/Pistol/Mk23Mod0_Scriptable.prefab",
                              cls = WeaponClass.Pistol, rpm = 300f, auto = false, mag = 12, reserve = 48, maxReserve = 72, near = 37.5f, mid = 33.4f, far = 21.5f,
                              head = 1.8f, range = 18f, hip = 1.6f, ads = 0.08f, adsTime = 0.14f, sprintToFire = 0.12f, adsFov = 0.82f, kick = new Vector2(0.4f, 0.1f),
                              pattern = 1f, patternH = 1f, rightGripOffset = Vector3.zero, leftGripOffset = Vector3.zero },
             // B107: slower, distinct per-weapon cadence; damage tiers compensate for the slower cycle while staying near current
             // body-shot TTK against both 100 HP and 100 HP + 50 armor (discrete shot counts limit exact matching).
-            new WeaponSpec { id = "AK12", display = "AK-12", source = HumanoidAk12, akMaterials = true, rpm = 600f, near = 37.5f, mid = 30f, far = 25f, hip = 2.2f },
+            new WeaponSpec { id = "AK12", display = "AK-12", source = HumanoidAk12, robotSource = FullAk12, akMaterials = true, rpm = 600f, near = 37.5f, mid = 30f, far = 25f, hip = 2.2f },
             new WeaponSpec { id = "AK74N", display = "AK-74N", source = DemoDir + "/Prefabs/AK12/AK74N_Scriptable.prefab", akMaterials = true, rpm = 550f, near = 37.5f, mid = 30f, far = 25f,
                              adsTime = 0.22f, pattern = 0.36f, rightGripOffset = new Vector3(0.002f, -0.014f, -0.030f), leftGripOffset = new Vector3(0f, -0.036f, 0f) },
-            new WeaponSpec { id = "FAL", display = "FAL", source = DemoDir + "/Prefabs/FAL/FAL_Scriptable.prefab", akMaterials = true, rpm = 500f, mag = 20, reserve = 80, maxReserve = 140,
+            new WeaponSpec { id = "FAL", display = "FAL", source = DemoDir + "/Prefabs/FAL/FAL_Scriptable.prefab", audio = "FAL", akMaterials = true, rpm = 500f, mag = 20, reserve = 80, maxReserve = 140,
                              near = 48f, mid = 42f, far = 37.5f, range = 45f, hip = 3.0f, adsTime = 0.27f, sprintToFire = 0.3f, adsFov = 0.66f, kick = new Vector2(0.24f, 0.12f),
                              pattern = 0.5f, patternH = 0.4f, adsRecoil = 0.60f, rightGripOffset = new Vector3(0.000f, -0.016f, -0.010f), leftGripOffset = new Vector3(0f, -0.036f, 0f) }, // B47: 7.62x51 stays harder in ADS
         };
@@ -693,6 +726,13 @@ namespace LR2.EditorTools
             int built = 0;
             foreach (var g in Guns)
                 if (BuildWeapon(g) != null) built++;
+            if (Robot)
+            {
+                // B136 (user 11-22): the knife and the torch as slots 3 and 4
+                if (BuildKnife() != null) built++;
+                if (BuildTorch() != null) built++;
+                LR2ScopeBuilder.UpgradePipScopesAndGrenades();
+            }
             AssetDatabase.SaveAssets();
             Debug.Log($"[LR2] Weapons built: {built}/{Guns.Length} (Kinemation demo animation sets).");
         }
@@ -737,7 +777,8 @@ namespace LR2.EditorTools
             def.leftGripOffset = spec.leftGripOffset;
             EditorUtility.SetDirty(def);
 
-            string weaponSrc = UseKinemationDriver ? spec.source : SwatAk12;
+            bool robot = Robot; // B136: the generic demo guns exactly as shipped (profiles, attachments, reloads)
+            string weaponSrc = robot ? (spec.robotSource ?? spec.source) : UseKinemationDriver ? spec.source : SwatAk12;
             var src = AssetDatabase.LoadAssetAtPath<GameObject>(weaponSrc);
             if (src == null)
             {
@@ -754,17 +795,18 @@ namespace LR2.EditorTools
 
             // B49/B55: Clear Generic-rig AttachHandLayerSettings from Kinemation demo attachments (e.g. Mk18 GripEmpty/GripMount)
             // so Humanoid left-hand IK stays locked to the handguard instead of snapping down to the waist.
-            foreach (var att in go.GetComponentsInChildren<BaseAttachment>(true))
-            {
-                if (att != null && att.attachmentLayerSettings != null && att.attachmentLayerSettings.Count > 0)
+            if (!robot)
+                foreach (var att in go.GetComponentsInChildren<BaseAttachment>(true))
                 {
-                    att.attachmentLayerSettings.Clear();
-                    EditorUtility.SetDirty(att);
+                    if (att != null && att.attachmentLayerSettings != null && att.attachmentLayerSettings.Count > 0)
+                    {
+                        att.attachmentLayerSettings.Clear();
+                        EditorUtility.SetDirty(att);
+                    }
                 }
-            }
 
             // B49: AK-74N's demo 1P29 scope shader renders magenta in HDRP ADS; switch AK-74N cleanly to its built-in DefaultAimPoint iron sights.
-            if (spec.id == "AK74N")
+            if (!robot && spec.id == "AK74N")
             {
                 foreach (var tf in go.GetComponentsInChildren<Transform>(true))
                 {
@@ -772,7 +814,7 @@ namespace LR2.EditorTools
                 }
             }
             // Default MK18: use LeadRushHDRP's W_Mk18_ReloadEmpty mesh (crisp built-in iron sights) and disable all optional attachments.
-            if (spec.id == "Mk18")
+            if (!robot && spec.id == "Mk18") // B136: the robot keeps the stock MK18 with its attachments
             {
                 foreach (var att in go.GetComponentsInChildren<BaseAttachment>(true))
                 {
@@ -887,7 +929,7 @@ namespace LR2.EditorTools
             var swatReload = UseKinemationDriver ? null : ConfigureSwatAnimationRigAndReload(); // driver: Kinemation's own reload clip
             var reloadProp = so.FindProperty("reloadClip");
             if (reloadProp != null && swatReload != null) reloadProp.objectReferenceValue = swatReload;
-            if (spec.id == "Mk18" && reloadProp != null)
+            if (!robot && spec.id == "Mk18" && reloadProp != null)
             {
                 // Generic C_Mk18_ReloadEmpty animates IK hands in Blender Z-up (-1.97 m below rig); use clean Humanoid rifle reload clip like AK-74N
                 // while Mk18_Animator.overrideController drives Mk18/Root/Mag and Mk18/Root/Bolt on the LeadRushHDRP MK18 rig.
@@ -901,18 +943,19 @@ namespace LR2.EditorTools
             var tacEndProp = so.FindProperty("tacticalEndAfterMagIn");
             if (tacEndProp != null) tacEndProp.floatValue = 0.03f;
             // B49: Ensure every rifle/pistol weapon uses the Humanoid FPSAnimator controller (AK74N/Mk18/FAL came from Generic demo prefabs).
-            if (UseKinemationDriver)
+            if (UseKinemationDriver && !robot)
             {
                 var humCtrl = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(DemoDir + "/Animations/Locomotion/FPSAnimator_Humanoid.controller");
                 var ovProp = so.FindProperty("overrideController");
                 if (ovProp != null && humCtrl != null) ovProp.objectReferenceValue = humCtrl;
             }
-            if (spec.id == "AK74N" || spec.id == "Mk18")
+            if (robot) ConfigureRobotFirearm(so, go);
+            if (!robot && (spec.id == "AK74N" || spec.id == "Mk18"))
             {
                 var sg = so.FindProperty("scopeGroups");
                 if (sg != null) sg.ClearArray();
             }
-            if (spec.id == "Mk18")
+            if (!robot && spec.id == "Mk18")
             {
                 var ba = so.FindProperty("barrelAttachments.attachments");
                 if (ba != null) ba.ClearArray();
@@ -922,11 +965,20 @@ namespace LR2.EditorTools
             so.ApplyModifiedPropertiesWithoutUndo();
 
             // Muzzle + ejection port from mesh bounds (longest axis = barrel, always pointing away from rear AimPoint).
-            var bounds = LocalBounds(go);
+            // B136: the robot's guns carry attachments; measure the bare gun (a fitted suppressor moves the muzzle at runtime)
+            var bounds = robot ? LocalBounds(go, true) : LocalBounds(go);
             int axis = bounds.size.x > bounds.size.y ? (bounds.size.x > bounds.size.z ? 0 : 2) : (bounds.size.y > bounds.size.z ? 1 : 2);
             float sign = Mathf.Abs(bounds.max[axis]) >= Mathf.Abs(bounds.min[axis]) ? 1f : -1f;
             var entity = go.GetComponent<FPSAnimatorEntity>();
-            if (entity != null)
+            if (entity != null && robot)
+            {
+                // B136: the gun's own profile and aim points stay as shipped
+                if (entity.defaultAimPoint == null)
+                    entity.defaultAimPoint = go.GetComponentsInChildren<Transform>(true)
+                        .FirstOrDefault(tf => tf.name == "AimPoint" || tf.name == "DefaultAimPoint" || tf.name == "PointAim");
+                EditorUtility.SetDirty(entity);
+            }
+            else if (entity != null)
             {
                 string profPath = spec.cls == WeaponClass.Pistol
                     ? DemoDir + "/AnimatorProfiles/AnimatorProfile_Pistol_Humanoid.asset"
@@ -1020,6 +1072,7 @@ namespace LR2.EditorTools
             ejector.ShellPrefab = def.shellPrefab;
 
             gun.Configure(def, muzzle, flash != null ? flash.GetComponent<MuzzleFlash>() : null, ejector);
+            if (robot) AddLaserDevice(go, gun, muzzle, spec.cls == WeaponClass.Pistol); // B136
             EditorUtility.SetDirty(gun);
             return SavePrefab(go, PrefabDir + $"/Weapons/LR2_{spec.id}.prefab");
         }
@@ -1372,6 +1425,8 @@ namespace LR2.EditorTools
             {
                 var material = NewParticle(texture, Color.white, 1f, false);
                 if (material.HasProperty("_LuminanceToAlpha")) material.SetFloat("_LuminanceToAlpha", 1f);
+                // Smoke flipbook cells overlap; cap each sheet's alpha so the stack reads as a soft plume, not a solid card.
+                if (material.HasProperty("_LuminanceAlphaScale")) material.SetFloat("_LuminanceAlphaScale", 0.25f);
                 return material;
             }
 
@@ -1861,13 +1916,16 @@ namespace LR2.EditorTools
             }
         }
 
-        private static Bounds LocalBounds(GameObject go)
+        private static Bounds LocalBounds(GameObject go) => LocalBounds(go, false);
+
+        private static Bounds LocalBounds(GameObject go, bool excludeAttachments)
         {
             var b = new Bounds(Vector3.zero, Vector3.zero);
             bool first = true;
             foreach (var r in go.GetComponentsInChildren<Renderer>())
             {
                 if (r is ParticleSystemRenderer) continue;
+                if (excludeAttachments && r.GetComponentInParent<BaseAttachment>(true) != null) continue;
                 var rb = r.bounds;
                 var corners = new[]
                 {
@@ -1893,7 +1951,12 @@ namespace LR2.EditorTools
         private static void ConfigureLocomotionSpeed()
         {
             const string path = "Assets/KinemationDemo/Animations/Locomotion/FPSAnimator_Humanoid.controller";
-            var ctrl = AssetDatabase.LoadAssetAtPath<UnityEditor.Animations.AnimatorController>(path);
+            ConfigureLocomotionSpeed(AssetDatabase.LoadAssetAtPath<UnityEditor.Animations.AnimatorController>(path));
+        }
+
+        /// <summary>LR2's shortened timings on a Kinemation controller: LocoSpeed cadence, fast prone/crouch, quick turn entries.</summary>
+        private static void ConfigureLocomotionSpeed(UnityEditor.Animations.AnimatorController ctrl)
+        {
             if (ctrl == null) { Debug.LogWarning("[LR2] Locomotion controller not found"); return; }
             bool hasParam = false;
             foreach (var p in ctrl.parameters) if (p.name == "LocoSpeed") hasParam = true;
@@ -1953,16 +2016,17 @@ namespace LR2.EditorTools
             {
                 var all = new List<UnityEditor.Animations.AnimatorState>();
                 Collect(layer.stateMachine, all);
-                UnityEditor.Animations.AnimatorState S(string n) => all.Find(st => st.name == n);
-                var toProne = S("C_CrouchToProne_Humanoid");
+                // B136: the humanoid driver names its clips *_Humanoid and its prone state ProneTree; the generic robot does not
+                UnityEditor.Animations.AnimatorState S(string n) => all.Find(st => st.name == n) ?? all.Find(st => st.name == n + "_Humanoid");
+                var toProne = S("C_CrouchToProne");
                 if (toProne == null) continue;
                 var standing = all.Find(st => st.name == "Standing" && System.Array.Exists(st.transitions, t => t.destinationState != null
                     && (t.destinationState.name == "Crouching" || t.destinationState.name.StartsWith("C_StandingToCrouch") || t.destinationState == toProne)));
                 var crouching = S("Crouching");
-                var prone = S("ProneTree");
-                var proneToCrouch = S("C_ProneToCrouch_Humanoid");
-                var standToCrouch = S("C_StandingToCrouch_Humanoid");
-                var crouchToStand = S("C_CrouchToStanding_Humanoid");
+                var prone = S("ProneTree") ?? S("Prone");
+                var proneToCrouch = S("C_ProneToCrouch");
+                var standToCrouch = S("C_StandingToCrouch");
+                var crouchToStand = S("C_CrouchToStanding");
                 if (standing == null || crouching == null || prone == null || proneToCrouch == null)
                 {
                     Debug.LogWarning("[LR2] B90: stance states not found, prone/crouch speed unchanged");
@@ -2267,6 +2331,7 @@ namespace LR2.EditorTools
 
         public static void BuildSoldiers()
         {
+            if (Robot) { BuildRobotSoldiers(); return; } // B136: the original Kinemation robot
             ConfigureLocomotionSpeed();
             ConfigureUpscaling();
             string soldierSrc = UseKinemationDriver ? DriverPrefab : SwatPrefab;
@@ -2515,10 +2580,10 @@ namespace LR2.EditorTools
         private static List<RagdollBone> BuildHitboxRagdoll(Animator anim, Health health)
         {
             var result = new List<RagdollBone>();
-            if (anim == null || !anim.isHuman) return result;
+            if (anim == null) return result;
             var bodies = new Dictionary<HumanBodyBones, Rigidbody>();
 
-            Transform B(HumanBodyBones b) => anim.GetBoneTransform(b);
+            Transform B(HumanBodyBones b) => LR2Bones.Get(anim, b); // B136: humanoid or the generic robot
             void Add(HumanBodyBones bone, HumanBodyBones childBone, HitZone zone, float mass, float radiusMeters, bool box)
             {
                 var t = B(bone);

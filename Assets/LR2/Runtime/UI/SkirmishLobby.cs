@@ -180,6 +180,7 @@ namespace LR2.UI
                 int cur = SkirmishSetup.Bots.Count > 0 ? SkirmishSetup.Bots[0].difficulty : 1;
                 int next = (cur + d + SkirmishSetup.DifficultyNames.Length) % SkirmishSetup.DifficultyNames.Length;
                 foreach (var b in SkirmishSetup.Bots) b.difficulty = next;
+                LR2Settings.BotDifficulty = next; // B136: the lobby owns bot difficulty (the Settings panel no longer has its own copy)
                 Rebuild();
             }, null, () => SkirmishSetup.Bots.Count > 0 ? DiffIcons[Mathf.Clamp(SkirmishSetup.Bots[0].difficulty, 0, 4)] : null);
 

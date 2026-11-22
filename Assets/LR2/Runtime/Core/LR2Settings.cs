@@ -58,6 +58,10 @@ namespace LR2.Core
         public static int BotTeamMode { get => Mathf.Clamp(GetI("v3.BotTeamMode", 0), 0, 4); set => SetI("v3.BotTeamMode", Mathf.Clamp(value, 0, 4)); }
         /// <summary>Bodycam lens look (distortion, grain, aberration, grade).</summary>
         public static bool BodycamLook { get => GetB("v2.BodycamLook", false); set => SetB("v2.BodycamLook", value); }
+        /// <summary>B136q: Controls menu input behavior toggles.</summary>
+        public static bool ToggleAim { get => GetB("v4.ToggleAim", false); set => SetB("v4.ToggleAim", value); }
+        public static bool ToggleSprint { get => GetB("v4.ToggleSprint", false); set => SetB("v4.ToggleSprint", value); }
+        public static bool AutoSprint { get => GetB("v4.AutoSprint", false); set => SetB("v4.AutoSprint", value); }
         /// <summary>Bodycam camera motion (head bob, inertia sway, handheld shake). On by default (user asked for visible bodycam motion);
         /// new v3 key so an old saved 0 from the v2 default doesn't keep it off.</summary>
         public static float BodycamMotion { get => GetF("v3.BodycamMotion", 1f); set => SetF("v3.BodycamMotion", Mathf.Clamp(value, 0f, 1.5f)); }
@@ -80,6 +84,7 @@ namespace LR2.Core
                          "v3.CameraShake", "v3.AntiAliasing", "v3.Upscaler", "v3.ColorBlind",
                          "MasterVol", "SfxVol", "MusicVol", "UiVol", "Quality", "VSync", "FpsLimit", "ShowFps",
                          "MotionBlur", "v2.MotionBlur", "FilmGrain", "RayTracing", "HitmarkerSound", "v3.LaserEnabled", "v4.LaserEnabled", "BotDifficulty", "v3.BotTeamMode",
+                         "v4.ToggleAim", "v4.ToggleSprint", "v4.AutoSprint",
                          "BodycamLook", "v2.BodycamLook", "BodycamMotion", "v2.BodycamMotion", "v3.BodycamMotion" })
                 PlayerPrefs.DeleteKey(Prefix + key);
             Notify();

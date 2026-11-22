@@ -77,6 +77,11 @@ namespace LR2.Characters
             _cmd.jump = false;
             _cmd.crouch = false;
             _cmd.prone = false;
+            _cmd.grenade = false; // B136
+            _cmd.cycleScope = false;
+            _cmd.fireMode = false;
+            _cmd.inspect = false;
+            _cmd.attachmentSlot = -1;
         }
 
         private void Note(string s) => _log.AppendLine($"[{Time.time,7:0.00}] {s}");
@@ -146,6 +151,8 @@ namespace LR2.Characters
             if (Array.IndexOf(args, "-lr2AdsWallCheck") >= 0) { yield return AdsWallCheck(); Finish(); yield break; }
             // -lr2GripCheck: where each hand sits on the gun (weapon space) + the gun's underside profile (B26/B49), then quit.
             if (Array.IndexOf(args, "-lr2GripCheck") >= 0) { yield return GripCheck(); Finish(); yield break; }
+            // -lr2ExtrasCheck (B136): Kinemation's demo features in LR2 (sights, fire modes, inspect, grenade, knife, torch), then quit.
+            if (Array.IndexOf(args, "-lr2ExtrasCheck") >= 0) { yield return ExtrasCheck(); Finish(); yield break; }
             // -lr2FxShots: fire close-ups and forced thunderstorm rain (B87/B93/B97/B101), then quit.
             if (Array.IndexOf(args, "-lr2FxShots") >= 0) { yield return FxShots(); Finish(); yield break; }
             // -lr2AdsWalkCheck: sight picture and view stability while moving in ADS (B91), then quit.
@@ -1040,6 +1047,104 @@ namespace LR2.Characters
             Note(GripLine("pistol ADS"));
             yield return Capture("grip_pistol_ads_fp", "pistol ADS first person", View.FirstPerson);
             _cmd.aim = false; yield return Wait(0.5f);
+        }
+
+        /// <summary>
+        /// B136: every Kinemation demo feature LR2 now wires up, captured in order: sight-group cycling in ADS, fire-mode switch,
+        /// attachment editing (inspect pose + each group cycled), a grenade throw and its explosion, the knife (with a stab on
+        /// the frozen enemy at 1.3 m) and the torch (lit, then off), then back to the rifle.
+        /// </summary>
+        private IEnumerator ExtrasCheck()
+        {
+            float yaw = OpenYaw();
+            _soldier.Teleport(new Vector3(24f, 0.05f, 0f), yaw);
+            _cmd = SoldierInput.Empty; _cmd.absoluteLook = true; _cmd.aimYaw = yaw;
+            yield return Wait(1.6f);
+            var gun = _soldier.ActiveFirearm;
+            Note($"EXTRAS gun={gun?.DisplayName} scope={gun?.ActiveScope?.name} editable={gun?.HasEditableAttachments} " +
+                 $"kinemationAttachments={gun?.UsesKinemationAttachments} grenades={_soldier.GrenadesLeft} items={_soldier.Items.Count}");
+            _cmd.aim = true; yield return Wait(1.2f);
+            yield return Capture("ex_01_ads_sight0", $"ADS sight {gun?.ActiveScope?.name}");
+            _cmd.cycleScope = true; yield return Wait(1.0f);
+            Note($"EXTRAS cycled sight -> {gun?.ActiveScope?.name}");
+            yield return Capture("ex_02_ads_sight1", $"ADS sight {gun?.ActiveScope?.name}");
+            _cmd.cycleScope = true; yield return Wait(0.8f);
+            _cmd.aim = false; yield return Wait(0.6f);
+
+            var mode = gun != null ? gun.FireMode.ToString() : "-";
+            _cmd.fireMode = true; yield return Wait(0.3f);
+            Note($"EXTRAS fire mode {mode} -> {(gun != null ? gun.FireMode.ToString() : "-")}");
+
+            _cmd.inspect = true; yield return Wait(0.9f);
+            Note($"EXTRAS inspect editing={_soldier.IsEditingAttachments}");
+            yield return Capture("ex_03_inspect", "attachment editing");
+            for (int g = 1; g <= 3; g++)
+            {
+                _cmd.attachmentSlot = g; yield return Wait(0.6f);
+                Note($"EXTRAS cycled group {g}: scope={gun?.ActiveScope?.name} suppressed={gun?.IsSuppressed}");
+                yield return Capture($"ex_04_inspect_group{g}", $"attachment group {g} cycled");
+            }
+            _cmd.inspect = true; yield return Wait(0.8f);
+            Note($"EXTRAS inspect left editing={_soldier.IsEditingAttachments}");
+
+            // throw down the clearest lane (the first run faced a wall 2 m away: the frag bounced back and killed the thrower)
+            float bestYaw = _cmd.aimYaw, bestDist = 0f;
+            for (int i = 0; i < 16; i++)
+            {
+                float y = i * 22.5f;
+                Vector3 d = Quaternion.Euler(0f, y, 0f) * Vector3.forward;
+                float dist = Physics.Raycast(_soldier.AimOrigin, d, out var hitInfo, 60f, LR2.Core.LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore) ? hitInfo.distance : 60f;
+                if (dist > bestDist) { bestDist = dist; bestYaw = y; }
+            }
+            _cmd.aimYaw = bestYaw; _cmd.aimPitch = -10f; yield return Wait(0.6f);
+            Note($"EXTRAS grenade lane yaw={bestYaw:0} clear={bestDist:0.0} m");
+            int before = _soldier.GrenadesLeft;
+            _cmd.grenade = true; yield return Wait(0.3f);
+            yield return Capture("ex_05_grenade_throw", "grenade throw");
+            yield return Wait(1.0f);
+            Note($"EXTRAS grenades {before} -> {_soldier.GrenadesLeft} throwing={_soldier.IsThrowingGrenade}");
+            yield return Capture("ex_06_after_throw", "after the throw");
+            yield return Wait(2.0f);
+            yield return Capture("ex_07_explosion", "grenade explosion");
+            yield return Wait(0.8f);
+            if (_soldier.IsDead)
+            {
+                Note("EXTRAS the thrower died in the blast; respawning for the knife and torch steps");
+                _soldier.Respawn(new Vector3(24f, 0.05f, 0f), yaw);
+                yield return Wait(1.2f);
+            }
+            _cmd.aimYaw = yaw; _cmd.aimPitch = 0f; yield return Wait(0.4f);
+
+            _cmd.weaponSlot = 2; yield return Wait(1.4f);
+            Note($"EXTRAS slot 3 item={_soldier.ActiveItem?.DisplayName} ads={_soldier.ActiveItem?.SupportsAds}");
+            yield return Capture("ex_08_knife", "knife");
+            if (_enemy != null)
+            {
+                Vector3 fwd = Quaternion.Euler(0f, _cmd.aimYaw, 0f) * Vector3.forward;
+                if (_enemy.IsDead) _enemy.Respawn(_soldier.transform.position + fwd * 1.3f, _cmd.aimYaw + 180f);
+                else _enemy.Teleport(_soldier.transform.position + fwd * 1.3f, _cmd.aimYaw + 180f);
+                yield return Wait(0.5f);
+            }
+            float hpBefore = _enemy != null && _enemy.Health != null ? _enemy.Health.Current + _enemy.Health.Armor : -1f;
+            _cmd.fire = true; yield return Wait(0.16f);
+            yield return Capture("ex_09_knife_stab", "knife stab");
+            _cmd.fire = false; yield return Wait(0.6f);
+            float hpAfter = _enemy != null && _enemy.Health != null ? _enemy.Health.Current + _enemy.Health.Armor : -1f;
+            Note($"EXTRAS knife enemy hp+armour {hpBefore:0} -> {hpAfter:0} dead={(_enemy != null && _enemy.IsDead)}");
+            yield return Capture("ex_10_knife_side", null, View.Side);
+
+            _cmd.weaponSlot = 3; yield return Wait(1.4f);
+            var torch = _soldier.ActiveItem as LR2.Weapons.LR2Torch;
+            Note($"EXTRAS slot 4 item={_soldier.ActiveItem?.DisplayName} lit={(torch != null && torch.IsLit)}");
+            yield return Capture("ex_11_torch", "torch");
+            yield return Capture("ex_12_torch_front", null, View.Front);
+            _cmd.fire = true; yield return Wait(0.1f); _cmd.fire = false; yield return Wait(0.5f);
+            Note($"EXTRAS torch toggled lit={(torch != null && torch.IsLit)}");
+            yield return Capture("ex_13_torch_off", "torch off");
+
+            _cmd.weaponSlot = 0; yield return Wait(1.4f);
+            Note($"EXTRAS back to {_soldier.ActiveItem?.DisplayName}");
+            yield return Capture("ex_14_rifle_back", "rifle back");
         }
 
         private IEnumerator DeathTest()

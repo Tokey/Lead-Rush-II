@@ -27,7 +27,8 @@ namespace LR2.Characters
         [SerializeField] private bool autoSprint;
 
         private InputAction _move, _look, _lookStick, _fire, _aim, _sprint, _jump, _crouch, _prone, _reload, _leanL, _leanR,
-            _slot1, _slot2, _next, _scroll, _interact, _laser, _crouchHold;
+            _slot1, _slot2, _next, _scroll, _interact, _laser, _crouchHold,
+            _slot3, _slot4, _grenade, _cycleScope, _fireMode, _inspect; // B136
         private bool _aimToggled, _sprintToggled;
         // B90 (user 00:13): hold X to crouch, double-tap X to slide
         private const float SlideDoubleTapSeconds = 0.3f;
@@ -67,6 +68,17 @@ namespace LR2.Characters
             _scroll = new InputAction("Scroll", InputActionType.Value, "<Mouse>/scroll/y");
             _interact = new InputAction("Interact", InputActionType.Button, "<Keyboard>/f");
             _laser = new InputAction("Laser", InputActionType.Button, "<Keyboard>/l");
+            // B136: knife (3) and torch (4) slots, and Kinemation's demo actions on its own keys (G, V, B, I)
+            _slot3 = new InputAction("Slot3", InputActionType.Button, "<Keyboard>/3");
+            _slot4 = new InputAction("Slot4", InputActionType.Button, "<Keyboard>/4");
+            _grenade = new InputAction("Grenade", InputActionType.Button, "<Keyboard>/g");
+            _grenade.AddBinding("<Gamepad>/rightShoulder");
+            _cycleScope = new InputAction("CycleScope", InputActionType.Button, "<Keyboard>/v");
+            _cycleScope.AddBinding("<Gamepad>/dpad/up");
+            _fireMode = new InputAction("FireMode", InputActionType.Button, "<Keyboard>/b");
+            _fireMode.AddBinding("<Gamepad>/dpad/left");
+            _inspect = new InputAction("Inspect", InputActionType.Button, "<Keyboard>/i");
+            _inspect.AddBinding("<Gamepad>/dpad/right");
 
             ApplyBindingsFromRegistry();
             LR2Bindings.Changed -= ApplyBindingsFromRegistry;
@@ -109,6 +121,14 @@ namespace LR2.Characters
             "LeanRight" => _leanR,
             "Interact" => _interact,
             "Laser" => _laser,
+            "Slot1" => _slot1,
+            "Slot2" => _slot2,
+            "Slot3" => _slot3,
+            "Slot4" => _slot4,
+            "Grenade" => _grenade,
+            "CycleScope" => _cycleScope,
+            "FireMode" => _fireMode,
+            "Inspect" => _inspect,
             _ => null
         };
 
@@ -127,6 +147,14 @@ namespace LR2.Characters
             SyncAction(_leanR, "LeanRight", 0, "<Keyboard>/e");
             SyncAction(_interact, "Interact", 0, "<Keyboard>/f");
             SyncAction(_laser, "Laser", 0, "<Keyboard>/l");
+            SyncAction(_slot1, "Slot1", 0, "<Keyboard>/1");
+            SyncAction(_slot2, "Slot2", 0, "<Keyboard>/2");
+            SyncAction(_slot3, "Slot3", 0, "<Keyboard>/3");
+            SyncAction(_slot4, "Slot4", 0, "<Keyboard>/4");
+            SyncAction(_grenade, "Grenade", 0, "<Keyboard>/g");
+            SyncAction(_cycleScope, "CycleScope", 0, "<Keyboard>/v");
+            SyncAction(_fireMode, "FireMode", 0, "<Keyboard>/b");
+            SyncAction(_inspect, "Inspect", 0, "<Keyboard>/i");
         }
 
         private static void SyncAction(InputAction target, string registryName, int bindingIndex, string fallbackPath)
@@ -143,7 +171,7 @@ namespace LR2.Characters
         private InputAction[] All() => new[]
         {
             _move, _look, _lookStick, _fire, _aim, _sprint, _jump, _crouch, _prone, _reload, _leanL, _leanR, _slot1, _slot2, _next,
-            _scroll, _interact, _laser, _crouchHold
+            _scroll, _interact, _laser, _crouchHold, _slot3, _slot4, _grenade, _cycleScope, _fireMode, _inspect
         };
 
         public void GetInput(SoldierController soldier, ref SoldierInput input)
@@ -176,15 +204,18 @@ namespace LR2.Characters
             input.look = new Vector2(look.x, LR2Settings.InvertY ? look.y : -look.y);
 
             input.fire = _fire.IsPressed();
-            if (toggleAim)
+            bool useToggleAim = toggleAim || LR2Settings.ToggleAim;
+            if (useToggleAim)
             {
                 if (_aim.WasPressedThisFrame()) _aimToggled = !_aimToggled;
                 input.aim = _aimToggled;
             }
             else input.aim = _aim.IsPressed();
 
-            if (autoSprint) input.sprint = input.move.y > 0.7f;
-            else if (toggleSprint)
+            bool useAutoSprint = autoSprint || LR2Settings.AutoSprint;
+            bool useToggleSprint = toggleSprint || LR2Settings.ToggleSprint;
+            if (useAutoSprint) input.sprint = input.move.y > 0.7f;
+            else if (useToggleSprint)
             {
                 if (_sprint.WasPressedThisFrame()) _sprintToggled = !_sprintToggled;
                 if (input.move.y < 0.3f) _sprintToggled = false;
@@ -207,8 +238,23 @@ namespace LR2.Characters
             if (_laser.WasPressedThisFrame()) LR2Settings.LaserEnabled = !LR2Settings.LaserEnabled;
             input.lean = (_leanR.IsPressed() ? 1f : 0f) - (_leanL.IsPressed() ? 1f : 0f);
 
+            input.grenade |= _grenade.WasPressedThisFrame();
+            input.cycleScope |= _cycleScope.WasPressedThisFrame();
+            input.fireMode |= _fireMode.WasPressedThisFrame();
+            input.inspect |= _inspect.WasPressedThisFrame();
+
+            if (soldier.IsEditingAttachments)
+            {
+                // Kinemation's attachment editing: 1 barrel, 2 grip, 3 sight (the slot keys are free while the gun is held up)
+                if (_slot1.WasPressedThisFrame()) input.attachmentSlot = 1;
+                if (_slot2.WasPressedThisFrame()) input.attachmentSlot = 2;
+                if (_slot3.WasPressedThisFrame()) input.attachmentSlot = 3;
+                return;
+            }
             if (_slot1.WasPressedThisFrame()) input.weaponSlot = 0;
             if (_slot2.WasPressedThisFrame()) input.weaponSlot = 1;
+            if (_slot3.WasPressedThisFrame()) input.weaponSlot = 2; // B136: knife
+            if (_slot4.WasPressedThisFrame()) input.weaponSlot = 3; // B136: torch
             float scroll = _scroll.ReadValue<float>();
             input.nextWeapon |= _next.WasPressedThisFrame() || Mathf.Abs(scroll) > 0.1f;
         }

@@ -351,8 +351,83 @@ namespace LR2.FX
         }
 
         public int ActiveGunDropletCount => _gunDrops.Count;
+        public float LastMeasuredTopY { get; private set; } = -1f;
+
+        public float[] GetActiveGunDropletLocalY()
+        {
+            var ys = new float[_gunDrops.Count];
+            for (int i = 0; i < _gunDrops.Count; i++)
+                ys[i] = _gunDrops[i].go != null ? _gunDrops[i].go.transform.localPosition.y : 0f;
+            return ys;
+        }
 
         // ------------------------------------------------------------------ 3D gun blood drops welded onto weapon mesh
+        private void MeasureWeaponTopEnvelope(Transform weaponRoot, float zMin, float zMax, float fallbackY, bool isCompactPistol, out float topY, out float halfX)
+        {
+            topY = fallbackY + (isCompactPistol ? 0.018f : 0.032f);
+            halfX = isCompactPistol ? 0.012f : 0.019f;
+
+            float measuredTop = float.MinValue;
+            float measuredMaxX = 0f;
+            bool any = false;
+
+            foreach (var r in weaponRoot.GetComponentsInChildren<Renderer>(false))
+            {
+                if (r == null || !r.enabled || !r.gameObject.activeInHierarchy) continue;
+                string rn = r.gameObject.name;
+                if (rn.Contains("[LR2_Blood") || rn.Contains("Laser") || rn.Contains("Muzzle") ||
+                    rn.Contains("Crosshair") || rn.Contains("Particle") || rn.Contains("Flame") || rn.Contains("Smoke"))
+                    continue;
+                if (r is ParticleSystemRenderer || r is LineRenderer || r is TrailRenderer) continue;
+
+                Mesh mesh = null;
+                if (r is SkinnedMeshRenderer smr && smr.sharedMesh != null) mesh = smr.sharedMesh;
+                else if (r.TryGetComponent<MeshFilter>(out var mf) && mf.sharedMesh != null) mesh = mf.sharedMesh;
+                if (mesh == null) continue;
+
+                if (mesh.isReadable)
+                {
+                    var verts = mesh.vertices;
+                    Matrix4x4 toRoot = weaponRoot.worldToLocalMatrix * r.transform.localToWorldMatrix;
+                    int step = Mathf.Max(1, verts.Length / 350);
+                    for (int vi = 0; vi < verts.Length; vi += step)
+                    {
+                        Vector3 p = toRoot.MultiplyPoint3x4(verts[vi]);
+                        if (p.z < zMin || p.z > zMax) continue;
+                        if (Mathf.Abs(p.x) > 0.038f || p.y > 0.095f || p.y < -0.05f) continue;
+                        if (p.y > measuredTop) measuredTop = p.y;
+                        measuredMaxX = Mathf.Max(measuredMaxX, Mathf.Abs(p.x));
+                        any = true;
+                    }
+                }
+                else
+                {
+                    Bounds lb = r.localBounds;
+                    if (lb.size.sqrMagnitude < 1e-6f) continue;
+                    Matrix4x4 toRoot = weaponRoot.worldToLocalMatrix * r.transform.localToWorldMatrix;
+                    Vector3 min = lb.min, max = lb.max;
+                    for (int c = 0; c < 8; c++)
+                    {
+                        Vector3 pt = toRoot.MultiplyPoint3x4(new Vector3(
+                            (c & 1) == 0 ? min.x : max.x,
+                            (c & 2) == 0 ? min.y : max.y,
+                            (c & 4) == 0 ? min.z : max.z));
+                        if (Mathf.Abs(pt.x) <= 0.05f && pt.y <= 0.085f && pt.y > measuredTop)
+                        {
+                            measuredTop = pt.y;
+                            any = true;
+                        }
+                    }
+                }
+            }
+
+            if (any)
+            {
+                topY = Mathf.Clamp(measuredTop, fallbackY + 0.006f, fallbackY + (isCompactPistol ? 0.036f : 0.062f));
+                if (measuredMaxX > 0.008f) halfX = Mathf.Clamp(measuredMaxX * 0.85f, 0.011f, 0.023f);
+            }
+        }
+
         private void SplashGunDroplets(int count, float severity)
         {
             if (_soldier == null || _soldier.IsDead || _soldier.ActiveItem == null) return;
@@ -365,22 +440,25 @@ namespace LR2.FX
             // Locate structural landmarks in weaponRoot's 1:1 meter local space (never scaled 100x FBX SkinnedMesh containers)
             Transform muzzleT = FindDeepChild(weaponRoot, "Muzzle");
             Transform ejectT = FindDeepChild(weaponRoot, "EjectionPort");
-            Transform aimT = FindDeepChild(weaponRoot, "AimPoint");
+            Transform aimT = FindDeepChild(weaponRoot, "AimPoint") ?? FindDeepChild(weaponRoot, "DefaultAimPoint");
 
             Vector3 ejectLocal = ejectT != null ? weaponRoot.InverseTransformPoint(ejectT.position) : new Vector3(0.01f, 0.0f, 0.06f);
             Vector3 muzzleLocal = muzzleT != null ? weaponRoot.InverseTransformPoint(muzzleT.position) : ejectLocal + Vector3.forward * 0.40f;
             Vector3 aimLocal = aimT != null ? weaponRoot.InverseTransformPoint(aimT.position) : new Vector3(0f, 0.055f, -0.25f);
 
-            Vector3 boreDir = muzzleLocal - ejectLocal;
-            float boreLen = boreDir.magnitude;
-            Vector3 fwd = boreLen > 0.05f ? boreDir / boreLen : Vector3.forward;
+            // B136n: Use horizontal bore span and the real upper-receiver / top-rail envelope so droplets always land ON TOP
+            // of the weapon (visible in 1P), never slung underneath the barrel where Muzzle.y dips negative.
+            Vector3 flatDelta = new Vector3(muzzleLocal.x - ejectLocal.x, 0f, muzzleLocal.z - ejectLocal.z);
+            float boreLen = Mathf.Max(0.14f, flatDelta.magnitude);
+            Vector3 fwd = flatDelta.sqrMagnitude > 1e-4f ? flatDelta / flatDelta.magnitude : Vector3.forward;
             bool isCompactPistol = boreLen < 0.28f;
 
-            // Receiver-to-handguard span strictly ahead of rear AimPoint eye clearance
-            Vector3 spineStart = ejectLocal - fwd * (isCompactPistol ? 0.04f : 0.06f);
-            Vector3 spineEnd = ejectLocal + fwd * Mathf.Clamp(boreLen * 0.62f, 0.09f, 0.26f);
-            float hullRadiusX = isCompactPistol ? 0.012f : 0.018f;
-            float hullRadiusY = isCompactPistol ? 0.013f : 0.019f;
+            float baseY = Mathf.Max(ejectLocal.y, muzzleLocal.y, 0.0f);
+            Vector3 spineStart = new Vector3(0f, baseY, ejectLocal.z - (isCompactPistol ? 0.03f : 0.05f));
+            Vector3 spineEnd = spineStart + fwd * Mathf.Clamp(boreLen * 0.68f, 0.08f, 0.27f);
+            MeasureWeaponTopEnvelope(weaponRoot, Mathf.Min(spineStart.z, spineEnd.z), Mathf.Max(spineStart.z, spineEnd.z), baseY, isCompactPistol,
+                out float topY, out float hullRadiusX);
+            LastMeasuredTopY = topY;
 
             Vector3 lossy = weaponRoot.lossyScale;
             float invScale = 1f / Mathf.Max(0.25f, (Mathf.Abs(lossy.x) + Mathf.Abs(lossy.y) + Mathf.Abs(lossy.z)) / 3f);
@@ -396,8 +474,6 @@ namespace LR2.FX
                 }
             }
 
-            Vector3 worldDown = Vector3.down;
-
             for (int n = 0; n < count; n++)
             {
                 while (_gunDrops.Count >= MaxGunDroplets)
@@ -412,32 +488,32 @@ namespace LR2.FX
 
                 for (int attempt = 0; attempt < 12; attempt++)
                 {
-                    float tAlong = Random.Range(0.12f, 0.98f);
+                    float tAlong = Random.Range(0.10f, 0.96f);
                     Vector3 spine = Vector3.Lerp(spineStart, spineEnd, tAlong);
 
-                    // Favor left receiver wall & forward upper handguard (clearly visible in 1P without blocking ADS rear aperture)
-                    bool placeOnTop = tAlong > 0.42f && Random.value < 0.45f;
+                    // 85% directly along the top rail / upper receiver / slide top, 15% on the upper-left bevel (0 under barrel)
+                    bool placeOnTop = Random.value < 0.85f;
                     if (placeOnTop)
                     {
-                        float rx = Random.Range(-0.55f, 0.55f) * hullRadiusX;
-                        localNormal = new Vector3(rx / Mathf.Max(0.005f, hullRadiusX) * 0.35f, 1f, 0f).normalized;
-                        localPos = spine + new Vector3(rx, hullRadiusY * 0.95f, 0f);
+                        float rx = Random.Range(-0.68f, 0.68f) * hullRadiusX;
+                        localNormal = new Vector3(rx / Mathf.Max(0.005f, hullRadiusX) * 0.25f, 1f, 0f).normalized;
+                        localPos = new Vector3(spine.x + rx, topY + 0.0012f, spine.z);
                     }
                     else
                     {
-                        float side = Random.value < 0.72f ? -1f : 1f;
-                        float upOff = Random.Range(-0.25f, 0.55f) * hullRadiusY;
-                        localNormal = new Vector3(side * 0.92f, 0.38f, 0f).normalized;
-                        localPos = spine + new Vector3(side * hullRadiusX, upOff, 0f);
+                        float rx = -hullRadiusX * Random.Range(0.75f, 0.96f);
+                        float yBevel = topY - Random.Range(0.002f, 0.008f);
+                        localNormal = new Vector3(-0.62f, 0.78f, 0f).normalized;
+                        localPos = new Vector3(spine.x + rx, yBevel, spine.z);
                     }
 
                     // Keep clear of AimPoint ocular sight axis during ADS
-                    if (Vector3.Distance(localPos, aimLocal) < 0.085f) continue;
+                    if (Vector3.Distance(localPos, aimLocal) < 0.075f) continue;
 
-                    // Verify live camera clearance: strictly ahead of lens (>= 24 cm forward) so drops never float across screen
+                    // Verify live camera clearance: strictly ahead of lens (>= 22 cm forward) so drops never float across screen
                     Vector3 worldPos = weaponRoot.TransformPoint(localPos);
                     Vector3 camLocal = camT.InverseTransformPoint(worldPos);
-                    if (camLocal.z >= 0.24f && Mathf.Sqrt(camLocal.x * camLocal.x + camLocal.y * camLocal.y + camLocal.z * camLocal.z) >= 0.26f)
+                    if (camLocal.z >= 0.22f && Mathf.Sqrt(camLocal.x * camLocal.x + camLocal.y * camLocal.y + camLocal.z * camLocal.z) >= 0.24f)
                     {
                         valid = true;
                         break;
@@ -472,7 +548,7 @@ namespace LR2.FX
                     ? new Vector3(localBase, localBase * Random.Range(0.85f, 1.2f), localBase * 0.34f)
                     : new Vector3(localBase, localBase * Random.Range(0.85f, 1.2f), localBase);
 
-                Vector3 hostGravity = weaponRoot.InverseTransformDirection(worldDown).normalized;
+                Vector3 hostGravity = weaponRoot.InverseTransformDirection(Vector3.down).normalized;
                 Vector3 slip = Vector3.ProjectOnPlane(hostGravity, localNormal);
                 if (slip.sqrMagnitude > 0.01f) slip.Normalize();
                 else slip = Vector3.zero;

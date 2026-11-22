@@ -159,7 +159,7 @@ namespace LR2.EditorTools
         [MenuItem("LR2/Configure Build Icon & Version", priority = 35)]
         public static void ConfigureBuildIdentity()
         {
-            PlayerSettings.bundleVersion = "11.19.26.7";
+            PlayerSettings.bundleVersion = "11.22.26.1";
             const string iconPath = "Assets/LR2/UI/Icons/LR2_AppIcon.png";
             Directory.CreateDirectory(Path.GetDirectoryName(iconPath));
             if (!File.Exists(iconPath))
@@ -248,6 +248,8 @@ namespace LR2.EditorTools
         public static void BuildCharactersThenPlayBatch()
         {
             bool ok = true;
+            // B136: a Kinemation re-import brings URP materials back; convert them before the guns and soldiers are built
+            ok &= Step("Convert Kinemation demo materials", LR2ContentBuilder.ConvertDemoMaterials);
             ok &= Step("FX", LR2ContentBuilder.BuildFx);
             ok &= Step("Audio", LR2ContentBuilder.BuildAudio);
             ok &= Step("Weapons", LR2ContentBuilder.BuildWeapons);

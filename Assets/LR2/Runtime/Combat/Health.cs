@@ -37,6 +37,8 @@ namespace LR2.Combat
         public event Action<DamageInfo> Damaged;
         public event Action<DamageInfo> Died;
         public event Action Revived;
+        public event Action RegenStarted;
+        public event Action HealthReplenished;
         /// <summary>Raised once when a hit takes the armour from above zero to zero.</summary>
         public event Action<DamageInfo> ArmorBroken;
         /// <summary>Raised when armour is refilled (argument: amount added).</summary>
@@ -62,6 +64,8 @@ namespace LR2.Combat
         public bool CanBeDamaged => IsAlive && !IsInvulnerable;
 
         private float _invulnerableUntil;
+        private bool _regenActive;
+        private bool _needsReplenishSfx;
 
         public float MaxHealth
         {
@@ -82,7 +86,22 @@ namespace LR2.Combat
         {
             if (!IsAlive || !regenerate || Current >= maxHealth) return;
             if (Time.time - LastDamageTime < regenDelay) return;
+            if (!_regenActive)
+            {
+                _regenActive = true;
+                RegenStarted?.Invoke();
+            }
             Current = Mathf.Min(maxHealth, Current + regenPerSecond * Time.deltaTime);
+            if (Current >= maxHealth - 0.01f)
+            {
+                Current = maxHealth;
+                _regenActive = false;
+                if (_needsReplenishSfx)
+                {
+                    _needsReplenishSfx = false;
+                    HealthReplenished?.Invoke();
+                }
+            }
         }
 
         public float ApplyDamage(ref DamageInfo info)
@@ -123,6 +142,16 @@ namespace LR2.Combat
             LastDamage = info;
 
             bool killed = Current <= 0.001f;
+            if (killed)
+            {
+                _regenActive = false;
+                _needsReplenishSfx = false;
+            }
+            else if (applied > 0f && Current < maxHealth - 1f)
+            {
+                _needsReplenishSfx = true;
+                _regenActive = false;
+            }
             float total = applied + toArmor;
             if (info.attacker != null && info.attacker != Owner)
                 info.attacker.stats.damageDealt += total;
@@ -152,6 +181,8 @@ namespace LR2.Combat
             if (!IsAlive) return;
             Current = 0f;
             IsAlive = false;
+            _regenActive = false;
+            _needsReplenishSfx = false;
             info.victim = Owner;
             if (Owner != null) Owner.LastDeathTime = Time.time;
 
@@ -179,7 +210,14 @@ namespace LR2.Combat
         public void Heal(float amount)
         {
             if (!IsAlive) return;
+            float before = Current;
             Current = Mathf.Min(maxHealth, Current + Mathf.Max(0f, amount));
+            if (before < maxHealth - 0.5f && Current >= maxHealth - 0.01f)
+            {
+                _regenActive = false;
+                _needsReplenishSfx = false;
+                HealthReplenished?.Invoke();
+            }
         }
 
         /// <summary>Refills armour (ammo stations). Returns the amount actually added (0 when full, dead or unarmoured).</summary>
@@ -198,6 +236,8 @@ namespace LR2.Combat
             Current = maxHealth;
             Armor = maxArmor;
             IsAlive = true;
+            _regenActive = false;
+            _needsReplenishSfx = false;
             LastDamageTime = -999f;
             _invulnerableUntil = Time.time + spawnProtection;
             Revived?.Invoke();

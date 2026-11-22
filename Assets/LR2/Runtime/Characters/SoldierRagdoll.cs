@@ -27,12 +27,43 @@ namespace LR2.Characters
         public bool IsActive { get; private set; }
         public IReadOnlyList<RagdollBone> Bones => bones;
 
-        public void SetBones(List<RagdollBone> newBones) => bones = newBones ?? new List<RagdollBone>();
+        private Vector3[] _restLocalPos;
+        private Quaternion[] _restLocalRot;
+        private bool _restCaptured;
 
-        private void Awake() => SetKinematic(true);
+        public void SetBones(List<RagdollBone> newBones)
+        {
+            bones = newBones ?? new List<RagdollBone>();
+            _restCaptured = false;
+            CaptureRestPose();
+        }
+
+        private void Awake()
+        {
+            CaptureRestPose();
+            SetKinematic(true);
+        }
+
+        /// <summary>Snapshots authored bone rest transforms before physics ragdoll activation (B136h).</summary>
+        private void CaptureRestPose()
+        {
+            if (_restCaptured || bones == null || bones.Count == 0) return;
+            _restLocalPos = new Vector3[bones.Count];
+            _restLocalRot = new Quaternion[bones.Count];
+            for (int i = 0; i < bones.Count; i++)
+            {
+                var b = bones[i];
+                if (b == null || b.body == null) continue;
+                Transform tf = b.body.transform;
+                _restLocalPos[i] = tf.localPosition;
+                _restLocalRot[i] = tf.localRotation;
+            }
+            _restCaptured = true;
+        }
 
         public void Activate(DamageInfo info)
         {
+            CaptureRestPose();
             var animator = GetComponent<Animator>();
             if (animator != null) animator.enabled = false;
             var combatant = GetComponent<Combatant>();
@@ -66,7 +97,23 @@ namespace LR2.Characters
         public void Deactivate()
         {
             SetKinematic(true);
+            RestoreRestPose();
+            Physics.SyncTransforms();
             IsActive = false;
+        }
+
+        private void RestoreRestPose()
+        {
+            if (!_restCaptured || bones == null || _restLocalPos == null || _restLocalRot == null) return;
+            int n = Mathf.Min(bones.Count, Mathf.Min(_restLocalPos.Length, _restLocalRot.Length));
+            for (int i = 0; i < n; i++)
+            {
+                var b = bones[i];
+                if (b == null || b.body == null) continue;
+                Transform tf = b.body.transform;
+                tf.localPosition = _restLocalPos[i];
+                tf.localRotation = _restLocalRot[i];
+            }
         }
 
         private void SetKinematic(bool kinematic)

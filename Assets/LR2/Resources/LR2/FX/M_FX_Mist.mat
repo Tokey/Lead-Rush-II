@@ -33,6 +33,7 @@ Material:
     - _Cull: 0
     - _DstBlend: 10
     - _Intensity: 1
+    - _LuminanceAlphaScale: 0.25
     - _LuminanceToAlpha: 1
     - _PremultiplyAlpha: 0
     - _SoftFade: 0.8

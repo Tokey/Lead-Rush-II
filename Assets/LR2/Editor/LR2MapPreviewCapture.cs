@@ -1023,10 +1023,11 @@ namespace LR2.EditorTools
                         mm.SelectMap(0); // Saltworks
                         LR2Settings.LaserEnabled = true;
                         LR2Settings.BodycamMotion = 0f;
-                        // B31: Capture the starter title screen cleanly first, then dismiss it before main_menu_hero.png
+                        // B31: Capture the minimalistic loading / starter title screen cleanly first, then dismiss it before main_menu_hero.png
                         LR2LoadingIntro.SetCapturePreviewTitleScreen(true);
                         yield return new WaitForSecondsRealtime(0.25f);
                         yield return SaveScreenPng(Path.Combine(MediaDir, "title_screen.png"));
+                        yield return SaveScreenPng(Path.Combine(MediaDir, "loading_screen.png"));
                         LR2LoadingIntro.SetCapturePreviewTitleScreen(false);
 
                         // Wait for the boot intro to finish fading: the 11-18 10:12 hero caught "LEADRUSH II / DEPLOYMENT READY"
@@ -1047,13 +1048,23 @@ namespace LR2.EditorTools
                             yield return new WaitForSecondsRealtime(0.25f);
                         }
 
-                        // 1c. Settings Steppers panel (B44 bright amber checkbox polish + Camo-bust filename)
+                        // 1c. Settings Graphics & Controls tabs
                         if (mm.settingsButton != null)
                         {
                             mm.settingsButton.onClick.Invoke();
-                            yield return new WaitForSecondsRealtime(0.4f);
+                            yield return new WaitForSecondsRealtime(0.35f);
+                            var spPanel = mm.settingsPanel != null ? mm.settingsPanel.GetComponentInChildren<SettingsPanel>(true) : null;
+                            if (spPanel != null) spPanel.SelectTab(1);
+                            yield return new WaitForSecondsRealtime(0.25f);
                             yield return SaveScreenPng(Path.Combine(MediaDir, "settings_graphics.png"));
                             yield return SaveScreenPng(Path.Combine(MediaDir, "settings_graphics_v2.png"));
+                            if (spPanel != null)
+                            {
+                                spPanel.SelectTab(2);
+                                yield return new WaitForSecondsRealtime(0.25f);
+                                yield return SaveScreenPng(Path.Combine(MediaDir, "settings_controls.png"));
+                                spPanel.SelectTab(0);
+                            }
                             if (mm.settingsBackButton != null) mm.settingsBackButton.onClick.Invoke();
                             yield return new WaitForSecondsRealtime(0.25f);
                         }
@@ -1246,6 +1257,27 @@ namespace LR2.EditorTools
                         "saltworks_fire_02.png",
                         new Vector3(-11f, 2f, -10f),
                         new Vector3(0f, 1.8f, 0f));
+
+                    // AK-12 Circular PiP Scope ADS showcase (Slot 1 rifle on reload of Saltworks)
+                    LR2Session.SelectedPrimaryWeapon = 1;
+                    SceneManager.LoadScene("LR2_Saltworks");
+                    yield return null;
+                    SoldierController akSoldier = null;
+                    yield return WaitForPlayScene("LR2_Saltworks", s => akSoldier = s);
+                    if (akSoldier != null)
+                    {
+                        foreach (var bc in Object.FindObjectsByType<LR2.AI.BotController>())
+                            if (bc != null) bc.enabled = false;
+                        Vector3 pAk = GroundAt(new Vector3(-11.5f, 3f, 6.5f));
+                        Vector3 lookAk = GroundAt(new Vector3(-1.5f, 3f, 9.5f)) + Vector3.up * 1.38f;
+                        akSoldier.Movement.Teleport(pAk);
+                        AimAt(pAk, lookAk, -1.5f, out _);
+                        _cmd.aim = true;
+                        yield return new WaitForSecondsRealtime(0.60f);
+                        yield return SaveScreenPng(Path.Combine(MediaDir, "ak12_pip_scope_ads.png"));
+                        _cmd.aim = false;
+                    }
+                    LR2Session.SelectedPrimaryWeapon = 0;
 
                     // Remaining 3 maps: 3 atmospheric shots per map (hero, fog/trench/lane, fire lighting)
                     yield return CaptureMapAtmosphericShots(

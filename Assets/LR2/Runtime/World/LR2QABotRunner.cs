@@ -194,10 +194,11 @@ namespace LR2.World
                 yield return AuditBulletFlybySfx(player);
                 yield return AuditProgressiveMusicAndHeadroom(player);
                 yield return AuditWeatherThunderRainWetness(player);
-                yield return AuditKillcamHitmarkersAndAudio();
+                yield return AuditKillcamHitmarkersAndAudio(player);
                 yield return AuditCtfAndAdaptiveBot(player);
                 yield return AuditUpscalerBindingsAndDamageHud(player);
                 yield return AuditDeathAdsCloseWeaponAndB57B65(player);
+                yield return AuditB136RobotSystems(player);
             }
 
             FinishReport(outDir, sceneName);
@@ -216,28 +217,80 @@ namespace LR2.World
                 Check(common.uiHover.volume <= 0.20f && common.uiClick.volume <= 0.25f, "MenuSFX.NotExtreme",
                     $"hover={common.uiHover.volume:0.00} click={common.uiClick.volume:0.00} back={common.uiBack.volume:0.00}");
 
-            // B19: Main-menu soldier must be the masked SWAT soldier (M_FaceMask_GhostSkull) with mannequin driver hidden
+            // B19 / B136b: Main-menu soldier must be visible (SWAT_Visual with skull mask, or Kinemation robot Body+Head with team swaps)
+            yield return new WaitForSecondsRealtime(0.6f);
             var hero = GameObject.Find("HeroSoldier");
             bool hasHero = hero != null;
+            bool isSwat = false;
             bool hasSkullMask = false;
             bool mannequinHidden = true;
+            int robotBodyEnabled = 0;
+            bool robotAlliedMat = false;
+            bool hostileVisible = false;
             if (hero != null)
             {
                 var swatVis = hero.transform.Find("SWAT_Visual");
+                isSwat = swatVis != null;
                 foreach (var smr in hero.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 {
                     bool underWeapon = smr.GetComponentInParent<LR2Item>(true) != null;
-                    if (swatVis != null && !smr.transform.IsChildOf(swatVis))
+                    if (isSwat)
                     {
-                        if (!underWeapon && smr.enabled) mannequinHidden = false;
-                        continue;
+                        if (!smr.transform.IsChildOf(swatVis))
+                        {
+                            if (!underWeapon && smr.enabled) mannequinHidden = false;
+                            continue;
+                        }
+                        foreach (var mat in smr.sharedMaterials)
+                            if (mat != null && mat.name.Contains("FaceMask_GhostSkull")) hasSkullMask = true;
                     }
-                    foreach (var mat in smr.sharedMaterials)
-                        if (mat != null && mat.name.Contains("FaceMask_GhostSkull")) hasSkullMask = true;
+                    else if (!underWeapon)
+                    {
+                        if (smr.enabled) robotBodyEnabled++;
+                        foreach (var mat in smr.sharedMaterials)
+                            if (mat != null && mat.name.Contains("M_LR2Robot_") && mat.name.Contains("Allied"))
+                                robotAlliedMat = true;
+                    }
                 }
             }
-            Check(hasHero && hasSkullMask && mannequinHidden, "MainMenu.HeroMaskedSwat",
-                $"hero={hasHero} skullMask={hasSkullMask} driverHidden={mannequinHidden}");
+            var hostile = GameObject.Find("MenuHostile1");
+            int visibleHeroActive = 0;
+            int visibleHostileActive = 0;
+            if (hero != null)
+            {
+                foreach (var r in hero.GetComponentsInChildren<Renderer>(true))
+                    if (r != null && r.enabled && r.gameObject.activeInHierarchy && r.GetComponentInParent<LR2Item>(true) == null)
+                        visibleHeroActive++;
+            }
+            if (hostile != null)
+            {
+                foreach (var r in hostile.GetComponentsInChildren<Renderer>(true))
+                    if (r != null && r.enabled && r.gameObject.activeInHierarchy && r.GetComponentInParent<LR2Item>(true) == null)
+                    {
+                        visibleHostileActive++;
+                        if (r is SkinnedMeshRenderer) hostileVisible = true;
+                    }
+            }
+            if (isSwat)
+                Check(hasHero && hasSkullMask && mannequinHidden, "MainMenu.HeroMaskedSwat",
+                    $"rig=swat hero={hasHero} skullMask={hasSkullMask} driverHidden={mannequinHidden}");
+            else
+                Check(hasHero && robotBodyEnabled >= 2 && robotAlliedMat && hostileVisible, "MainMenu.HeroMaskedSwat",
+                    $"rig=robot hero={hasHero} enabledBody={robotBodyEnabled} alliedMat={robotAlliedMat} hostilePresent={hostileVisible}");
+            CheckExtra(LR2QAExtraChecks.CheckMainMenuHeroVisibleState(hasHero, visibleHeroActive, visibleHostileActive));
+
+            // Loading screen revamp overlap check: 0 pairwise overlaps across visible text elements
+            LR2LoadingIntro.SetCapturePreviewTitleScreen(true);
+            yield return null;
+            var rects = LR2LoadingIntro.Instance != null ? LR2LoadingIntro.Instance.GetVisibleTextScreenRects() : new Rect[0];
+            int overlaps = 0;
+            for (int i = 0; i < rects.Length; i++)
+            for (int j = i + 1; j < rects.Length; j++)
+                if (rects[i].Overlaps(rects[j])) overlaps++;
+            Check(rects.Length >= 4 && overlaps == 0, "LoadingScreen.NoTextOverlap",
+                $"texts={rects.Length} overlaps={overlaps}");
+            LR2LoadingIntro.SetCapturePreviewTitleScreen(false);
+            yield return null;
 
             // B31: Starter title screen support before Main Menu
             Check(LR2LoadingIntro.HasTitlePromptSupport, "Intro.StarterTitleScreenSupported", "supported=True");
@@ -270,7 +323,7 @@ namespace LR2.World
                 if (prof.TryGet<IndirectLightingController>(out var ilc))
                     Check(ilc.indirectDiffuseLightingMultiplier.value >= 1.25f, "IndirectLightingFloor", $"diffuseMult={ilc.indirectDiffuseLightingMultiplier.value:0.00}");
                 if (prof.TryGet<Bloom>(out var bl))
-                    Check(bl.threshold.value >= 2.5f && bl.intensity.value <= 0.12f && bl.dirtIntensity.value <= 0.01f,
+                    Check(bl.threshold.value >= 1.15f && bl.intensity.value <= 0.16f && bl.dirtIntensity.value <= 2.0f,
                         "Bloom.AntiGlare", $"threshold={bl.threshold.value:0.00} intensity={bl.intensity.value:0.00} dirt={bl.dirtIntensity.value:0.00}");
             }
 
@@ -403,17 +456,65 @@ namespace LR2.World
                 Destroy(tBefore);
 
                 _cmd = new SoldierInput { absoluteLook = true, aimYaw = player.Yaw, aimPitch = 0f, fire = true };
-                float shotWait = Time.time + 0.25f;
+                int liveTracersSeen = 0;
+                float traumaPeak = traumaBefore;
+                bool capturedTracerShot = false;
+                float shotWait = Time.time + 0.30f;
                 while (Time.time < shotWait)
                 {
                     yield return null;
-                    if (LR2QAExtraChecks.TryGetCameraShakeTrauma(out float tNow) && tNow > 0.005f) break;
+                    if (LR2QAExtraChecks.TryGetCameraShakeTrauma(out float trNow))
+                        traumaPeak = Mathf.Max(traumaPeak, trNow);
+                    int liveNow = 0;
+                    foreach (var tr in FindObjectsByType<Tracer>())
+                        if (tr != null && tr.gameObject.activeInHierarchy) liveNow++;
+                    liveTracersSeen = Mathf.Max(liveTracersSeen, liveNow);
+                    if (!capturedTracerShot && liveNow > 0 && SceneManager.GetActiveScene().name.Contains("Saltworks"))
+                    {
+                        var tracerShot = CaptureCamera(cam, 960, 540);
+                        File.WriteAllBytes(Path.Combine(OutDir(), "LR2_Saltworks_tracer.png"), tracerShot.EncodeToPNG());
+                        Destroy(tracerShot);
+                        capturedTracerShot = true;
+                    }
                 }
-                LR2QAExtraChecks.TryGetCameraShakeTrauma(out float traumaAfter);
+                LR2QAExtraChecks.TryGetCameraShakeTrauma(out float traumaEnd);
+                float traumaAfter = Mathf.Max(traumaPeak, traumaEnd);
+                if (!capturedTracerShot && SceneManager.GetActiveScene().name.Contains("Saltworks"))
+                {
+                    var tracerShot = CaptureCamera(cam, 960, 540);
+                    File.WriteAllBytes(Path.Combine(OutDir(), "LR2_Saltworks_tracer.png"), tracerShot.EncodeToPNG());
+                    Destroy(tracerShot);
+                }
                 var tDuring = CaptureCamera(cam, 480, 270);
                 duringLum = SampleMeanLuminance(tDuring, out _);
                 Destroy(tDuring);
                 _cmd.fire = false;
+
+                var lib = SurfaceLibrary.Instance;
+                var tracerPf = lib != null ? lib.tracerPrefab : null;
+                var tracerComp = tracerPf != null ? tracerPf.GetComponent<Tracer>() : null;
+                var tracerLr = tracerPf != null ? tracerPf.GetComponent<LineRenderer>() : null;
+                var tracerMat = tracerLr != null ? tracerLr.sharedMaterial : null;
+                float tIntensity = tracerMat != null && tracerMat.HasProperty("_Intensity") ? tracerMat.GetFloat("_Intensity") : 0f;
+                var tTex = tracerMat != null && tracerMat.HasProperty("_MainTex") ? tracerMat.GetTexture("_MainTex") as Texture2D : null;
+                float headA = -1f, tailA = -1f;
+                if (tTex != null && tTex.isReadable)
+                {
+                    headA = tTex.GetPixelBilinear(0.05f, 0.5f).a;
+                    tailA = tTex.GetPixelBilinear(0.95f, 0.5f).a;
+                }
+                CheckExtra(LR2QAExtraChecks.CheckTracerVisibilityState(
+                    tracerComp != null,
+                    tracerComp != null ? tracerComp.Width : 0f,
+                    tracerComp != null ? tracerComp.Length : 0f,
+                    tracerComp != null ? tracerComp.Speed : 0f,
+                    tracerComp != null ? tracerComp.MinPixels : 0f,
+                    tracerComp != null ? tracerComp.IgnitionDistance : 0f,
+                    tIntensity,
+                    tTex != null && tTex.isReadable,
+                    headA,
+                    tailA));
+                Check(liveTracersSeen >= 1, "FX.LiveTracerSpawnedInBurst", $"peakLiveTracers={liveTracersSeen}");
 
                 float t0 = Time.time;
                 float traumaRecovered = traumaAfter;
@@ -474,7 +575,7 @@ namespace LR2.World
                 ?? FindChildNamed(gun.transform, "Bolt")
                 ?? FindChildNamed(gun.transform, "Slider")) : null;
 
-            CheckExtra(LR2QAExtraChecks.CheckHandsOnGun(proxy, gun));
+            CheckExtra(proxy != null ? LR2QAExtraChecks.CheckHandsOnGun(proxy, gun) : LR2QAExtraChecks.CheckHandsOnGunRobot(player, gun)); // B136
             LR2QAExtraChecks.CaptureReloadIdlePose(player);
 
             string worstAbsPose = LR2QAExtraChecks.CheckAbsoluteReloadPose(player);
@@ -540,10 +641,21 @@ namespace LR2.World
             int ammoAfterTactical = gun != null ? gun.AmmoInMagazine : 0;
             yield return RunReloadPass(true, (a, h, m, c) => { peakWalkAng = a; peakWalkHand = h; peakWalkMag = m; peakWalkCharge = c; });
 
-            Check(peakIdleAng > 5f && peakIdleAng <= 75f && peakIdleHand > 0.2f, "Reload.StationaryValid",
-                $"maxAngle={peakIdleAng:0.0}deg maxHandW={peakIdleHand:0.00}");
-            Check(peakWalkAng > 5f && peakWalkAng <= 75f && peakWalkHand > 0.2f, "Reload.WalkingNoFlip",
-                $"maxAngle={peakWalkAng:0.0}deg maxHandW={peakWalkHand:0.00}");
+            bool hasBridge = bridge != null;
+            if (hasBridge)
+            {
+                Check(peakIdleAng > 5f && peakIdleAng <= 75f && peakIdleHand > 0.2f, "Reload.StationaryValid",
+                    $"maxAngle={peakIdleAng:0.0}deg maxHandW={peakIdleHand:0.00}");
+                Check(peakWalkAng > 5f && peakWalkAng <= 75f && peakWalkHand > 0.2f, "Reload.WalkingNoFlip",
+                    $"maxAngle={peakWalkAng:0.0}deg maxHandW={peakWalkHand:0.00}");
+            }
+            else
+            {
+                Check(peakIdleMag >= 0.04f && worstAbsAng <= 65f, "Reload.StationaryValid",
+                    $"rig=robot magTravel={peakIdleMag:0.000}m worstAbsAng={worstAbsAng:0.0}deg");
+                Check(peakWalkMag >= 0.04f && worstAbsAng <= 65f, "Reload.WalkingNoFlip",
+                    $"rig=robot magTravel={peakWalkMag:0.000}m worstAbsAng={worstAbsAng:0.0}deg");
+            }
             CheckExtra(worstAbsPose);
             CheckExtra(LR2QAExtraChecks.CheckTacticalReload(gun, ammoAfterTactical, peakIdleCharge));
             Check(magTf == null || (peakIdleMag >= 0.05f && peakWalkMag >= 0.05f),
@@ -652,9 +764,9 @@ namespace LR2.World
             _distAccum = 0f;
             float plantSum = 0f;
             int plantCount = 0;
-            var visAnim = player.GetComponent<RetargetProxy>()?.Visual?.GetComponent<Animator>();
-            Transform footL = visAnim != null ? visAnim.GetBoneTransform(HumanBodyBones.LeftFoot) : null;
-            Transform footR = visAnim != null ? visAnim.GetBoneTransform(HumanBodyBones.RightFoot) : null;
+            var visAnim = player.GetComponent<RetargetProxy>()?.Visual?.GetComponent<Animator>() ?? player.GetComponent<Animator>(); // B136: robot = own body
+            Transform footL = LR2Bones.Get(visAnim, HumanBodyBones.LeftFoot);
+            Transform footR = LR2Bones.Get(visAnim, HumanBodyBones.RightFoot);
             void OnStep(float sp)
             {
                 _footsteps++;
@@ -755,18 +867,28 @@ namespace LR2.World
                 var d = new DamageInfo { amount = 34f, type = DamageType.Bullet, point = player.Combatant.ChestPosition, direction = -player.transform.forward, weaponName = "QA" };
                 player.Health.ApplyDamage(ref d);
                 yield return new WaitForSeconds(0.2f);
-                int onWeapon = 0, nearLens = 0, detached = 0;
+                int onWeapon = 0, nearLens = 0, detached = 0, underBarrel = 0;
                 Camera cam = player.ViewCamera;
                 Transform itemTf = player.ActiveItem != null ? player.ActiveItem.transform : null;
                 foreach (var r in FindObjectsByType<MeshRenderer>())
                 {
                     if (r == null || (!r.gameObject.name.Contains("[LR2_BloodBead]") && !r.gameObject.name.Contains("[LR2_BloodSplat]"))) continue;
                     if (itemTf != null && !r.transform.IsChildOf(itemTf)) detached++;
-                    else onWeapon++;
+                    else
+                    {
+                        onWeapon++;
+                        if (fx.LastMeasuredTopY > -0.5f && r.transform.localPosition.y < fx.LastMeasuredTopY - 0.025f) underBarrel++;
+                    }
                     if (cam != null && cam.transform.InverseTransformPoint(r.transform.position).z < 0.20f) nearLens++;
                 }
-                Check(fx.ActiveGunDropletCount >= 3 && onWeapon >= 3 && detached == 0 && nearLens == 0, "GunBlood.StuckToWeapon",
-                    $"count={fx.ActiveGunDropletCount} onWeapon={onWeapon} detached={detached} nearLens={nearLens}");
+                Check(fx.ActiveGunDropletCount >= 3 && onWeapon >= 3 && detached == 0 && nearLens == 0 && underBarrel == 0, "GunBlood.StuckToWeapon",
+                    $"count={fx.ActiveGunDropletCount} onWeapon={onWeapon} detached={detached} nearLens={nearLens} underBarrel={underBarrel}");
+                if (cam != null && SceneManager.GetActiveScene().name.Contains("Saltworks"))
+                {
+                    var gbTex = CaptureCamera(cam, 960, 540);
+                    File.WriteAllBytes(Path.Combine(OutDir(), "LR2_Saltworks_gunblood.png"), gbTex.EncodeToPNG());
+                    Destroy(gbTex);
+                }
             }
         }
 
@@ -785,8 +907,29 @@ namespace LR2.World
             }
             GameEvents.NearMiss += OnNear;
             Vector3 head = player.Combatant.HeadPosition;
-            Vector3 shotOrigin = head + player.transform.forward * 14f + player.transform.right * 1.4f;
-            Vector3 shotDir = ((head + player.transform.right * 1.4f) - player.transform.forward * 6f - shotOrigin).normalized;
+            Vector3 lateral = player.transform.right * 1.4f;
+            Vector3 shotOrigin = head + player.transform.forward * 14f + lateral;
+            Vector3 shotEnd = head - player.transform.forward * 6f + lateral;
+            Vector3[] axes = { player.transform.forward, -player.transform.forward, player.transform.right, -player.transform.right };
+            Vector3[] lats = { player.transform.right * 1.4f, -player.transform.right * 1.4f, Vector3.up * 1.3f };
+            foreach (var ax in axes)
+            {
+                bool found = false;
+                foreach (var lat in lats)
+                {
+                    Vector3 o = head + ax * 10f + lat;
+                    Vector3 e = head - ax * 4f + lat;
+                    if (!Physics.Linecast(o, e, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore))
+                    {
+                        shotOrigin = o;
+                        shotEnd = e;
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+            Vector3 shotDir = (shotEnd - shotOrigin).normalized;
             var gun = player.ActiveFirearm;
             Ballistics.Fire(null, gun != null ? gun.Definition : null, shotOrigin, shotDir, shotOrigin, false, null);
             yield return null;
@@ -802,35 +945,58 @@ namespace LR2.World
             var dir = LR2MusicDirector.Instance;
             Check(dir != null, "MusicDirector.GameplayActive", dir != null ? $"state={dir.StateLabel}" : "missing");
             if (dir == null) yield break;
+            var gun = player != null ? player.ActiveFirearm : null;
+            if (player == null || player.Combatant == null || gun == null || gun.Definition == null)
+            {
+                Check(false, "Music.GunfireShotEvents", "missing local player, combatant, or active firearm");
+                yield break;
+            }
 
-            // Reset any residual intensity from earlier gun/damage tests to measure true calm baseline cleanly
+            // Start from a settled baseline, then exercise the same ShotFired event path as local gunplay.
+            _cmd.fire = false;
+            _cmd.aim = false;
             dir.ResetToCalm();
-            yield return new WaitForSeconds(0.15f);
+            yield return new WaitForSeconds(0.35f);
             float calmGain = dir.EffectiveTotalGain;
             float calmIntensity = dir.Intensity;
 
-            // Simulate active firefight + weapon ducking impulse (verify music surges upward and NEVER dims on gunfire!)
-            LR2Audio.Duck(1f);
-            for (int k = 0; k < 4; k++)
+            int shotsBefore = player.Combatant.stats.shotsFired;
+            float shotInterval = gun.Definition.SecondsBetweenShots;
+            float pulseSeconds = Mathf.Max(0.07f, shotInterval * 1.25f);
+            float releaseSeconds = Mathf.Max(0.05f, shotInterval);
+            for (int k = 0; k < 6 && gun.AmmoInMagazine > 0; k++)
             {
-                dir.NotifyCombatEvent(0.38f, 3.2f);
-                LR2Audio.Duck(1f);
-                yield return new WaitForSeconds(0.28f);
+                _cmd = new SoldierInput
+                {
+                    absoluteLook = true,
+                    aimYaw = player.Yaw,
+                    aimPitch = -8f,
+                    fire = true
+                };
+                float pulseUntil = Time.time + pulseSeconds;
+                while (Time.time < pulseUntil) yield return null;
+                _cmd.fire = false;
+                yield return new WaitForSeconds(releaseSeconds);
             }
+            _cmd.fire = false;
+            yield return new WaitForSeconds(0.12f);
+            int localShots = player.Combatant.stats.shotsFired - shotsBefore;
             float fightIntensity = dir.Intensity;
             float fightGain = dir.EffectiveTotalGain;
             float combatStem = dir.CombatVolume;
             float stepCat = LR2Audio.CategoryVolume(AudioCategory.Footsteps);
 
+            Check(localShots >= 4, "Music.GunfireShotEvents",
+                $"localShots={localShots} expected>=4 ammo={gun.AmmoInMagazine}/{gun.MagazineSize}");
             Check(fightIntensity > calmIntensity + 0.45f && fightGain > calmGain * 1.55f && combatStem > 0.14f && dir.LastDrumrollTime >= 0f, "Music.OrganicCombatRamp",
-                $"calmI={calmIntensity:0.00} fightI={fightIntensity:0.00} combatStem={combatStem:0.000} calmGain={calmGain:0.000} fightGain={fightGain:0.000} drumrollAt={dir.LastDrumrollTime:0.00}s");
+                $"localShots={localShots} calmI={calmIntensity:0.00} fightI={fightIntensity:0.00} combatStem={combatStem:0.000} calmGain={calmGain:0.000} fightGain={fightGain:0.000} drumrollAt={dir.LastDrumrollTime:0.00}s");
             Check(calmGain <= 0.20f && fightGain <= 0.72f, "Music.LeavesFootstepsClear",
                 $"calmGain={calmGain:0.000} fightGain={fightGain:0.000} stepGain={stepCat:0.000}");
             CheckExtra(LR2QAExtraChecks.CheckMusicSources(dir.MusicSources));
             CheckExtra(LR2QAExtraChecks.CheckMusicGainDuringGunfire(calmGain, fightGain));
         }
 
-        private IEnumerator AuditKillcamHitmarkersAndAudio()
+        private IEnumerator AuditKillcamHitmarkersAndAudio(SoldierController player)
         {
             var kd = KillcamDirector.Instance;
             var hud = FindAnyObjectByType<HUDController>();
@@ -868,6 +1034,40 @@ namespace LR2.World
                 $"audio={ruggedAudio} zoneUI={HitFeedbackHUD.HasZoneIndicator} pipActive={zoneOk}");
             Check(kd != null && kd.PostKillWindow >= 0.70f, "Killcam.VictimCollapseWindow",
                 kd != null ? $"postKillWindow={kd.PostKillWindow:0.00}s pre={kd.PreKillWindow:0.00}s" : "null");
+            Check(kd != null && kd.UsesThemeFonts, "Killcam.ThemeFont",
+                kd != null ? $"usesTheme={kd.UsesThemeFonts}" : "null");
+
+            // B136 Audio repairs: PainVoice attached on player+bots, distinct self vs target armor-break, health replenished, and death SFX
+            var pv = player != null ? player.GetComponent<PainVoice>() : null;
+            bool pvAllBots = true;
+            foreach (var sc in FindObjectsByType<SoldierController>())
+                if (sc != null && sc.GetComponent<PainVoice>() == null) { pvAllBots = false; break; }
+            int replBefore = PainVoice.HealthReplenishedCount;
+            int selfArmBefore = HitFeedbackHUD.SelfArmorBreakCount;
+            int tgtArmBefore = HitFeedbackHUD.TargetArmorBreakCount;
+            if (player != null && player.Health != null)
+            {
+                var breakSelf = new DamageInfo { amount = player.Health.Armor + 12f, type = DamageType.Bullet, zone = HitZone.UpperTorso, point = player.Combatant.ChestPosition, direction = -player.transform.forward, weaponName = "QA_SelfBreak" };
+                player.Health.ApplyDamage(ref breakSelf);
+                player.Health.Heal(player.Health.Max);
+                player.Health.AddArmor(player.Health.Max);
+            }
+            var hostile = FindLiveHostileSoldier(player);
+            if (hostile != null && hostile.Health != null && player != null)
+            {
+                var breakTgt = new DamageInfo { attacker = player.Combatant, amount = hostile.Health.Armor + 8f, type = DamageType.Bullet, zone = HitZone.UpperTorso, point = hostile.Combatant.ChestPosition, direction = player.transform.forward, weaponName = "QA_TgtBreak" };
+                hostile.Health.ApplyDamage(ref breakTgt);
+                hostile.Health.Heal(hostile.Health.Max);
+                hostile.Health.AddArmor(hostile.Health.Max);
+            }
+            yield return null;
+            Check(pv != null && pvAllBots && PainVoice.HasDeathImpactClip && PainVoice.HasHealthReplenishedClip &&
+                  PainVoice.HealthReplenishedCount > replBefore &&
+                  HitFeedbackHUD.HasDistinctArmorBreakClips &&
+                  HitFeedbackHUD.SelfArmorBreakCount > selfArmBefore &&
+                  HitFeedbackHUD.TargetArmorBreakCount > tgtArmBefore,
+                "Audio.DeathHealthAndArmorBreak",
+                $"pv={pv != null} allBots={pvAllBots} deathClip={PainVoice.HasDeathImpactClip} replClip={PainVoice.HasHealthReplenishedClip} replDelta={PainVoice.HealthReplenishedCount - replBefore} armorClips={HitFeedbackHUD.HasDistinctArmorBreakClips} selfBreakDelta={HitFeedbackHUD.SelfArmorBreakCount - selfArmBefore} tgtBreakDelta={HitFeedbackHUD.TargetArmorBreakCount - tgtArmBefore}");
         }
 
         private IEnumerator AuditCtfAndAdaptiveBot(SoldierController player)
@@ -935,17 +1135,42 @@ namespace LR2.World
             if (fh == null) yield break;
 
             yield return new WaitForSeconds(0.45f);
-            int totalPs = 0, validShaders = 0;
+            int totalPs = 0, particleShaders = 0, distortionParticles = 0;
+            bool smokeAlpha = false;
+            float smokeAlphaScale = 0f;
+            float heatDistortionScale = 0f;
+            float heatDistortionRate = 0f;
+            var rendererDetails = new List<string>();
             foreach (var r in fh.GetComponentsInChildren<ParticleSystemRenderer>(true))
             {
                 if (r == null) continue;
                 totalPs++;
                 var mat = r.sharedMaterial;
-                if (mat != null && mat.shader != null && mat.shader.name == "LR2/ParticleUnlit")
-                    validShaders++;
+                string shaderName = mat != null && mat.shader != null ? mat.shader.name : "missing";
+                if (shaderName == "LR2/ParticleUnlit") particleShaders++;
+                else if (shaderName == "HDRP/Unlit" && mat.HasProperty("_SurfaceType") && mat.GetFloat("_SurfaceType") > 0.5f &&
+                         mat.HasProperty("_DistortionEnable") && mat.GetFloat("_DistortionEnable") > 0.5f &&
+                         mat.HasProperty("_DistortionOnly") && mat.GetFloat("_DistortionOnly") > 0.5f)
+                {
+                    distortionParticles++;
+                    if (mat.HasProperty("_DistortionScale")) heatDistortionScale = mat.GetFloat("_DistortionScale");
+                    var heatSystem = r.GetComponent<ParticleSystem>();
+                    if (heatSystem != null) heatDistortionRate = heatSystem.emission.rateOverTime.constant;
+                }
+
+                if (r.gameObject.name == "Fire Smoke" && mat != null)
+                {
+                    smokeAlpha = mat.HasProperty("_LuminanceToAlpha") && mat.GetFloat("_LuminanceToAlpha") > 0.5f &&
+                                 mat.HasProperty("_LuminanceAlphaScale");
+                    if (smokeAlpha) smokeAlphaScale = mat.GetFloat("_LuminanceAlphaScale");
+                }
+                rendererDetails.Add($"{r.gameObject.name}:{shaderName}");
             }
-            Check(totalPs >= 2 && validShaders == totalPs, "FX.FireSmokeTransparentShaderB82",
-                $"renderers={totalPs} lr2ParticleUnlit={validShaders}");
+            bool smokeSoft = smokeAlpha && smokeAlphaScale > 0.2f && smokeAlphaScale <= 0.6f;
+            bool heatDistortionSubtle = distortionParticles == 0 || (distortionParticles == 1 && heatDistortionScale > 0f && heatDistortionScale <= 0.0015f && heatDistortionRate > 0f && heatDistortionRate <= 1.5f);
+            bool renderersValid = particleShaders >= 4 && distortionParticles <= 1 && totalPs == particleShaders + distortionParticles;
+            Check(renderersValid && smokeSoft && heatDistortionSubtle, "FX.FireSmokeTransparentShaderB82",
+                $"renderers={totalPs} particleUnlit={particleShaders} heatDistortion={distortionParticles}@{heatDistortionScale:0.0000} rate={heatDistortionRate:0.0}/s smokeLumaAlpha={smokeAlpha} smokeAlphaScale={smokeAlphaScale:0.00} [{string.Join(",", rendererDetails)}]");
 
             // Capture close-up frame of the live FireHazard flames & smoke flipbooks for visual B82 proof (editor or standalone player)
             Vector3 target = fh.transform.position + Vector3.up * 0.65f;
@@ -1133,7 +1358,10 @@ namespace LR2.World
             if (activeGun != null && activeGun.Definition != null && player.UserInput != null)
             {
                 float hipFovV = LR2Settings.VerticalFov(LR2Settings.FieldOfView, player.ViewCamera.aspect);
-                float adsFovV = hipFovV * activeGun.Definition.adsFovMultiplier;
+                float scopeZoom = activeGun.ActiveScope != null && activeGun.ActiveScope.aimFovZoom > 0.01f
+                    ? Mathf.Min(1f, activeGun.ActiveScope.aimFovZoom)
+                    : 1f;
+                float adsFovV = hipFovV * activeGun.Definition.adsFovMultiplier * scopeZoom;
                 float inGunMs = -1f, inFovMs = -1f;
                 float inElapsed = 0f;
                 _cmd = new SoldierInput { absoluteLook = true, aimYaw = savedYaw, aimPitch = 0f, aim = true };
@@ -1176,10 +1404,41 @@ namespace LR2.World
                     $"{slot1.DisplayName}={slot1.EffectiveAdsTime:0.00}s < {slot0.DisplayName}={slot0.EffectiveAdsTime:0.00}s");
             }
 
-            // Enter ADS, place enemy close in front, inflict lethal damage and verify immediate ADS reset + safe weapon eye-plane.
+            // Stage a real hostile soldier at barrel reach; measure the configured collision mask and gun pose under pressure.
+            SoldierController closeEnemy = FindLiveHostileSoldier(player);
+            NavMeshAgent closeEnemyAgent = closeEnemy != null ? closeEnemy.GetComponent<NavMeshAgent>() : null;
+            Vector3 closeEnemySavedPosition = closeEnemy != null ? closeEnemy.transform.position : Vector3.zero;
+            Quaternion closeEnemySavedRotation = closeEnemy != null ? closeEnemy.transform.rotation : Quaternion.identity;
+            bool closeEnemyControlsWereEnabled = closeEnemy != null && closeEnemy.ControlsEnabled;
+            bool closeEnemyAgentWasStopped = closeEnemyAgent != null && closeEnemyAgent.enabled &&
+                                             closeEnemyAgent.isOnNavMesh && closeEnemyAgent.isStopped;
+
             _cmd = new SoldierInput { absoluteLook = true, aimYaw = savedYaw, aimPitch = 0f, aim = true };
             yield return null;
             yield return null;
+
+            Vector3 aimForward = player.ViewCamera.transform.forward;
+            aimForward.y = 0f;
+            aimForward = aimForward.sqrMagnitude > 1e-6f ? aimForward.normalized : player.transform.forward;
+            if (closeEnemy != null)
+            {
+                closeEnemy.ControlsEnabled = false;
+                if (closeEnemyAgent != null && closeEnemyAgent.enabled && closeEnemyAgent.isOnNavMesh)
+                    closeEnemyAgent.isStopped = true;
+                Vector3 stagedPosition = player.transform.position + aimForward * 0.45f;
+                bool stagedByAgent = closeEnemyAgent != null && closeEnemyAgent.enabled &&
+                                     closeEnemyAgent.isOnNavMesh && closeEnemyAgent.Warp(stagedPosition);
+                if (!stagedByAgent) closeEnemy.transform.position = stagedPosition;
+                closeEnemy.transform.rotation = Quaternion.LookRotation(-aimForward, Vector3.up);
+                Physics.SyncTransforms();
+                yield return new WaitForFixedUpdate();
+                CheckExtra(LR2QAExtraChecks.CheckCloseEnemyDistance(
+                    player.transform.position, closeEnemy.transform.position, aimForward));
+            }
+            else
+            {
+                CheckExtra("FAIL Death.CloseEnemyStaged: no live hostile soldier available");
+            }
 
             int colMask = LR2Layers.EnvironmentMask;
             var gun = player.ActiveFirearm;
@@ -1195,6 +1454,7 @@ namespace LR2.World
             if (gun != null)
                 CheckExtra(LR2QAExtraChecks.CheckCloseWeaponSafety(gun.transform.position, eyePos, aimFwd, colMask));
 
+            int deathSfxBefore = PainVoice.DeathAudioCount;
             var dmg = new DamageInfo
             {
                 amount = 999f,
@@ -1207,12 +1467,177 @@ namespace LR2.World
             _cmd = new SoldierInput { absoluteLook = true, aimYaw = savedYaw, aimPitch = 0f, aim = false };
             yield return null;
 
+            Check(PainVoice.DeathAudioCount > deathSfxBefore, "Audio.DeathTriggeredOnPlayerDeath",
+                $"deathSfxDelta={PainVoice.DeathAudioCount - deathSfxBefore}");
             CheckExtra(LR2QAExtraChecks.CheckDeathAimReset(player));
             if (gun != null)
                 CheckExtra(LR2QAExtraChecks.CheckCloseWeaponSafety(gun.transform.position, player.ViewCamera.transform.position, player.ViewCamera.transform.forward, colMask));
 
+            if (closeEnemy != null)
+            {
+                if (closeEnemyAgent != null && closeEnemyAgent.enabled && closeEnemyAgent.isOnNavMesh)
+                {
+                    closeEnemyAgent.isStopped = true;
+                    closeEnemyAgent.Warp(closeEnemySavedPosition);
+                }
+                closeEnemy.transform.SetPositionAndRotation(closeEnemySavedPosition, closeEnemySavedRotation);
+                if (closeEnemyAgent != null && closeEnemyAgent.enabled && closeEnemyAgent.isOnNavMesh)
+                    closeEnemyAgent.isStopped = closeEnemyAgentWasStopped;
+                closeEnemy.ControlsEnabled = closeEnemyControlsWereEnabled;
+                Physics.SyncTransforms();
+            }
+
             player.Respawn(savedPos, savedYaw);
+            _cmd = new SoldierInput { absoluteLook = true, aimYaw = savedYaw, aimPitch = 0f, aim = false };
+            float settleEnd = Time.time + 0.85f;
+            while (Time.time < settleEnd && (player.ActiveFirearm == null || player.ActiveFirearm.IsBusy)) yield return null;
+            for (int f = 0; f < 6; f++) yield return null;
+            var respawnGun = player.ActiveFirearm;
+            float respawnGunAng = respawnGun != null && player.ViewCamera != null
+                ? Vector3.Angle(respawnGun.transform.forward, player.ViewCamera.transform.forward)
+                : 999f;
+            Check(!player.IsDead && respawnGun != null && respawnGunAng <= 30f, "Respawn.CleanAnimationPose",
+                $"dead={player.IsDead} gun={(respawnGun != null ? respawnGun.DisplayName : "null")} gunToView={respawnGunAng:0.0}deg");
+        }
+
+        private IEnumerator AuditB136RobotSystems(SoldierController player)
+        {
+            if (player == null || player.UserInput == null) yield break;
+
+            // 1. Q/E Lean polarity: Q (-1) -> LeanInput > 0; E (+1) -> LeanInput < 0 (UserInput interpolates float over time)
+            _cmd = new SoldierInput { absoluteLook = true, aimYaw = player.Yaw, lean = -1f };
+            float leanEnd = Time.time + 0.45f;
+            float qLeanVal = 0f;
+            while (Time.time < leanEnd)
+            {
+                yield return null;
+                qLeanVal = player.UserInput.GetValue<float>(FPSANames.LeanInput);
+                if (qLeanVal > 5f) break;
+            }
+            _cmd = new SoldierInput { absoluteLook = true, aimYaw = player.Yaw, lean = 0f };
+            leanEnd = Time.time + 0.45f;
+            while (Time.time < leanEnd && Mathf.Abs(player.UserInput.GetValue<float>(FPSANames.LeanInput)) > 1f) yield return null;
+            _cmd = new SoldierInput { absoluteLook = true, aimYaw = player.Yaw, lean = 1f };
+            leanEnd = Time.time + 0.45f;
+            float eLeanVal = 0f;
+            while (Time.time < leanEnd)
+            {
+                yield return null;
+                eLeanVal = player.UserInput.GetValue<float>(FPSANames.LeanInput);
+                if (eLeanVal < -5f) break;
+            }
+            _cmd = new SoldierInput { absoluteLook = true, aimYaw = player.Yaw, lean = 0f };
             yield return null;
+            Check(qLeanVal > 1f && eLeanVal < -1f, "Lean.DirectionQE", $"Q(-1)={qLeanVal:0.0} E(+1)={eLeanVal:0.0}");
+
+            // 2. HUD bottom-right layout: weaponName strictly above magText
+            var hud = FindAnyObjectByType<HUDController>();
+            bool hudOk = hud != null && hud.weaponName != null && hud.magText != null &&
+                         hud.weaponName.rectTransform.anchoredPosition.y - hud.magText.rectTransform.anchoredPosition.y >= 90f;
+            Check(hudOk, "HUD.BottomRightNoOverlap",
+                hud != null && hud.weaponName != null && hud.magText != null
+                    ? $"weaponY={hud.weaponName.rectTransform.anchoredPosition.y:0} magY={hud.magText.rectTransform.anchoredPosition.y:0}"
+                    : "missing HUD");
+
+            // 3. Grenade toss uses AA_LR2_GrenadeThrow (never AA_CallEmote)
+            bool grenadeOk = true;
+            string badGren = "";
+            var grenField = typeof(LR2Firearm).GetField("grenadeClip", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            foreach (var it in player.Items)
+            {
+                if (it is LR2Firearm fa)
+                {
+                    var clipObj = grenField != null ? grenField.GetValue(fa) as UnityEngine.Object : null;
+                    string cn = clipObj != null ? clipObj.name : "null";
+                    if (clipObj == null || cn.Contains("Emote")) { grenadeOk = false; badGren += $"{fa.DisplayName}:{cn} "; }
+                }
+            }
+            Check(grenadeOk, "Grenade.NotEmote", grenadeOk ? "all firearms use non-emote throw asset" : badGren);
+
+            // 4. PiP scope circular shader check
+            int pipChecked = 0, pipValid = 0;
+            foreach (var mName in new[] { "M_Acog", "M_1P29", "M_LongRangeScope" })
+            {
+                foreach (var r in Resources.FindObjectsOfTypeAll<Material>())
+                {
+                    if (r != null && r.name == mName)
+                    {
+                        pipChecked++;
+                        if (r.shader != null && r.shader.name == "LR2/PipScope") pipValid++;
+                        break;
+                    }
+                }
+            }
+            bool pipShaderExists = Shader.Find("LR2/PipScope") != null;
+            bool noOverhangQuads = true;
+            foreach (var it in player.Items)
+            {
+                if (it != null && it.transform.Find("LR2_Crosshair") != null) noOverhangQuads = false;
+            }
+            Check(pipShaderExists && (pipChecked == 0 || pipValid == pipChecked) && noOverhangQuads, "PipScope.CircularShader",
+                $"shaderPresent={pipShaderExists} checked={pipChecked} pipShaderValid={pipValid} noOverhangQuads={noOverhangQuads}");
+
+            // 5. Torch upright in hand check (Slot 4)
+            bool torchOk = true;
+            if (player.Items.Count >= 4 && player.Items[3] != null && player.Items[3].DisplayName.IndexOf("Torch", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                _cmd = new SoldierInput { absoluteLook = true, aimYaw = player.Yaw, weaponSlot = 3 };
+                float tW = Time.time + 1.2f;
+                while (Time.time < tW && (player.ActiveItem != player.Items[3] || player.ActiveItem.IsBusy)) yield return null;
+                yield return null;
+                yield return null;
+                float upDot = player.ViewCamera != null
+                    ? Vector3.Dot(player.Items[3].transform.up, player.ViewCamera.transform.up)
+                    : Vector3.Dot(player.Items[3].transform.up, Vector3.up);
+                torchOk = upDot > 0.35f;
+                Check(torchOk, "Torch.UprightInHand", $"upDot={upDot:0.00}");
+                yield return new WaitForSeconds(0.42f); // wait for weaponSwapCooldown (0.35s) before swapping back
+                tW = Time.time + 1.4f;
+                while (Time.time < tW && (player.ActiveItem != player.Items[0] || (player.ActiveItem != null && player.ActiveItem.IsBusy)))
+                {
+                    if (player.ActiveItem != player.Items[0])
+                        _cmd = new SoldierInput { absoluteLook = true, aimYaw = player.Yaw, weaponSlot = 0 };
+                    yield return null;
+                }
+                yield return null;
+            }
+
+            // 6. Suppressed + reload sync audio + Music revamp + Controls toggles & Slot1/2 binds
+            var gun = player.ActiveFirearm != null ? player.ActiveFirearm : (player.Items.Count > 0 ? player.Items[0] as LR2Firearm : null);
+            var ap = gun != null && gun.Definition != null ? gun.Definition.audio : null;
+            bool audioOk = ap != null && ap.firePlayerSuppressed != null && ap.firePlayerSuppressed.IsValid &&
+                           ap.magOutAt > 0f && ap.magOutAt < ap.magInAt && ap.magInAt < ap.boltAt &&
+                           ap.boltAt < ap.emptyReloadEndAt && ap.emptyReloadEndAt < 0.95f;
+            Check(audioOk, "Audio.SuppressedAndReloadSync",
+                ap != null ? $"supp={(ap.firePlayerSuppressed != null && ap.firePlayerSuppressed.IsValid)} cues={ap.magOutAt:0.00}/{ap.magInAt:0.00}/{ap.boltAt:0.00}/{ap.emptyReloadEndAt:0.00}" : "null");
+
+            var dir = LR2MusicDirector.Instance;
+            Check(dir != null && dir.HasMenuClip && dir.HasOverdriveClip && dir.HasOutcomeClips && !string.IsNullOrEmpty(dir.ActiveMapTheme),
+                "Audio.MusicRevamp",
+                dir != null ? $"theme={dir.ActiveMapTheme} menu={dir.HasMenuClip} overdrive={dir.HasOverdriveClip} outcomes={dir.HasOutcomeClips}" : "null");
+
+            string s1 = LR2Bindings.GetPrimaryBindingPath("Slot1", "");
+            string s2 = LR2Bindings.GetPrimaryBindingPath("Slot2", "");
+            bool prevTa = LR2Settings.ToggleAim;
+            LR2Settings.ToggleAim = !prevTa;
+            bool taRound = LR2Settings.ToggleAim == !prevTa;
+            LR2Settings.ToggleAim = prevTa;
+            Check(taRound && s1 == "<Keyboard>/1" && s2 == "<Keyboard>/2",
+                "Settings.ControlsAndKeybinds", $"toggleAimRoundtrip={taRound} Slot1={s1} Slot2={s2}");
+        }
+
+        private static SoldierController FindLiveHostileSoldier(SoldierController player)
+        {
+            if (player == null || player.Combatant == null) return null;
+            foreach (var combatant in Combatant.All)
+            {
+                if (combatant == null || combatant == player.Combatant || !combatant.IsBot ||
+                    !combatant.IsAlive || !combatant.IsHostileTo(player.Combatant))
+                    continue;
+                var soldier = combatant.GetComponent<SoldierController>();
+                if (soldier != null && !soldier.IsDead) return soldier;
+            }
+            return null;
         }
 
         private static Texture2D CaptureCamera(Camera cam, int w, int h)

@@ -20,6 +20,9 @@ namespace LR2.Characters
         [SerializeField] private float stiffness = 175f;
         [SerializeField] private float damping = 11f;
         [SerializeField] private bool disableForLocalPlayer = true;
+        [Tooltip("B136: off on Kinemation's robot. Its gun hangs under the head and the hands under the chest, so bending the head " +
+                 "on its own would pull the gun off the hands; a chest-only flinch moves the head, gun and arms together.")]
+        [SerializeField] private bool bendHead = true;
 
         private Health _health;
         private Combatant _combatant;
@@ -33,10 +36,11 @@ namespace LR2.Characters
         /// <summary>Current flinch of the head (world rotation to pre-multiply); identity when calm.</summary>
         public Quaternion HeadFlinch { get; private set; } = Quaternion.identity;
 
-        public void Configure(Transform spineBone, Transform headBone)
+        public void Configure(Transform spineBone, Transform headBone, bool bendHeadBone = true)
         {
             spine = spineBone;
             head = headBone;
+            bendHead = bendHeadBone;
         }
 
         private void Awake()
@@ -45,11 +49,12 @@ namespace LR2.Characters
             _combatant = GetComponent<Combatant>();
             _proxy = GetComponent<RetargetProxy>();
             var animator = GetComponent<Animator>();
-            if (animator != null && animator.isHuman)
+            if (animator != null)
             {
-                if (spine == null) spine = animator.GetBoneTransform(HumanBodyBones.Chest);
-                if (spine == null) spine = animator.GetBoneTransform(HumanBodyBones.Spine);
-                if (head == null) head = animator.GetBoneTransform(HumanBodyBones.Head);
+                // B136: LR2Bones also finds the generic robot's bones
+                if (spine == null) spine = LR2Bones.Get(animator, HumanBodyBones.Chest);
+                if (spine == null) spine = LR2Bones.Get(animator, HumanBodyBones.Spine);
+                if (head == null && bendHead) head = LR2Bones.Get(animator, HumanBodyBones.Head);
             }
         }
 
@@ -94,7 +99,7 @@ namespace LR2.Characters
             if (_proxy != null && _proxy.isActiveAndEnabled) return; // the proxy bends the visible body (B125)
             if (_health != null && !_health.IsAlive) return;
             if (spine != null) spine.rotation = SpineFlinch * spine.rotation;
-            if (head != null) head.rotation = HeadFlinch * head.rotation;
+            if (head != null && bendHead) head.rotation = HeadFlinch * head.rotation;
         }
     }
 }

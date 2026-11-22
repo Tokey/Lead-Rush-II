@@ -1066,7 +1066,9 @@ namespace LR2.UI
             Show(deployPanel, false);
             Show(settingsPanel, false);
             Show(modeRulesPanel, false);
-            Show(loadingPanel, true);
+            string niceName = LR2Session.MapDisplayNames[LR2Session.SelectedMapIndex];
+            LR2LoadingIntro.BeginSceneTransition(niceName);
+            Show(loadingPanel, !LR2LoadingIntro.IsCoveringScreen);
             StartCoroutine(LoadMapRoutine(targetScene));
         }
 
@@ -1075,6 +1077,7 @@ namespace LR2.UI
             _isLoading = true;
             if (loadingBarFill != null) loadingBarFill.fillAmount = 0f;
             string niceName = LR2Session.MapDisplayNames[LR2Session.SelectedMapIndex];
+            LR2LoadingIntro.SetTransitionProgress(0.05f, niceName);
             var op = SceneManager.LoadSceneAsync(sceneName);
             if (op == null)
             {
@@ -1088,13 +1091,14 @@ namespace LR2.UI
                 float elapsed = Time.unscaledTime - start;
                 float realPct = Mathf.Clamp01(op.progress / 0.9f);
                 float smoothPct = Mathf.Min(realPct, Mathf.Clamp01(elapsed / 0.65f));
+                LR2LoadingIntro.SetTransitionProgress(smoothPct, niceName);
                 if (loadingBarFill != null) loadingBarFill.fillAmount = smoothPct;
-                if (loadingStatusText != null) loadingStatusText.text = $"DEPLOYING TO {niceName}... {Mathf.RoundToInt(smoothPct * 100f)}%";
+                if (loadingStatusText != null) loadingStatusText.text = $"PREPARING ARENA  \u00b7  {Mathf.RoundToInt(smoothPct * 100f)}%";
                 if (op.progress >= 0.9f && elapsed >= 0.65f)
                 {
+                    LR2LoadingIntro.SetTransitionProgress(1f, niceName);
                     if (loadingBarFill != null) loadingBarFill.fillAmount = 1f;
-                    if (loadingStatusText != null) loadingStatusText.text = $"DEPLOYING TO {niceName}... 100%";
-                    LR2LoadingIntro.BeginSceneTransition(niceName);
+                    if (loadingStatusText != null) loadingStatusText.text = "PREPARING ARENA  \u00b7  100%";
                     op.allowSceneActivation = true;
                 }
                 yield return null;
