@@ -28,7 +28,20 @@ namespace LR2.World
     public class ExperimentTelemetryRecorder : MonoBehaviour
     {
         public static ExperimentTelemetryRecorder Instance { get; private set; }
-        public static bool IsIdleOrSaveComplete => Instance == null || !Instance._isSaving;
+        public static bool IsIdleOrSaveComplete
+        {
+            get
+            {
+                if (Instance == null) return true;
+                var mm = MatchManager.Instance;
+                if (mm != null && mm.State == MatchState.Ended && !Instance._saveStarted)
+                {
+                    Instance._saveStarted = true;
+                    Instance.StartSavingAsync();
+                }
+                return !Instance._isSaving;
+            }
+        }
         public static string CliOutputRoot { get; set; } = "";
 
         private struct TickSample
@@ -780,8 +793,6 @@ namespace LR2.World
                 }
                 finally
                 {
-                    // Ensure overlay remains visible at least 0.45s so user clearly sees confirmation without flicker
-                    while (DateTime.UtcNow.Ticks > 0 && _saveProgress < 1f) { }
                     MarkSaveFinishedOnThread();
                 }
             });

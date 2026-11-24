@@ -73,6 +73,7 @@ namespace LR2.Game
         }
 
         private bool Paused => _menu != null && _menu.IsPaused;
+        private static bool MatchEnded => MatchManager.Instance != null && MatchManager.Instance.State == MatchState.Ended;
 
         private void OnKilled(KillEvent e)
         {
@@ -115,7 +116,7 @@ namespace LR2.Game
         {
             var kb = Keyboard.current;
             var mouse = Mouse.current;
-            bool input = !Paused;
+            bool input = !Paused && !MatchEnded;
             if (input)
             {
                 if (Cursor.lockState != CursorLockMode.Locked) { Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false; }

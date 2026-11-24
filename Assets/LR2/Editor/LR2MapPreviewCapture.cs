@@ -1150,8 +1150,8 @@ namespace LR2.EditorTools
                         else if (TeamUtil.AreHostile(local, c) && enemy == null) enemy = c;
                     }
 
-                    Vector3 origin = GroundAt(new Vector3(-11.5f, 3f, 6.5f));
-                    Vector3 aimTarget = GroundAt(new Vector3(-1.5f, 3f, 9.5f)) + Vector3.up * 1.38f;
+                    Vector3 origin = GroundAt(new Vector3(-6.8f, 3f, 4.2f));
+                    Vector3 aimTarget = GroundAt(new Vector3(1.5f, 3f, 8.8f)) + Vector3.up * 1.38f;
                     soldier.Movement.Teleport(origin);
                     AimAt(origin, aimTarget, -1.5f, out float yaw);
                     yield return null;
@@ -1159,12 +1159,12 @@ namespace LR2.EditorTools
                     if (ally != null)
                     {
                         var ac = ally.GetComponent<SoldierController>();
-                        Vector3 ap = GroundAt(new Vector3(-5.2f, 3f, 6.2f));
+                        Vector3 ap = GroundAt(new Vector3(-3.2f, 3f, 5.2f));
                         ac.Movement.Teleport(ap);
                         ac.transform.LookAt(new Vector3(aimTarget.x, ap.y, aimTarget.z));
                         ally.GetComponent<SoldierVisuals>()?.ApplyMaterialsNow(true);
                     }
-                    Vector3 enemyLanePos = GroundAt(new Vector3(-2.6f, 3f, 10.6f));
+                    Vector3 enemyLanePos = GroundAt(new Vector3(-1.0f, 3f, 8.8f));
                     if (enemy != null)
                     {
                         var ec = enemy.GetComponent<SoldierController>();

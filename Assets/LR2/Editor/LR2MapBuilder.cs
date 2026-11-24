@@ -2961,7 +2961,7 @@ namespace LR2.EditorTools
             sunGo.AddComponent<HDAdditionalLightData>();
             AddLight(lights, "RimLight", new Vector3(2.2f, 2.6f, 3.4f), Quaternion.LookRotation(new Vector3(0.4f, 1.2f, 1.6f) - new Vector3(2.2f, 2.6f, 3.4f)), LightType.Spot, 5800f, 28000f, 12f, 54f, true);
             AddLight(lights, "KeyLight", new Vector3(-2.2f, 2.25f, -0.8f), Quaternion.LookRotation(new Vector3(0.4f, 1.28f, 1.6f) - new Vector3(-2.2f, 2.25f, -0.8f)), LightType.Spot, 4500f, 24000f, 12f, 64f, false);
-            AddLight(lights, "FillLight", new Vector3(0.1f, 1.55f, -1.2f), Quaternion.LookRotation(new Vector3(0.4f, 1.25f, 1.6f) - new Vector3(0.1f, 1.55f, -1.2f)), LightType.Spot, 5200f, 7500f, 9f, 55f, false);
+            AddLight(lights, "FillLight", new Vector3(0.1f, 1.55f, -1.2f), Quaternion.LookRotation(new Vector3(0.4f, 1.25f, 1.6f) - new Vector3(0.1f, 1.55f, -1.2f)), LightType.Spot, 5200f, 11500f, 9f, 55f, false);
             AddLight(lights, "LanternGlow", new Vector3(1.6f, crateTopY + 0.14f, 1.4f), Quaternion.identity, LightType.Point, 2400f, 220f, 4.5f, 0f, false);
 
             var profile = NewProfile(LightDir + "/LR2_Menu_Profile.asset");

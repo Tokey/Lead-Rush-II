@@ -24,7 +24,7 @@ namespace LR2.Game
     {
         public const int MaxBots = 20;
         public static readonly string[] DifficultyNames = { "RECRUIT", "REGULAR", "HARDENED", "VETERAN", "ADAPTIVE" };
-        public static readonly string[] ArchetypeNames = { "HUMAN", "DUMB", "LLM", "FITTED" };
+        public static readonly string[] ArchetypeNames = { "HUMAN", "DUMB", "LLM" };
         public static readonly TeamId[] TeamChoices = { TeamId.None, TeamId.Alpha, TeamId.Bravo, TeamId.Charlie, TeamId.Delta };
         public static readonly GameModeType[] Modes =
             { GameModeType.TeamDeathmatch, GameModeType.FreeForAll, GameModeType.CaptureTheFlag, GameModeType.Duel };
@@ -95,7 +95,9 @@ namespace LR2.Game
                                 if (Bots.Count < MaxBots && b != null)
                                     Bots.Add(new SkirmishBot
                                     {
-                                        archetype = (BotArchetype)Mathf.Clamp((int)b.archetype, 0, 3),
+                                        archetype = b.archetype == BotArchetype.HumanFitted
+                                            ? BotArchetype.HumanLike
+                                            : (BotArchetype)Mathf.Clamp((int)b.archetype, 0, ArchetypeNames.Length - 1),
                                         difficulty = Mathf.Clamp(b.difficulty, 0, 4),
                                         team = b.team
                                     });

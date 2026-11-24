@@ -82,6 +82,7 @@ namespace LR2.EditorTools
                 return;
             }
 
+            LR2ContentBuilder.BuildMilitaryGear(forceRebuild: true);
             var alliedUniform = AssetDatabase.LoadAssetAtPath<Material>($"{CharMatDir}/M_Uniform_Allied_NavyBlue.mat");
             var enemyUniform = AssetDatabase.LoadAssetAtPath<Material>($"{CharMatDir}/M_Uniform_Enemy_DesertCrimson.mat");
             var skullMask = AssetDatabase.LoadAssetAtPath<Material>($"{CharMatDir}/M_FaceMask_GhostSkull.mat");

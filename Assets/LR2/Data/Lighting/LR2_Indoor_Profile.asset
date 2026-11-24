@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!114 &-9216187585319959715
+--- !u!114 &-6959440097317164578
 MonoBehaviour:
   m_ObjectHideFlags: 3
   m_CorrespondingSourceObject: {fileID: 0}
@@ -41,4 +41,4 @@ MonoBehaviour:
   m_Name: LR2_Indoor_Profile
   m_EditorClassIdentifier: Unity.RenderPipelines.Core.Runtime::UnityEngine.Rendering.VolumeProfile
   components:
-  - {fileID: -9216187585319959715}
+  - {fileID: -6959440097317164578}

@@ -89,12 +89,14 @@ namespace LR2.World
             public bool hasCoatMask; public float origCoatMask;
         }
 
+#pragma warning disable 0649
         private struct WetTerrainLayerRecord
         {
             public TerrainLayer layer;
             public float origSmoothness;
             public Color origDiffuseMax;
         }
+#pragma warning restore 0649
 
         private struct VisorDrop
         {
@@ -103,6 +105,8 @@ namespace LR2.World
 
         private readonly System.Collections.Generic.List<WetMatRecord> _wetMats = new System.Collections.Generic.List<WetMatRecord>(64);
         private readonly System.Collections.Generic.List<WetTerrainLayerRecord> _wetTerrainLayers = new System.Collections.Generic.List<WetTerrainLayerRecord>(16);
+        private readonly System.Collections.Generic.List<(Renderer renderer, Material[] origShared)> _swappedRenderers = new System.Collections.Generic.List<(Renderer, Material[])>(128);
+        private readonly System.Collections.Generic.List<Material> _runtimeWetMatClones = new System.Collections.Generic.List<Material>(64);
         private bool _wetTargetsCollected;
         private float _appliedWetness = -1f;
         private float _thunderStart = -999f;
@@ -187,6 +191,8 @@ namespace LR2.World
             if (_runtimeRippleMat != null) Destroy(_runtimeRippleMat);
             if (_procThunderClip != null) Destroy(_procThunderClip);
         }
+
+        private void OnApplicationQuit() => RestoreWetSurfaces();
 
         /// <summary>QA / features page: switch to the first preset of <paramref name="kind"/> immediately (no blend).</summary>
         public bool ForceWeatherNow(WeatherKind kind)
@@ -675,9 +681,8 @@ namespace LR2.World
         private void CollectWetSurfaceTargets()
         {
             _wetTargetsCollected = true;
-            _wetMats.Clear();
-            _wetTerrainLayers.Clear();
-            var seen = new System.Collections.Generic.HashSet<Material>();
+            RestoreWetSurfaces();
+            var matToClone = new System.Collections.Generic.Dictionary<Material, Material>(64);
 
             foreach (var r in FindObjectsByType<Renderer>())
             {
@@ -685,33 +690,65 @@ namespace LR2.World
                 bool isCharacterOrWeapon = r is SkinnedMeshRenderer ||
                     r.GetComponentInParent<LR2.Characters.SoldierController>() != null ||
                     r.GetComponentInParent<LR2.Weapons.LR2Item>() != null;
-                var mats = r.sharedMaterials;
-                for (int i = 0; i < mats.Length; i++)
+                var origMats = r.sharedMaterials;
+                if (origMats == null || origMats.Length == 0) continue;
+
+                Material[] clonedMats = null;
+                for (int i = 0; i < origMats.Length; i++)
                 {
-                    var m = mats[i];
-                    if (m == null || !seen.Add(m) || m.shader == null) continue;
+                    var m = origMats[i];
+                    if (m == null || m.shader == null) continue;
                     string sName = m.shader.name;
                     if (!sName.Contains("Lit")) continue;
                     if (m == _runtimeRainMat || m == _runtimeSplashMat || m == _runtimeRippleMat) continue;
 
-                    string mn = m.name ?? "";
-                    bool fabricHint = isCharacterOrWeapon ||
-                        mn.IndexOf("Glove", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        mn.IndexOf("Cloth", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        mn.IndexOf("Swat", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        mn.IndexOf("Uniform", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        mn.IndexOf("Mask", System.StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!matToClone.TryGetValue(m, out var clone))
+                    {
+                        clone = new Material(m)
+                        {
+                            name = m.name + " (WetRuntime)",
+                            hideFlags = HideFlags.DontSave
+                        };
+                        matToClone[m] = clone;
+                        _runtimeWetMatClones.Add(clone);
 
-                    var rec = new WetMatRecord { mat = m, isClothOrGear = fabricHint };
-                    if (m.HasProperty("_BaseColor")) { rec.hasBaseColor = true; rec.origColor = m.GetColor("_BaseColor"); }
-                    if (m.HasProperty("_Smoothness")) { rec.hasSmoothness = true; rec.origSmoothness = m.GetFloat("_Smoothness"); }
-                    if (m.HasProperty("_SmoothnessRemapMin")) { rec.hasRemapMin = true; rec.origRemapMin = m.GetFloat("_SmoothnessRemapMin"); }
-                    if (m.HasProperty("_SmoothnessRemapMax")) { rec.hasRemapMax = true; rec.origRemapMax = m.GetFloat("_SmoothnessRemapMax"); }
-                    if (m.HasProperty("_CoatMask")) { rec.hasCoatMask = true; rec.origCoatMask = m.GetFloat("_CoatMask"); }
-                    if (rec.hasSmoothness || rec.hasRemapMax || rec.hasBaseColor) _wetMats.Add(rec);
+                        string mn = m.name ?? "";
+                        bool fabricHint = isCharacterOrWeapon ||
+                            mn.IndexOf("Glove", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            mn.IndexOf("Cloth", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            mn.IndexOf("Swat", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            mn.IndexOf("Uniform", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            mn.IndexOf("Mask", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            mn.IndexOf("Skull", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            mn.IndexOf("Balaclava", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            mn.IndexOf("Helmet", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            mn.IndexOf("Soldier", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        var rec = new WetMatRecord { mat = clone, isClothOrGear = fabricHint };
+                        if (clone.HasProperty("_BaseColor")) { rec.hasBaseColor = true; rec.origColor = clone.GetColor("_BaseColor"); }
+                        if (clone.HasProperty("_Smoothness")) { rec.hasSmoothness = true; rec.origSmoothness = clone.GetFloat("_Smoothness"); }
+                        if (clone.HasProperty("_SmoothnessRemapMin")) { rec.hasRemapMin = true; rec.origRemapMin = clone.GetFloat("_SmoothnessRemapMin"); }
+                        if (clone.HasProperty("_SmoothnessRemapMax")) { rec.hasRemapMax = true; rec.origRemapMax = clone.GetFloat("_SmoothnessRemapMax"); }
+                        if (clone.HasProperty("_CoatMask")) { rec.hasCoatMask = true; rec.origCoatMask = clone.GetFloat("_CoatMask"); }
+                        if (rec.hasSmoothness || rec.hasRemapMax || rec.hasBaseColor) _wetMats.Add(rec);
+                    }
+
+                    if (clonedMats == null)
+                    {
+                        clonedMats = new Material[origMats.Length];
+                        System.Array.Copy(origMats, clonedMats, origMats.Length);
+                    }
+                    clonedMats[i] = clone;
+                }
+
+                if (clonedMats != null)
+                {
+                    _swappedRenderers.Add((r, origMats));
+                    r.sharedMaterials = clonedMats;
                 }
             }
 
+#if !UNITY_EDITOR
             var seenLayers = new System.Collections.Generic.HashSet<TerrainLayer>();
             foreach (var ter in Terrain.activeTerrains)
             {
@@ -730,6 +767,7 @@ namespace LR2.World
                     });
                 }
             }
+#endif
         }
 
         private void ApplyWetnessToWorld(float w)
@@ -740,15 +778,15 @@ namespace LR2.World
                 if (r.mat == null) continue;
                 if (r.isClothOrGear)
                 {
-                    // Damp tactical cloth/gloves slightly darker without turning into glossy latex plastic
-                    float clothShade = Mathf.Lerp(1f, 0.86f, w);
+                    // Keep soldiers/weapons legible in rain without turning uniforms black
+                    float clothShade = Mathf.Lerp(1f, 0.96f, w);
                     if (r.hasBaseColor)
                         r.mat.SetColor("_BaseColor", new Color(r.origColor.r * clothShade, r.origColor.g * clothShade, r.origColor.b * clothShade, r.origColor.a));
-                    if (r.hasSmoothness) r.mat.SetFloat("_Smoothness", Mathf.Lerp(r.origSmoothness, Mathf.Min(Mathf.Max(r.origSmoothness, 0.28f), 0.34f), w));
+                    if (r.hasSmoothness) r.mat.SetFloat("_Smoothness", Mathf.Lerp(r.origSmoothness, Mathf.Min(Mathf.Max(r.origSmoothness, 0.26f), 0.34f), w));
                     continue;
                 }
 
-                float shade = Mathf.Lerp(1f, 0.72f, w);
+                float shade = Mathf.Lerp(1f, 0.78f, w);
                 if (r.hasBaseColor)
                 {
                     Color wetCol = new Color(r.origColor.r * shade, r.origColor.g * shade, r.origColor.b * shade, r.origColor.a);
@@ -766,22 +804,27 @@ namespace LR2.World
                 if (tr.layer == null) continue;
                 tr.layer.smoothness = Mathf.Lerp(tr.origSmoothness, 0.85f, w);
                 Color dm = tr.origDiffuseMax;
-                tr.layer.diffuseRemapMax = new Color(dm.r * Mathf.Lerp(1f, 0.76f, w), dm.g * Mathf.Lerp(1f, 0.76f, w), dm.b * Mathf.Lerp(1f, 0.78f, w), dm.a);
+                tr.layer.diffuseRemapMax = new Color(dm.r * Mathf.Lerp(1f, 0.78f, w), dm.g * Mathf.Lerp(1f, 0.78f, w), dm.b * Mathf.Lerp(1f, 0.80f, w), dm.a);
             }
         }
 
         private void RestoreWetSurfaces()
         {
-            for (int i = 0; i < _wetMats.Count; i++)
+            for (int i = 0; i < _swappedRenderers.Count; i++)
             {
-                var r = _wetMats[i];
-                if (r.mat == null) continue;
-                if (r.hasBaseColor) r.mat.SetColor("_BaseColor", r.origColor);
-                if (r.hasSmoothness) r.mat.SetFloat("_Smoothness", r.origSmoothness);
-                if (r.hasRemapMin) r.mat.SetFloat("_SmoothnessRemapMin", r.origRemapMin);
-                if (r.hasRemapMax) r.mat.SetFloat("_SmoothnessRemapMax", r.origRemapMax);
-                if (r.hasCoatMask) r.mat.SetFloat("_CoatMask", r.origCoatMask);
+                var entry = _swappedRenderers[i];
+                if (entry.renderer != null && entry.origShared != null)
+                    entry.renderer.sharedMaterials = entry.origShared;
             }
+            _swappedRenderers.Clear();
+
+            for (int i = 0; i < _runtimeWetMatClones.Count; i++)
+            {
+                var clone = _runtimeWetMatClones[i];
+                if (clone != null) Destroy(clone);
+            }
+            _runtimeWetMatClones.Clear();
+
             for (int i = 0; i < _wetTerrainLayers.Count; i++)
             {
                 var tr = _wetTerrainLayers[i];

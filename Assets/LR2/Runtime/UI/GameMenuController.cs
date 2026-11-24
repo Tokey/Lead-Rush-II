@@ -42,10 +42,19 @@ namespace LR2.UI
         private float _endShownAt = -1f;
         private float _aiAutoAdvanceAt = -1f;
         private bool _aiAutoAdvanceCancelled;
+        private bool _nextActionTriggered;
         private GameObject _expBarGo;
         private TMP_Text _expStatusText;
         private Button _holdAutoBtn;
+        private GameObject _ratePromptGo;
+        private readonly List<Image> _rateBtnImages = new List<Image>();
+        private readonly List<GameObject> _rateBtnGos = new List<GameObject>();
         private string _baseRestartLabel;
+        private string _baseMenuLabel;
+        private Vector2 _baseScoreboardPos, _baseScoreboardSize;
+        private float _baseScoreboardFontSize;
+        private Vector2 _baseRestartPos, _baseRestartSize;
+        private Vector2 _baseMenuPos, _baseMenuSize;
 
         private void Awake()
         {
@@ -53,10 +62,27 @@ namespace LR2.UI
             Show(settingsPanel, false);
             Show(scoreboardPanel, false);
             Show(endPanel, false);
+            if (endScoreboard != null)
+            {
+                _baseScoreboardPos = endScoreboard.rectTransform.anchoredPosition;
+                _baseScoreboardSize = endScoreboard.rectTransform.sizeDelta;
+                _baseScoreboardFontSize = endScoreboard.fontSize;
+            }
             if (endRestartButton != null)
             {
+                var rt = (RectTransform)endRestartButton.transform;
+                _baseRestartPos = rt.anchoredPosition;
+                _baseRestartSize = rt.sizeDelta;
                 var lbl = endRestartButton.GetComponentInChildren<TMP_Text>(true);
                 if (lbl != null) _baseRestartLabel = lbl.text;
+            }
+            if (endMenuButton != null)
+            {
+                var rt = (RectTransform)endMenuButton.transform;
+                _baseMenuPos = rt.anchoredPosition;
+                _baseMenuSize = rt.sizeDelta;
+                var lbl = endMenuButton.GetComponentInChildren<TMP_Text>(true);
+                if (lbl != null) _baseMenuLabel = lbl.text;
             }
             Bind(resumeButton, Resume);
             Bind(settingsButton, () => { Show(pausePanel, false); Show(settingsPanel, true); });
@@ -64,21 +90,56 @@ namespace LR2.UI
             Bind(restartButton, () => { Resume(); MatchManager.Instance?.RestartMatch(); });
             Bind(menuButton, () => { Resume(); MatchManager.Instance?.QuitToMenu(); });
             Bind(quitButton, Quit);
-            Bind(endRestartButton, () =>
+            Bind(endRestartButton, TriggerEndPrimaryAction);
+            Bind(endMenuButton, TriggerEndSecondaryAction);
+        }
+
+        private void TriggerEndPrimaryAction()
+        {
+            Time.timeScale = 1f;
+            AudioListener.pause = false;
+            if (ExperimentSessionRunner.IsSessionActive)
             {
-                if (ExperimentSessionRunner.IsSessionActive) ExperimentSessionRunner.AdvanceToNextMatch();
-                else MatchManager.Instance?.RestartMatch();
-            });
-            Bind(endMenuButton, () =>
+                if (_nextActionTriggered) return;
+                _nextActionTriggered = true;
+                ExperimentSessionRunner.AdvanceToNextMatch();
+            }
+            else
             {
-                if (ExperimentSessionRunner.IsSessionActive) ExperimentSessionRunner.AbortSession();
-                else MatchManager.Instance?.QuitToMenu();
-            });
+                MatchManager.Instance?.RestartMatch();
+            }
+        }
+
+        private void TriggerEndSecondaryAction()
+        {
+            Time.timeScale = 1f;
+            AudioListener.pause = false;
+            if (ExperimentSessionRunner.IsSessionActive)
+            {
+                if (_nextActionTriggered) return;
+                _nextActionTriggered = true;
+                ExperimentSessionRunner.AbortSession();
+            }
+            else
+            {
+                MatchManager.Instance?.QuitToMenu();
+            }
         }
 
         private static void Bind(Button b, UnityEngine.Events.UnityAction a)
         {
             if (b != null) b.onClick.AddListener(a);
+        }
+
+        private static void EnsureEventSystemReady()
+        {
+            if (UnityEngine.EventSystems.EventSystem.current != null) return;
+            var existing = FindAnyObjectByType<UnityEngine.EventSystems.EventSystem>();
+            if (existing != null) return;
+            var esGo = new GameObject("EventSystem",
+                typeof(UnityEngine.EventSystems.EventSystem),
+                typeof(UnityEngine.InputSystem.UI.InputSystemUIInputModule));
+            DontDestroyOnLoad(esGo);
         }
 
         private void Update()
@@ -104,22 +165,44 @@ namespace LR2.UI
 
             if (ended)
             {
+                if (IsPaused || (pausePanel != null && pausePanel.alpha > 0.01f) || (settingsPanel != null && settingsPanel.alpha > 0.01f))
+                {
+                    IsPaused = false;
+                    Show(pausePanel, false);
+                    Show(settingsPanel, false);
+                    Show(scoreboardPanel, false);
+                }
+                if (Time.timeScale != 1f) Time.timeScale = 1f;
+                if (AudioListener.pause) AudioListener.pause = false;
+                if (Cursor.lockState != CursorLockMode.None) Cursor.lockState = CursorLockMode.None;
+                if (!Cursor.visible) Cursor.visible = true;
+
                 if (!LR2.World.ExperimentTelemetryRecorder.IsIdleOrSaveComplete) return;
                 if (_endShownAt < 0f) _endShownAt = Time.unscaledTime;
-                if (Time.unscaledTime - _endShownAt > 1.6f && endPanel != null && endPanel.alpha < 1f)
+                float revealDelay = ExperimentSessionRunner.IsSessionActive ? 0.35f : 1.6f;
+                if (Time.unscaledTime - _endShownAt > revealDelay && endPanel != null && endPanel.alpha < 1f)
                 {
+                    EnsureEventSystemReady();
                     Show(endPanel, true);
                     FillEnd(mm);
                 }
-                if (_aiAutoAdvanceAt > 0f && !_aiAutoAdvanceCancelled && ExperimentSessionRunner.IsSessionActive)
+                if (endPanel != null && endPanel.alpha > 0.9f && ExperimentSessionRunner.IsSessionActive && !_nextActionTriggered)
                 {
-                    float left = _aiAutoAdvanceAt - Time.unscaledTime;
-                    if (_expStatusText != null)
-                        _expStatusText.text = $"AI VS AI  ·  ADVANCING TO NEXT MATCH IN {Mathf.Max(0f, left):0.0}S";
-                    if (left <= 0f)
+                    if (kb != null && (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame))
                     {
-                        _aiAutoAdvanceAt = -1f;
-                        ExperimentSessionRunner.AdvanceToNextMatch();
+                        TriggerEndPrimaryAction();
+                        return;
+                    }
+                    if (_aiAutoAdvanceAt > 0f && !_aiAutoAdvanceCancelled)
+                    {
+                        float left = _aiAutoAdvanceAt - Time.unscaledTime;
+                        if (_expStatusText != null)
+                            _expStatusText.text = $"AI VS AI  ·  ADVANCING TO NEXT MATCH IN {Mathf.Max(0f, left):0.0}S";
+                        if (left <= 0f)
+                        {
+                            _aiAutoAdvanceAt = -1f;
+                            TriggerEndPrimaryAction();
+                        }
                     }
                 }
             }
@@ -167,13 +250,41 @@ namespace LR2.UI
             g.blocksRaycasts = show;
         }
 
-        private void FillEnd(MatchManager mm)
+        internal void FillEnd(MatchManager mm)
         {
             if (mm == null) return;
+            _nextActionTriggered = false;
             if (endTitle != null)
             {
-                endTitle.text = mm.IsDraw ? "DRAW" : mm.LocalPlayerWon ? "VICTORY" : "DEFEAT";
-                endTitle.color = mm.IsDraw ? Color.white : mm.LocalPlayerWon ? new Color(1f, 0.75f, 0.3f) : new Color(1f, 0.32f, 0.28f);
+                if (mm.LocalPlayer != null)
+                {
+                    endTitle.text = mm.IsDraw ? "DRAW" : mm.LocalPlayerWon ? "VICTORY" : "DEFEAT";
+                    endTitle.color = mm.IsDraw ? Color.white : mm.LocalPlayerWon ? new Color(1f, 0.75f, 0.3f) : new Color(1f, 0.32f, 0.28f);
+                }
+                else
+                {
+                    if (mm.IsDraw)
+                    {
+                        endTitle.text = "DRAW";
+                        endTitle.color = Color.white;
+                    }
+                    else if (mm.IsTeamMode)
+                    {
+                        string winTeam = TeamUtil.DisplayName(mm.WinnerTeam).ToUpperInvariant();
+                        endTitle.text = $"{winTeam} VICTORY";
+                        endTitle.color = TeamUtil.TeamColor(mm.WinnerTeam);
+                    }
+                    else if (mm.WinnerCombatant != null)
+                    {
+                        endTitle.text = $"{mm.WinnerCombatant.DisplayName} WINS";
+                        endTitle.color = new Color(1f, 0.75f, 0.3f);
+                    }
+                    else
+                    {
+                        endTitle.text = "MATCH COMPLETE";
+                        endTitle.color = Color.white;
+                    }
+                }
             }
             if (endSubtitle != null)
             {
@@ -187,7 +298,36 @@ namespace LR2.UI
             FillScoreboard(endScoreboard);
 
             if (ExperimentSessionRunner.IsSessionActive) BuildOrUpdateExperimentEndBar();
-            else if (_expBarGo != null) _expBarGo.SetActive(false);
+            else RestoreStandardEndLayout();
+        }
+
+        private void RestoreStandardEndLayout()
+        {
+            if (_expBarGo != null) _expBarGo.SetActive(false);
+            if (endScoreboard != null)
+            {
+                endScoreboard.rectTransform.anchoredPosition = _baseScoreboardPos;
+                endScoreboard.rectTransform.sizeDelta = _baseScoreboardSize;
+                if (_baseScoreboardFontSize > 1f) endScoreboard.fontSize = _baseScoreboardFontSize;
+            }
+            if (endRestartButton != null)
+            {
+                var rt = (RectTransform)endRestartButton.transform;
+                rt.anchoredPosition = _baseRestartPos;
+                rt.sizeDelta = _baseRestartSize;
+                endRestartButton.interactable = true;
+                var lbl = endRestartButton.GetComponentInChildren<TMP_Text>(true);
+                if (lbl != null && !string.IsNullOrEmpty(_baseRestartLabel)) lbl.text = _baseRestartLabel;
+            }
+            if (endMenuButton != null)
+            {
+                var rt = (RectTransform)endMenuButton.transform;
+                rt.anchoredPosition = _baseMenuPos;
+                rt.sizeDelta = _baseMenuSize;
+                endMenuButton.interactable = true;
+                var lbl = endMenuButton.GetComponentInChildren<TMP_Text>(true);
+                if (lbl != null && !string.IsNullOrEmpty(_baseMenuLabel)) lbl.text = _baseMenuLabel;
+            }
         }
 
         private void BuildOrUpdateExperimentEndBar()
@@ -195,87 +335,168 @@ namespace LR2.UI
             int cur = ExperimentSessionRunner.CurrentQueueIndex + 1;
             int tot = Mathf.Max(1, ExperimentSessionRunner.TotalMatches);
             var spec = ExperimentSessionRunner.CurrentMatchSpec;
+            bool aiBatch = spec != null && spec.aiVsAi;
+            bool showRating = (ExperimentSessionRunner.ActiveConfig == null || ExperimentSessionRunner.ActiveConfig.promptHumanRating) && !aiBatch;
+
+            if (endScoreboard != null)
+            {
+                endScoreboard.rectTransform.anchoredPosition = new Vector2(0f, 44f);
+                endScoreboard.rectTransform.sizeDelta = new Vector2(960f, 300f);
+                endScoreboard.fontSize = 26f;
+                endScoreboard.overflowMode = TextOverflowModes.Truncate;
+            }
 
             if (endRestartButton != null)
             {
+                var rt = (RectTransform)endRestartButton.transform;
+                rt.anchoredPosition = new Vector2(-210f, -425f);
+                rt.sizeDelta = new Vector2(380f, 64f);
+                endRestartButton.interactable = true;
                 var lbl = endRestartButton.GetComponentInChildren<TMP_Text>(true);
                 if (lbl != null) lbl.text = cur < tot ? $"NEXT MATCH ({cur + 1}/{tot})" : "FINISH EXPERIMENT";
             }
             if (endMenuButton != null)
             {
+                var rt = (RectTransform)endMenuButton.transform;
+                rt.anchoredPosition = new Vector2(210f, -425f);
+                rt.sizeDelta = new Vector2(380f, 64f);
+                endMenuButton.interactable = true;
                 var lbl = endMenuButton.GetComponentInChildren<TMP_Text>(true);
                 if (lbl != null) lbl.text = "END SESSION";
             }
 
+            var theme = Resources.Load<UITheme>("LR2/UITheme");
+            Color accent = theme != null ? theme.accent : new Color(1f, 0.71f, 0.28f);
+
             if (_expBarGo == null && endPanel != null)
             {
-                var theme = Resources.Load<UITheme>("LR2/UITheme");
-                Color accent = theme != null ? theme.accent : new Color(1f, 0.71f, 0.28f);
                 _expBarGo = new GameObject("ExperimentEndBar", typeof(RectTransform), typeof(Image));
                 _expBarGo.transform.SetParent(endPanel.transform, false);
-                _expBarGo.GetComponent<Image>().color = new Color(0.04f, 0.05f, 0.065f, 0.90f);
-                var rt = (RectTransform)_expBarGo.transform;
-                rt.anchorMin = new Vector2(0.14f, 0.14f); rt.anchorMax = new Vector2(0.86f, 0.255f); rt.offsetMin = rt.offsetMax = Vector2.zero;
+                var bgImg = _expBarGo.GetComponent<Image>();
+                bgImg.color = new Color(0.04f, 0.05f, 0.065f, 0.92f);
+                bgImg.raycastTarget = false; // never block clicks on action buttons below or sibling controls
 
                 var stGo = new GameObject("Status", typeof(RectTransform));
                 stGo.transform.SetParent(_expBarGo.transform, false);
                 _expStatusText = stGo.AddComponent<TextMeshProUGUI>();
                 if (theme != null && theme.headingFont != null) _expStatusText.font = theme.headingFont;
-                _expStatusText.fontSize = 20f; _expStatusText.color = accent; _expStatusText.alignment = TextAlignmentOptions.MidlineLeft;
-                var srt = _expStatusText.rectTransform;
-                srt.anchorMin = new Vector2(0.02f, 0.52f); srt.anchorMax = new Vector2(0.76f, 0.96f); srt.offsetMin = srt.offsetMax = Vector2.zero;
+                _expStatusText.fontSize = 20f;
+                _expStatusText.color = accent;
+                _expStatusText.alignment = TextAlignmentOptions.MidlineLeft;
+                _expStatusText.raycastTarget = false;
 
-                // Optional AI vs AI Hold Auto-Next button
                 var hGo = new GameObject("HoldBtn", typeof(RectTransform), typeof(Image), typeof(Button));
                 hGo.transform.SetParent(_expBarGo.transform, false);
                 hGo.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.14f);
-                var hrt = (RectTransform)hGo.transform;
-                hrt.anchorMin = new Vector2(0.78f, 0.54f); hrt.anchorMax = new Vector2(0.98f, 0.94f); hrt.offsetMin = hrt.offsetMax = Vector2.zero;
                 var htGo = new GameObject("Text", typeof(RectTransform)); htGo.transform.SetParent(hGo.transform, false);
                 var ht = htGo.AddComponent<TextMeshProUGUI>(); if (theme != null && theme.headingFont != null) ht.font = theme.headingFont;
                 ht.text = "PAUSE AUTO"; ht.fontSize = 15f; ht.color = Color.white; ht.alignment = TextAlignmentOptions.Center;
+                ht.raycastTarget = false;
                 ht.rectTransform.anchorMin = Vector2.zero; ht.rectTransform.anchorMax = Vector2.one; ht.rectTransform.offsetMin = ht.rectTransform.offsetMax = Vector2.zero;
                 _holdAutoBtn = hGo.GetComponent<Button>();
-                _holdAutoBtn.onClick.AddListener(() => { _aiAutoAdvanceCancelled = true; if (_expStatusText != null) _expStatusText.text = "AUTO-ADVANCE PAUSED"; });
+                _holdAutoBtn.onClick.AddListener(() =>
+                {
+                    _aiAutoAdvanceCancelled = true;
+                    _aiAutoAdvanceAt = -1f;
+                    if (_holdAutoBtn != null) _holdAutoBtn.gameObject.SetActive(false);
+                    if (_expStatusText != null) _expStatusText.text = "AUTO-ADVANCE PAUSED  ·  PRESS NEXT MATCH OR [ENTER]";
+                });
 
                 // 5-button Blind Human-Likeness Turing Rating Bar
-                var rateLblGo = new GameObject("RatePrompt", typeof(RectTransform)); rateLblGo.transform.SetParent(_expBarGo.transform, false);
-                var rl = rateLblGo.AddComponent<TextMeshProUGUI>(); if (theme != null && theme.bodyFont != null) rl.font = theme.bodyFont;
-                rl.text = "DID THESE BOTS FEEL HUMAN?"; rl.fontSize = 16f; rl.color = new Color(1f, 1f, 1f, 0.8f); rl.alignment = TextAlignmentOptions.MidlineLeft;
-                rl.rectTransform.anchorMin = new Vector2(0.02f, 0.06f); rl.rectTransform.anchorMax = new Vector2(0.32f, 0.48f); rl.rectTransform.offsetMin = rl.rectTransform.offsetMax = Vector2.zero;
+                _ratePromptGo = new GameObject("RatePrompt", typeof(RectTransform));
+                _ratePromptGo.transform.SetParent(_expBarGo.transform, false);
+                var rl = _ratePromptGo.AddComponent<TextMeshProUGUI>();
+                if (theme != null && theme.bodyFont != null) rl.font = theme.bodyFont;
+                rl.text = "DID THESE BOTS FEEL HUMAN?";
+                rl.fontSize = 16f;
+                rl.color = new Color(1f, 1f, 1f, 0.85f);
+                rl.alignment = TextAlignmentOptions.MidlineLeft;
+                rl.raycastTarget = false;
+                rl.rectTransform.anchorMin = new Vector2(0.025f, 0.08f);
+                rl.rectTransform.anchorMax = new Vector2(0.32f, 0.48f);
+                rl.rectTransform.offsetMin = rl.rectTransform.offsetMax = Vector2.zero;
 
                 string[] labels = { "0% ROBOT", "25% STIFF", "50% UNSURE", "75% NATURAL", "100% HUMAN" };
                 float[] vals = { 0f, 0.25f, 0.5f, 0.75f, 1f };
-                var rateBtns = new List<Image>();
+                _rateBtnImages.Clear();
+                _rateBtnGos.Clear();
                 for (int i = 0; i < 5; i++)
                 {
                     int k = i;
                     var bGo = new GameObject($"R_{k}", typeof(RectTransform), typeof(Image), typeof(Button));
                     bGo.transform.SetParent(_expBarGo.transform, false);
-                    var img = bGo.GetComponent<Image>(); img.color = new Color(1f, 1f, 1f, 0.10f); rateBtns.Add(img);
+                    var img = bGo.GetComponent<Image>();
+                    img.color = new Color(1f, 1f, 1f, 0.10f);
+                    _rateBtnImages.Add(img);
+                    _rateBtnGos.Add(bGo);
                     var brt = (RectTransform)bGo.transform;
                     float x0 = 0.33f + k * 0.132f;
-                    brt.anchorMin = new Vector2(x0, 0.08f); brt.anchorMax = new Vector2(x0 + 0.124f, 0.46f); brt.offsetMin = brt.offsetMax = Vector2.zero;
+                    brt.anchorMin = new Vector2(x0, 0.08f);
+                    brt.anchorMax = new Vector2(x0 + 0.124f, 0.48f);
+                    brt.offsetMin = brt.offsetMax = Vector2.zero;
                     var tGo = new GameObject("Text", typeof(RectTransform)); tGo.transform.SetParent(bGo.transform, false);
-                    var t = tGo.AddComponent<TextMeshProUGUI>(); if (theme != null && theme.headingFont != null) t.font = theme.headingFont;
+                    var t = tGo.AddComponent<TextMeshProUGUI>();
+                    if (theme != null && theme.headingFont != null) t.font = theme.headingFont;
                     t.text = labels[k]; t.fontSize = 14f; t.color = Color.white; t.alignment = TextAlignmentOptions.Center;
+                    t.raycastTarget = false;
                     t.rectTransform.anchorMin = Vector2.zero; t.rectTransform.anchorMax = Vector2.one; t.rectTransform.offsetMin = t.rectTransform.offsetMax = Vector2.zero;
                     bGo.GetComponent<Button>().onClick.AddListener(() =>
                     {
                         ExperimentSessionRunner.RecordBlindRating(vals[k]);
-                        for (int j = 0; j < rateBtns.Count; j++) rateBtns[j].color = j == k ? new Color(accent.r, accent.g, accent.b, 0.75f) : new Color(1f, 1f, 1f, 0.10f);
-                        if (_expStatusText != null) _expStatusText.text = $"RATED {labels[k]} · READY FOR NEXT MATCH";
+                        for (int j = 0; j < _rateBtnImages.Count; j++)
+                            _rateBtnImages[j].color = j == k ? new Color(accent.r, accent.g, accent.b, 0.78f) : new Color(1f, 1f, 1f, 0.10f);
+                        if (_expStatusText != null) _expStatusText.text = $"RATED {labels[k]}  ·  READY FOR NEXT MATCH [ENTER]";
                     });
                 }
             }
 
-            if (_expBarGo != null) _expBarGo.SetActive(true);
-            bool aiBatch = spec != null && spec.aiVsAi;
+            if (_expBarGo != null)
+            {
+                _expBarGo.SetActive(true);
+                var rt = (RectTransform)_expBarGo.transform;
+                if (showRating)
+                {
+                    rt.anchorMin = new Vector2(0.14f, 0.175f);
+                    rt.anchorMax = new Vector2(0.86f, 0.320f);
+                }
+                else
+                {
+                    rt.anchorMin = new Vector2(0.14f, 0.195f);
+                    rt.anchorMax = new Vector2(0.86f, 0.285f);
+                }
+                rt.offsetMin = rt.offsetMax = Vector2.zero;
+
+                if (_expStatusText != null)
+                {
+                    var srt = _expStatusText.rectTransform;
+                    srt.anchorMin = showRating ? new Vector2(0.025f, 0.54f) : new Vector2(0.025f, 0.12f);
+                    srt.anchorMax = showRating ? new Vector2(0.76f, 0.95f) : new Vector2(0.76f, 0.88f);
+                    srt.offsetMin = srt.offsetMax = Vector2.zero;
+                }
+                if (_holdAutoBtn != null)
+                {
+                    var hrt = (RectTransform)_holdAutoBtn.transform;
+                    hrt.anchorMin = showRating ? new Vector2(0.78f, 0.56f) : new Vector2(0.78f, 0.16f);
+                    hrt.anchorMax = showRating ? new Vector2(0.98f, 0.93f) : new Vector2(0.98f, 0.84f);
+                    hrt.offsetMin = hrt.offsetMax = Vector2.zero;
+                    _holdAutoBtn.gameObject.SetActive(aiBatch);
+                }
+                if (_ratePromptGo != null) _ratePromptGo.SetActive(showRating);
+                for (int i = 0; i < _rateBtnGos.Count; i++)
+                {
+                    if (_rateBtnGos[i] != null) _rateBtnGos[i].SetActive(showRating);
+                    if (i < _rateBtnImages.Count && _rateBtnImages[i] != null)
+                        _rateBtnImages[i].color = new Color(1f, 1f, 1f, 0.10f);
+                }
+            }
+
+            if (endRestartButton != null) endRestartButton.transform.SetAsLastSibling();
+            if (endMenuButton != null) endMenuButton.transform.SetAsLastSibling();
+
             _aiAutoAdvanceCancelled = false;
             _aiAutoAdvanceAt = aiBatch ? Time.unscaledTime + 3.0f : -1f;
-            if (_holdAutoBtn != null) _holdAutoBtn.gameObject.SetActive(aiBatch);
             if (_expStatusText != null)
-                _expStatusText.text = $"EXPERIMENT MATCH {cur} / {tot}  ·  {(ExperimentSessionRunner.ActiveConfig.blindCondition ? "BLIND CONDITION" : spec?.label)}  ·  CSV SAVED";
+                _expStatusText.text = $"EXPERIMENT MATCH {cur} / {tot}  ·  {(ExperimentSessionRunner.ActiveConfig != null && ExperimentSessionRunner.ActiveConfig.blindCondition ? "BLIND CONDITION" : spec?.label)}  ·  CSV SAVED  ·  [ENTER] NEXT";
         }
 
         private void FillScoreboard(TMP_Text target)

@@ -17,9 +17,11 @@ using LR2.UI;
 using LR2.Weapons;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.EventSystems;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 namespace LR2.World
 {
@@ -200,6 +202,7 @@ namespace LR2.World
                 yield return AuditDeathAdsCloseWeaponAndB57B65(player);
                 yield return AuditB136RobotSystems(player);
                 yield return AuditB137ToB144Systems(player);
+                yield return AuditExperimentEndWindow(outDir);
             }
 
             FinishReport(outDir, sceneName);
@@ -295,8 +298,10 @@ namespace LR2.World
 
             // B31: Starter title screen support before Main Menu
             Check(LR2LoadingIntro.HasTitlePromptSupport, "Intro.StarterTitleScreenSupported", "supported=True");
+            Check(string.Equals(Application.version, "11.24.26.2", StringComparison.Ordinal), "Build.VersionStamped",
+                $"version={Application.version}");
 
-            // Capture main-menu visual screenshot for Pass 2 inspection
+            // Capture main-menu visual screenshot + close-up Ghost mask / NATO olive uniform verification frame
             var cam = Camera.main;
             if (cam != null)
             {
@@ -304,6 +309,33 @@ namespace LR2.World
                 var tex = CaptureCamera(cam, 960, 540);
                 File.WriteAllBytes(Path.Combine(outDir, $"{sceneName}_vis.png"), tex.EncodeToPNG());
                 Destroy(tex);
+
+                if (hero != null)
+                {
+                    var mc = MenuCinematic.Instance;
+                    bool prevMc = mc != null && mc.enabled;
+                    if (mc != null) mc.enabled = false;
+                    Vector3 origPos = cam.transform.position;
+                    Quaternion origRot = cam.transform.rotation;
+                    float origFov = cam.fieldOfView;
+
+                    Transform headBone = null;
+                    var anim = hero.GetComponentInChildren<Animator>();
+                    if (anim != null) headBone = LR2Bones.Get(anim, HumanBodyBones.Head);
+                    Vector3 aimPt = (headBone != null ? headBone.position : hero.transform.position + Vector3.up * 1.56f) - Vector3.up * 0.06f;
+                    Vector3 closePos = aimPt + hero.transform.forward * 1.15f + hero.transform.right * -0.22f + Vector3.up * 0.08f;
+                    cam.transform.SetPositionAndRotation(closePos, Quaternion.LookRotation(aimPt - closePos));
+                    cam.fieldOfView = 34f;
+                    yield return null;
+                    yield return null;
+                    var closeTex = CaptureCamera(cam, 1280, 720);
+                    File.WriteAllBytes(Path.Combine(outDir, "main_menu_ghost_closeup.png"), closeTex.EncodeToPNG());
+                    Destroy(closeTex);
+
+                    cam.transform.SetPositionAndRotation(origPos, origRot);
+                    cam.fieldOfView = origFov;
+                    if (mc != null) mc.enabled = prevMc;
+                }
             }
         }
 
@@ -409,8 +441,8 @@ namespace LR2.World
                         viewYaw = bestYaw + 9f;
                     }
                     _cmd.aimYaw = viewYaw;
-                    enemy.Movement.Teleport(enemyPos);
-                    enemy.transform.LookAt(new Vector3(pos.x, enemyPos.y, pos.z));
+                    float faceYaw = Quaternion.LookRotation(new Vector3(pos.x - enemyPos.x, 0f, pos.z - enemyPos.z)).eulerAngles.y;
+                    enemy.Teleport(enemyPos, faceYaw);
                     enemy.GetComponent<SoldierVisuals>()?.ApplyMaterialsNow(false);
                     var eProxy = enemy.GetComponent<RetargetProxy>();
                     if (eProxy != null) eProxy.SyncPoseNow();
@@ -1846,6 +1878,144 @@ namespace LR2.World
                                 FirstClip(m4Prof.firePlayer) != FirstClip(m4Prof.firePlayerSuppressed));
             Check(akDistinctM4 && akDistinctFal && pistolSuppOk && m4SuppLayered, "Audio.UnifiedWeaponIdentity",
                 $"profiles={profiles.Count} ak!=m4={akDistinctM4} ak!=fal={akDistinctFal} pistolSupp={pistolSuppOk} m4SuppLayer={m4SuppLayered}");
+        }
+
+        private IEnumerator AuditExperimentEndWindow(string outDir)
+        {
+            var mm = MatchManager.Instance;
+            var menu = FindAnyObjectByType<GameMenuController>();
+            Check(mm != null && menu != null && menu.endPanel != null && menu.endRestartButton != null && menu.endMenuButton != null,
+                "ExperimentEnd.Prerequisites", $"mm={mm != null} menu={menu != null}");
+            if (mm == null || menu == null) yield break;
+
+            // 1. Verify template resolver persists even after the originating MonoBehaviour (MainMenuController) is destroyed
+            var dummyHost = new GameObject("QA_DummyMenuHost");
+            var dummyHolder = dummyHost.AddComponent<LR2QATemplateHolder>();
+            var tDuel = ScriptableObject.CreateInstance<MatchSettings>();
+            tDuel.name = "QA_Duel"; tDuel.mode = GameModeType.Duel; tDuel.scoreLimit = 10;
+            var tTdm = ScriptableObject.CreateInstance<MatchSettings>();
+            tTdm.name = "QA_TDM"; tTdm.mode = GameModeType.TeamDeathmatch; tTdm.scoreLimit = 25;
+            dummyHolder.duel = tDuel;
+            dummyHolder.tdm = tTdm;
+
+            var expCfg = new ExperimentSessionConfig
+            {
+                sessionName = "QA END WINDOW TEST",
+                blindCondition = false,
+                randomizeOrder = false,
+                promptHumanRating = true,
+                telemetryHz = 20
+            };
+            var m1 = ExperimentSessionRunner.MakeMatch("QA M1 DUEL", false, GameModeType.Duel, 0, 10, 120f, LR2.AI.LLM.LlmIntegrationMode.Off);
+            m1.bots.Add(new ExperimentBotSlot { archetype = LR2.AI.BotArchetype.HumanLike, difficulty = 1, team = TeamId.None });
+            var m2 = ExperimentSessionRunner.MakeMatch("QA M2 TDM AIvsAI", true, GameModeType.TeamDeathmatch, 0, 20, 120f, LR2.AI.LLM.LlmIntegrationMode.Commander);
+            m2.bots.Add(new ExperimentBotSlot { archetype = LR2.AI.BotArchetype.LlmEnhanced, difficulty = 1, team = TeamId.Alpha });
+            m2.bots.Add(new ExperimentBotSlot { archetype = LR2.AI.BotArchetype.HumanLike, difficulty = 1, team = TeamId.Bravo });
+            expCfg.matches.Add(m1);
+            expCfg.matches.Add(m2);
+
+            string qaTelemetryDir = Path.Combine(outDir, "exp_telemetry_qa");
+            if (Directory.Exists(qaTelemetryDir)) Directory.Delete(qaTelemetryDir, true);
+            ExperimentTelemetryRecorder.CliOutputRoot = qaTelemetryDir;
+            ExperimentSessionRunner.StartQaTestSession(expCfg, dummyHolder.Resolve, Path.Combine(outDir, "exp_session_qa"));
+            DestroyImmediate(dummyHost); // Simulates MainMenuController destruction on scene load!
+
+            var resolvedM2 = ExperimentSessionRunner.ResolveTemplateForMode(GameModeType.TeamDeathmatch);
+            Check(resolvedM2 != null && resolvedM2.mode == GameModeType.TeamDeathmatch && resolvedM2.scoreLimit == 25,
+                "ExperimentEnd.TemplateSurvivesMenuDestroy",
+                resolvedM2 != null ? $"mode={resolvedM2.mode} score={resolvedM2.scoreLimit}" : "null");
+
+            // 2. Simulate paused state when match ends + real telemetry async save + SpectatorCamera present
+            ExperimentTelemetryRecorder.EnsureForMatch();
+            yield return null;
+            menu.Pause(); // Intentional bug repro: paused right before EndMatch
+            mm.EndMatch();
+            float waitEnd = Time.unscaledTime + 5.0f;
+            while ((menu.endPanel.alpha < 0.99f || !ExperimentTelemetryRecorder.IsIdleOrSaveComplete) && Time.unscaledTime < waitEnd)
+                yield return null;
+            yield return null;
+
+            bool unpaused = !menu.IsPaused && (menu.pausePanel == null || menu.pausePanel.alpha < 0.01f) && Time.timeScale > 0.99f;
+            bool cursorFree = Cursor.lockState == CursorLockMode.None && Cursor.visible;
+            Check(menu.endPanel.alpha >= 0.99f && unpaused && cursorFree, "ExperimentEnd.RevealAndCursorUnlock",
+                $"endAlpha={menu.endPanel.alpha:0.00} paused={menu.IsPaused} pauseAlpha={(menu.pausePanel != null ? menu.pausePanel.alpha : 0f):0.00} timeScale={Time.timeScale:0.00} lock={Cursor.lockState} visible={Cursor.visible}");
+
+            // 3. Check 0 UI overlap & real GraphicRaycaster/EventSystem hit on NEXT MATCH, END SESSION, and rating R_3
+            static Rect ScreenRectOf(RectTransform rt)
+            {
+                var corners = new Vector3[4];
+                rt.GetWorldCorners(corners);
+                float minX = corners[0].x, maxX = corners[2].x, minY = corners[0].y, maxY = corners[2].y;
+                return Rect.MinMaxRect(minX, minY, maxX, maxY);
+            }
+
+            var barTf = menu.endPanel.transform.Find("ExperimentEndBar");
+            var restartRt = (RectTransform)menu.endRestartButton.transform;
+            var menuRt = (RectTransform)menu.endMenuButton.transform;
+            var scoreRt = menu.endScoreboard.rectTransform;
+            Rect rBar = barTf != null ? ScreenRectOf((RectTransform)barTf) : new Rect();
+            Rect rRestart = ScreenRectOf(restartRt);
+            Rect rMenu = ScreenRectOf(menuRt);
+            Rect rScore = ScreenRectOf(scoreRt);
+
+            bool noOverlapRestart = barTf != null && !rBar.Overlaps(rRestart);
+            bool noOverlapMenu = barTf != null && !rBar.Overlaps(rMenu);
+            bool noOverlapScore = barTf != null && !rBar.Overlaps(rScore);
+            Check(noOverlapRestart && noOverlapMenu && noOverlapScore, "ExperimentEnd.ZeroLayoutOverlap",
+                $"bar={rBar} restart={rRestart} menu={rMenu} score={rScore}");
+
+            static bool RaycastHitsButton(Button targetBtn, out string hitInfo)
+            {
+                hitInfo = "none";
+                if (targetBtn == null || EventSystem.current == null) return false;
+                var corners = new Vector3[4];
+                ((RectTransform)targetBtn.transform).GetWorldCorners(corners);
+                Vector2 center = (corners[0] + corners[2]) * 0.5f;
+                var ped = new PointerEventData(EventSystem.current) { position = center };
+                var results = new List<RaycastResult>();
+                EventSystem.current.RaycastAll(ped, results);
+                if (results.Count == 0) return false;
+                hitInfo = $"{results[0].gameObject.name}(total={results.Count})";
+                var hitBtn = results[0].gameObject.GetComponentInParent<Button>();
+                return hitBtn == targetBtn;
+            }
+
+            bool hitNext = RaycastHitsButton(menu.endRestartButton, out string nextHit);
+            bool hitEnd = RaycastHitsButton(menu.endMenuButton, out string endHit);
+            Button r3Btn = barTf != null ? barTf.Find("R_3")?.GetComponent<Button>() : null;
+            Button r1Btn = barTf != null ? barTf.Find("R_1")?.GetComponent<Button>() : null;
+            bool hitRate = RaycastHitsButton(r3Btn, out string rateHit);
+            Check(hitNext && hitEnd && hitRate, "ExperimentEnd.ButtonsRaycastClickable",
+                $"next={nextHit}({hitNext}) end={endHit}({hitEnd}) rate={rateHit}({hitRate})");
+
+            // 4. Verify rating deduplication on repeated clicks + telemetry CSV output
+            if (r1Btn != null) r1Btn.onClick.Invoke();
+            if (r3Btn != null) r3Btn.onClick.Invoke();
+            int ratingCount = ExperimentSessionRunner.Ratings.Count;
+            float ratingVal = ratingCount > 0 ? ExperimentSessionRunner.Ratings[0].humanLikenessRating01 : -1f;
+            Check(ratingCount == 1 && Mathf.Abs(ratingVal - 0.75f) < 0.01f, "ExperimentEnd.RatingDeduplicated",
+                $"count={ratingCount} val={ratingVal:0.00}");
+
+            // Capture screenshot via ScreenCapture / RenderTexture canvas or full camera+UI frame for visual inspection
+            yield return new WaitForEndOfFrame();
+            var screenTex = ScreenCapture.CaptureScreenshotAsTexture();
+            if (screenTex != null)
+            {
+                File.WriteAllBytes(Path.Combine(outDir, "experiment_end_window_verified.png"), screenTex.EncodeToPNG());
+                Destroy(screenTex);
+            }
+
+            ExperimentTelemetryRecorder.CliOutputRoot = "";
+            ExperimentSessionRunner.ClearQaTestSession();
+            DestroyImmediate(tDuel);
+            DestroyImmediate(tTdm);
+        }
+
+        private sealed class LR2QATemplateHolder : MonoBehaviour
+        {
+            public MatchSettings duel;
+            public MatchSettings tdm;
+            public MatchSettings Resolve(GameModeType mode) => mode == GameModeType.TeamDeathmatch ? tdm : duel;
         }
 
         private static SoldierController FindLiveHostileSoldier(SoldierController player)

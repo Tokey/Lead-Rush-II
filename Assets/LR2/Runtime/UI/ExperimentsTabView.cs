@@ -45,13 +45,12 @@ namespace LR2.UI
         private static readonly Color RowColor = new Color(1f, 1f, 1f, 0.055f);
         private static readonly Color SelColor = new Color(0.95f, 0.65f, 0.22f, 0.20f);
         private static readonly Color Chip = new Color(0f, 0f, 0f, 0.45f);
-        private static readonly string[] ArchShort = { "HUMAN", "DUMB", "LLM", "FITTED" };
+        private static readonly string[] ArchShort = { "HUMAN", "DUMB", "LLM" };
         private static readonly Color[] ArchColors =
         {
             new Color(0.45f, 0.76f, 1.0f),
             new Color(0.96f, 0.42f, 0.36f),
-            new Color(0.75f, 0.56f, 1.0f),
-            new Color(0.36f, 0.88f, 0.56f)
+            new Color(0.75f, 0.56f, 1.0f)
         };
         private static readonly string[] LlmDepthNames = { "OFF", "COMMANDER", "MICRO", "PILOT" };
         private static readonly int[] HzChoices = { 20, 30, 60 };
@@ -348,7 +347,8 @@ namespace LR2.UI
             Stepper(pr, 0.57f, 0.538f, 0.77f, 0.582f, () => "ALL TYPE", d =>
             {
                 var m = CurrentMatch(); if (m == null || m.bots.Count == 0) return;
-                int next = ((int)m.bots[0].archetype + d + 4) % 4;
+                int cur = Mathf.Clamp((int)m.bots[0].archetype, 0, ArchShort.Length - 1);
+                int next = (cur + d + ArchShort.Length) % ArchShort.Length;
                 foreach (var b in m.bots) b.archetype = (BotArchetype)next;
                 if ((BotArchetype)next == BotArchetype.LlmEnhanced && m.llmMode == LlmIntegrationMode.Off)
                     m.llmMode = LlmIntegrationMode.Commander;
@@ -440,17 +440,16 @@ namespace LR2.UI
             _queueTitle.text = $"MATCH QUEUE  <color=#{Hex(Accent)}>{_cfg.matches.Count}</color>";
             _rosterTitle.text = cur != null ? $"MATCH {_selectedMatch + 1:00}  ·  {cur.label}" : "MATCH CONFIG";
 
-            int nH = 0, nD = 0, nL = 0, nF = 0;
+            int nH = 0, nD = 0, nL = 0;
             foreach (var m in _cfg.matches)
                 foreach (var b in m.bots)
                 {
                     if (b.archetype == BotArchetype.DumbRobotic) nD++;
                     else if (b.archetype == BotArchetype.LlmEnhanced) nL++;
-                    else if (b.archetype == BotArchetype.HumanFitted) nF++;
                     else nH++;
                 }
             string status = !string.IsNullOrEmpty(_toastText) ? $"{_toastText}  ·  " : "";
-            _footerSummary.text = $"{status}{_cfg.matches.Count} MATCHES ({nH} HUMAN, {nD} DUMB, {nL} LLM, {nF} FIT BOT SLOTS) · {(_cfg.blindCondition ? "BLIND" : "TAGGED")} · {_cfg.telemetryHz} HZ CSV";
+            _footerSummary.text = $"{status}{_cfg.matches.Count} MATCHES ({nH} HUMAN, {nD} DUMB, {nL} LLM BOT SLOTS) · {(_cfg.blindCondition ? "BLIND" : "TAGGED")} · {_cfg.telemetryHz} HZ CSV";
         }
 
         private void RebuildQueueRows()
@@ -475,7 +474,7 @@ namespace LR2.UI
 
                 string who = m.aiVsAi ? "AIvAI" : "PLAY";
                 string mapShort = LR2Session.MapScenes[Mathf.Clamp(m.mapIndex, 0, LR2Session.MapScenes.Length - 1)].Replace("LR2_", "");
-                string archHint = m.bots.Count > 0 ? ArchShort[Mathf.Clamp((int)m.bots[0].archetype, 0, 3)] : "-";
+                string archHint = m.bots.Count > 0 ? ArchShort[Mathf.Clamp((int)m.bots[0].archetype, 0, ArchShort.Length - 1)] : "-";
                 var title = Label(rr, $"{m.label}\n<color=#{Hex(Dim)}><size=75%>{who} · {m.bots.Count} {archHint} · {mapShort}</size></color>", 16, Text);
                 title.textWrappingMode = TextWrappingModes.Normal;
                 Anchor(title.rectTransform, 0.14f, 0.05f, 0.67f, 0.95f);
@@ -526,10 +525,11 @@ namespace LR2.UI
                 var idxLbl = Label(rr, $"{i + 1:00}", 17, Dim, true);
                 Anchor(idxLbl.rectTransform, 0.02f, 0f, 0.10f, 1f);
 
-                int ai = Mathf.Clamp((int)bot.archetype, 0, 3);
-                Stepper(rr, 0.105f, 0.12f, 0.40f, 0.88f, () => ArchShort[Mathf.Clamp((int)bot.archetype, 0, 3)], d =>
+                int ai = Mathf.Clamp((int)bot.archetype, 0, ArchShort.Length - 1);
+                Stepper(rr, 0.105f, 0.12f, 0.40f, 0.88f, () => ArchShort[Mathf.Clamp((int)bot.archetype, 0, ArchShort.Length - 1)], d =>
                 {
-                    bot.archetype = (BotArchetype)(((int)bot.archetype + d + 4) % 4);
+                    int cur = Mathf.Clamp((int)bot.archetype, 0, ArchShort.Length - 1);
+                    bot.archetype = (BotArchetype)((cur + d + ArchShort.Length) % ArchShort.Length);
                     if (bot.archetype == BotArchetype.LlmEnhanced && m.llmMode == LlmIntegrationMode.Off)
                         m.llmMode = LlmIntegrationMode.Commander;
                     SaveAndRebuild();

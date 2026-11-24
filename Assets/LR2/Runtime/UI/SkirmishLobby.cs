@@ -62,10 +62,10 @@ namespace LR2.UI
         private static readonly Color[] ArchColors =
         {
             new Color(0.45f, 0.76f, 1.0f), new Color(0.96f, 0.42f, 0.36f),
-            new Color(0.75f, 0.56f, 1.0f), new Color(0.36f, 0.88f, 0.56f)
+            new Color(0.75f, 0.56f, 1.0f)
         };
         private static readonly string[] DiffIcons = { "rank1", "rank2", "rank3", "rank4", "adaptive" };
-        private static readonly string[] ArchIcons = { "player", "robot", "brain", "adaptive" };
+        private static readonly string[] ArchIcons = { "player", "robot", "brain" };
         private static readonly string[] ModeIcons = { "tdm", "ffa", "ctf", "duel" };
         private static readonly string[] PresetIcons = { "duel", "teams2", "teams3", "teams4", "ffa" };
 
@@ -222,11 +222,11 @@ namespace LR2.UI
             Anchor(_countLabel.rectTransform, 0.08f, 0.912f, 0.37f, 0.988f);
             Stepper(pr, 0.38f, 0.918f, 0.65f, 0.982f, () => AllArchetypeLabel(), d =>
             {
-                int cur = SkirmishSetup.Bots.Count > 0 ? (int)SkirmishSetup.Bots[0].archetype : 0;
+                int cur = SkirmishSetup.Bots.Count > 0 ? Mathf.Clamp((int)SkirmishSetup.Bots[0].archetype, 0, SkirmishSetup.ArchetypeNames.Length - 1) : 0;
                 int next = (cur + d + SkirmishSetup.ArchetypeNames.Length) % SkirmishSetup.ArchetypeNames.Length;
                 foreach (var b in SkirmishSetup.Bots) b.archetype = (BotArchetype)next;
                 Rebuild();
-            }, null, () => SkirmishSetup.Bots.Count > 0 ? ArchIcons[Mathf.Clamp((int)SkirmishSetup.Bots[0].archetype, 0, 3)] : null);
+            }, null, () => SkirmishSetup.Bots.Count > 0 ? ArchIcons[Mathf.Clamp((int)SkirmishSetup.Bots[0].archetype, 0, ArchIcons.Length - 1)] : null);
             Stepper(pr, 0.66f, 0.918f, 0.975f, 0.982f, () => AllDifficultyLabel(), d =>
             {
                 int cur = SkirmishSetup.Bots.Count > 0 ? SkirmishSetup.Bots[0].difficulty : 1;
@@ -496,7 +496,7 @@ namespace LR2.UI
             if (SkirmishSetup.Bots.Count == 0) return "-";
             var a = SkirmishSetup.Bots[0].archetype;
             foreach (var b in SkirmishSetup.Bots) if (b.archetype != a) return "MIXED";
-            return SkirmishSetup.ArchetypeNames[Mathf.Clamp((int)a, 0, 3)];
+            return SkirmishSetup.ArchetypeNames[Mathf.Clamp((int)a, 0, SkirmishSetup.ArchetypeNames.Length - 1)];
         }
 
         private string AllDifficultyLabel()

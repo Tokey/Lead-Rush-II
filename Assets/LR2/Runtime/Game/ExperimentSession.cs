@@ -124,6 +124,40 @@ namespace LR2.Game
         public static readonly List<ExperimentRatingEntry> Ratings = new List<ExperimentRatingEntry>();
 
         private static Func<GameModeType, MatchSettings> _templateResolver;
+        private static readonly Dictionary<GameModeType, MatchSettings> _cachedTemplates = new Dictionary<GameModeType, MatchSettings>();
+
+        private static void ClearCachedTemplates()
+        {
+            foreach (var kv in _cachedTemplates)
+            {
+                if (kv.Value != null) UnityEngine.Object.Destroy(kv.Value);
+            }
+            _cachedTemplates.Clear();
+        }
+
+        private static void CacheTemplates(Func<GameModeType, MatchSettings> resolver)
+        {
+            ClearCachedTemplates();
+            if (resolver == null) return;
+            GameModeType[] modes =
+            {
+                GameModeType.Duel,
+                GameModeType.FreeForAll,
+                GameModeType.TeamDeathmatch,
+                GameModeType.CaptureTheFlag
+            };
+            foreach (var mode in modes)
+            {
+                MatchSettings src = null;
+                try { src = resolver(mode); } catch { src = null; }
+                if (src == null) continue;
+                var clone = UnityEngine.Object.Instantiate(src);
+                clone.name = $"{src.name}_ExpTemplate";
+                clone.mode = mode;
+                clone.hideFlags = HideFlags.DontSave;
+                _cachedTemplates[mode] = clone;
+            }
+        }
 
         public static string PresetsDirectory => ExperimentPaths.PresetsRoot;
 
@@ -153,6 +187,21 @@ namespace LR2.Game
             return $"{role}_h{h}_d{d}_l{l}_f{f}";
         }
 
+        private static void SanitizeDraftArchetypes(ExperimentSessionConfig cfg)
+        {
+            if (cfg == null || cfg.matches == null) return;
+            foreach (var m in cfg.matches)
+            {
+                if (m?.bots == null) continue;
+                foreach (var b in m.bots)
+                {
+                    if (b == null) continue;
+                    if (b.archetype == BotArchetype.HumanFitted || (int)b.archetype < 0 || (int)b.archetype > 2)
+                        b.archetype = BotArchetype.HumanLike;
+                }
+            }
+        }
+
         public static ExperimentSessionConfig LoadDraft()
         {
             string json = PlayerPrefs.GetString(PrefKey, "");
@@ -161,7 +210,11 @@ namespace LR2.Game
                 try
                 {
                     var cfg = JsonUtility.FromJson<ExperimentSessionConfig>(json);
-                    if (cfg != null && cfg.matches != null && cfg.matches.Count > 0) return cfg;
+                    if (cfg != null && cfg.matches != null && cfg.matches.Count > 0)
+                    {
+                        SanitizeDraftArchetypes(cfg);
+                        return cfg;
+                    }
                 }
                 catch (Exception) { }
             }
@@ -203,7 +256,9 @@ namespace LR2.Game
                 if (files.Length == 0) return null;
                 Array.Sort(files, (a, b) => System.IO.File.GetLastWriteTimeUtc(b).CompareTo(System.IO.File.GetLastWriteTimeUtc(a)));
                 loadedPath = files[0];
-                return JsonUtility.FromJson<ExperimentSessionConfig>(System.IO.File.ReadAllText(files[0]));
+                var loaded = JsonUtility.FromJson<ExperimentSessionConfig>(System.IO.File.ReadAllText(files[0]));
+                SanitizeDraftArchetypes(loaded);
+                return loaded;
             }
             catch (Exception) { return null; }
         }
@@ -302,6 +357,7 @@ namespace LR2.Game
             if (cfg == null || cfg.matches == null || cfg.matches.Count == 0) return;
             SaveDraft(cfg);
             _templateResolver = templateResolver;
+            CacheTemplates(templateResolver);
             ActiveConfig = cfg.Clone();
             Ratings.Clear();
             JustCompletedSummary = "";
@@ -334,32 +390,88 @@ namespace LR2.Game
         {
             var m = CurrentMatchSpec;
             if (m == null) return;
-            Ratings.Add(new ExperimentRatingEntry
+            int matchIdx = (MatchOrder != null && CurrentQueueIndex >= 0 && CurrentQueueIndex < MatchOrder.Length) ? MatchOrder[CurrentQueueIndex] : CurrentQueueIndex;
+            float clamped = Mathf.Clamp01(rating01);
+            ExperimentRatingEntry entry = null;
+            for (int i = 0; i < Ratings.Count; i++)
             {
-                queueIndex = CurrentQueueIndex,
-                matchIndex = MatchOrder[CurrentQueueIndex],
-                label = m.label,
-                conditionTag = ConditionTagOf(m),
-                humanLikenessRating01 = Mathf.Clamp01(rating01),
-                note = note ?? ""
-            });
+                if (Ratings[i] != null && Ratings[i].queueIndex == CurrentQueueIndex)
+                {
+                    entry = Ratings[i];
+                    break;
+                }
+            }
+            if (entry == null)
+            {
+                entry = new ExperimentRatingEntry { queueIndex = CurrentQueueIndex };
+                Ratings.Add(entry);
+            }
+            entry.matchIndex = matchIdx;
+            entry.label = m.label;
+            entry.conditionTag = ConditionTagOf(m);
+            entry.humanLikenessRating01 = clamped;
+            entry.note = note ?? "";
+
             try
             {
                 if (!string.IsNullOrEmpty(SessionDirPath))
                 {
                     System.IO.Directory.CreateDirectory(SessionDirPath);
                     string p = System.IO.Path.Combine(SessionDirPath, $"Ratings_{SessionId}.csv");
-                    if (!System.IO.File.Exists(p))
-                        System.IO.File.WriteAllText(p, "session_id,run_id,queue_idx,match_idx,label,condition,rating_0_100,note\n");
-                    string line = $"{SessionNumId},{RunId},{CurrentQueueIndex + 1},{MatchOrder[CurrentQueueIndex] + 1},\"{(m.label ?? "").Replace('"', '\'')}\",{ConditionTagOf(m)},{Mathf.RoundToInt(rating01 * 100f)},\"{(note ?? "").Replace('"', '\'')}\"\n";
-                    System.IO.File.AppendAllText(p, line);
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append("session_id,run_id,queue_idx,match_idx,label,condition,rating_0_100,note\n");
+                    foreach (var r in Ratings)
+                    {
+                        if (r == null) continue;
+                        sb.Append($"{SessionNumId},{RunId},{r.queueIndex + 1},{r.matchIndex + 1},\"{(r.label ?? "").Replace('"', '\'')}\",{r.conditionTag},{Mathf.RoundToInt(r.humanLikenessRating01 * 100f)},\"{(r.note ?? "").Replace('"', '\'')}\"\n");
+                    }
+                    System.IO.File.WriteAllText(p, sb.ToString());
                 }
             }
             catch (Exception) { }
         }
 
+        internal static void StartQaTestSession(ExperimentSessionConfig cfg, Func<GameModeType, MatchSettings> templateResolver, string tempDir)
+        {
+            if (cfg == null || cfg.matches == null || cfg.matches.Count == 0) return;
+            _templateResolver = templateResolver;
+            CacheTemplates(templateResolver);
+            ActiveConfig = cfg.Clone();
+            Ratings.Clear();
+            MatchOrder = new int[ActiveConfig.matches.Count];
+            for (int i = 0; i < MatchOrder.Length; i++) MatchOrder[i] = i;
+            SessionNumId = 9999;
+            RunId = "qa_test";
+            SessionId = "9999_qa_test";
+            SessionDirPath = tempDir ?? "";
+            SessionLogPath = string.IsNullOrEmpty(tempDir) ? "" : System.IO.Path.Combine(tempDir, "SessionLog_qa.csv");
+            CurrentQueueIndex = 0;
+            IsSessionActive = true;
+        }
+
+        internal static void ClearQaTestSession()
+        {
+            IsSessionActive = false;
+            ActiveConfig = null;
+            MatchOrder = Array.Empty<int>();
+            CurrentQueueIndex = 0;
+            Ratings.Clear();
+            JustCompletedSummary = "";
+            SkirmishSetup.BlindMode = false;
+            SkirmishSetup.Active = false;
+            LLMCommanderConfig.ExperimentModeOverride = null;
+            _templateResolver = null;
+            ClearCachedTemplates();
+            LR2Session.PendingSettings = null;
+            LR2Session.ActiveSettings = null;
+        }
+
         public static void AdvanceToNextMatch()
         {
+            Time.timeScale = 1f;
+            AudioListener.pause = false;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
             if (!IsSessionActive || ActiveConfig == null)
             {
                 MatchManager.Instance?.QuitToMenu();
@@ -374,9 +486,11 @@ namespace LR2.Game
                 return;
             }
 
-            ApplyMatchSpecToRuntime(CurrentMatchSpec, out MatchSettings template);
+            var spec = CurrentMatchSpec;
+            ApplyMatchSpecToRuntime(spec, out MatchSettings template);
             LR2Session.PrepareConfiguredMatch(template);
-            Time.timeScale = 1f;
+            if (spec != null && LR2Session.PendingSettings != null)
+                LR2Session.PendingSettings.mode = spec.mode;
             UnityEngine.SceneManagement.SceneManager.LoadScene(LR2Session.CurrentMapScene);
         }
 
@@ -394,7 +508,11 @@ namespace LR2.Game
             SkirmishSetup.Active = false;
             LLMCommanderConfig.ExperimentModeOverride = null;
             Time.timeScale = 1f;
+            AudioListener.pause = false;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
             LR2Session.ActiveSettings = null;
+            ClearCachedTemplates();
             if (Application.CanStreamedLevelBeLoaded(LR2Session.MenuScene))
                 UnityEngine.SceneManagement.SceneManager.LoadScene(LR2Session.MenuScene);
         }
@@ -405,9 +523,25 @@ namespace LR2.Game
             launchScene?.Invoke(template);
         }
 
+        internal static MatchSettings ResolveTemplateForMode(GameModeType mode)
+        {
+            if (_cachedTemplates.TryGetValue(mode, out var cached) && cached != null)
+                return cached;
+            if (_templateResolver != null)
+            {
+                try
+                {
+                    var live = _templateResolver(mode);
+                    if (live != null) return live;
+                }
+                catch { }
+            }
+            return MatchManager.Instance != null ? MatchManager.Instance.Settings : null;
+        }
+
         private static void ApplyMatchSpecToRuntime(ExperimentMatchSpec m, out MatchSettings template)
         {
-            template = _templateResolver != null ? _templateResolver(m.mode) : null;
+            template = m != null ? ResolveTemplateForMode(m.mode) : null;
             LR2Session.SelectedMapIndex = m.mapIndex;
             LR2Session.SelectedPrimaryWeapon = m.playerWeapon;
 
@@ -468,6 +602,8 @@ namespace LR2.Game
             SessionLogPath = "";
             JustCompletedSummary = "";
             Ratings.Clear();
+            _templateResolver = null;
+            _cachedTemplates.Clear();
         }
     }
 }

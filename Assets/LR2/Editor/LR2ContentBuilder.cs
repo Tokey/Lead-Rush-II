@@ -2172,10 +2172,16 @@ namespace LR2.EditorTools
         private static Material[] _gear;
         private const string SwatMatDir = DemoDir + "/Meshes/Character/MixamoSwat/Materials";
 
+        internal static Material[] BuildMilitaryGear(bool forceRebuild = true)
+        {
+            if (forceRebuild) _gear = null;
+            return MakeGear();
+        }
+
         /// <summary>
-        /// Team uniforms: only the blue cloth of the SWAT texture (shirt, trousers, hood) is re-dyed (woodland olive vs.
-        /// desert tan) - vest, pouches, gloves, boots, helmet and goggles keep their own charcoal/black look.
-        /// Face: black knit balaclava with a bone-white Ghost-style skull print (no visible human face).
+        /// Realistic military faction uniforms (Allied NATO Ranger MultiCam Olive vs. Enemy OpFor Arid Desert PMC,
+        /// natural charcoal/coyote gear, no SWAT stencil) + Call of Duty Ghost tactical skull balaclava with an
+        /// exposure-independent low-light visibility floor so soldiers stay legible across all map lighting conditions.
         /// </summary>
         private static Material[] MakeGear()
         {
@@ -2186,12 +2192,53 @@ namespace LR2.EditorTools
             var head = AssetDatabase.LoadAssetAtPath<Material>(SwatMatDir + "/Soldier_head6.mat");
             _gear = new[]
             {
-                DyeUniform(body, dir, "Uniform_Allied_NavyBlue", new Color(0.11f, 0.30f, 0.72f), Color.clear, Color.clear, false),
-                DyeUniform(body, dir, "Uniform_Enemy_DesertCrimson", new Color(0.86f, 0.70f, 0.44f), new Color(0.64f, 0.48f, 0.27f), new Color(0.56f, 0.11f, 0.09f), true),
-                SkullMask(head, dir, "FaceMask_GhostSkull", new Color(0.82f, 0.80f, 0.73f)),
-                SkullMask(head, dir, "FaceMask_EnemyMarauder", new Color(0.82f, 0.16f, 0.12f)),
+                DyeUniform(body, dir, "Uniform_Allied_NavyBlue", false),
+                DyeUniform(body, dir, "Uniform_Enemy_DesertCrimson", true),
+                SkullMask(head, dir, "FaceMask_GhostSkull", false),
+                SkullMask(head, dir, "FaceMask_EnemyMarauder", true),
             };
             return _gear;
+        }
+
+        private static Material ConfigureCharacterVisibilityMaterial(Material srcMat, string matName, Texture2D baseTex, float smoothness, float emissiveLift = 0.045f, float normalScale = 1.0f)
+        {
+            Shader lit = Shader.Find("HDRP/Lit");
+            var m = lit != null ? new Material(lit) { name = matName } : new Material(srcMat) { name = matName };
+            Texture normalMap = null;
+            if (srcMat != null)
+            {
+                if (srcMat.HasProperty("_NormalMap")) normalMap = srcMat.GetTexture("_NormalMap");
+                if (normalMap == null && srcMat.HasProperty("_BumpMap")) normalMap = srcMat.GetTexture("_BumpMap");
+            }
+            if (normalMap != null)
+            {
+                m.SetTexture("_NormalMap", normalMap);
+                if (m.HasProperty("_BumpMap")) m.SetTexture("_BumpMap", normalMap);
+                m.SetFloat("_NormalScale", normalScale);
+            }
+            if (baseTex != null)
+            {
+                m.SetTexture("_BaseColorMap", baseTex);
+                if (m.HasProperty("_MainTex")) m.SetTexture("_MainTex", baseTex);
+                m.SetTexture("_EmissiveColorMap", baseTex);
+            }
+            m.SetColor("_BaseColor", Color.white);
+            if (m.HasProperty("_Color")) m.SetColor("_Color", Color.white);
+            m.SetFloat("_Metallic", 0f);
+            m.SetFloat("_Smoothness", smoothness);
+            if (m.HasProperty("_SmoothnessRemapMin")) m.SetFloat("_SmoothnessRemapMin", 0f);
+            if (m.HasProperty("_SmoothnessRemapMax")) m.SetFloat("_SmoothnessRemapMax", Mathf.Clamp01(smoothness + 0.14f));
+            if (m.HasProperty("_CoatMask")) m.SetFloat("_CoatMask", 0f);
+
+            // Constant low-level post-exposure albedo lift prevents characters crushing to pure #000000 black in storm shadows/backlighting
+            // while remaining physically matte and non-glowing under any daylight or studio lighting.
+            if (m.HasProperty("_UseEmissiveIntensity")) m.SetFloat("_UseEmissiveIntensity", 0f);
+            if (m.HasProperty("_EmissiveExposureWeight")) m.SetFloat("_EmissiveExposureWeight", 0f);
+            if (m.HasProperty("_AlbedoAffectEmissive")) m.SetFloat("_AlbedoAffectEmissive", 0f);
+            if (m.HasProperty("_EmissiveColor"))
+                m.SetColor("_EmissiveColor", new Color(emissiveLift, emissiveLift * 1.05f, emissiveLift * 1.12f, 1f));
+            HDMaterial.ValidateMaterial(m);
+            return m;
         }
 
         private static Texture2D ReadableCopy(Texture src, int maxSize)
@@ -2248,114 +2295,304 @@ namespace LR2.EditorTools
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
 
-        private static Material DyeUniform(Material body, string dir, string name, Color clothA, Color clothB, Color vestTint, bool hostileFaction)
+        private static Material DyeUniform(Material body, string dir, string name, bool hostileFaction)
         {
             if (body == null) return null;
-            var m = new Material(body) { name = name };
+            Texture2D outTex = null;
             var src = body.GetTexture("_BaseColorMap");
             if (src != null)
             {
                 var tex = ReadableCopy(src, 2048);
                 int w = tex.width, h = tex.height;
                 var px = tex.GetPixels();
+                Color iffColor = hostileFaction ? new Color(0.50f, 0.14f, 0.12f, 1f) : new Color(0.19f, 0.36f, 0.56f, 1f);
+                Color rigTint = hostileFaction ? new Color(0.075f, 0.078f, 0.086f, 1f) : new Color(0.32f, 0.34f, 0.27f, 1f);
+
+                float Smooth(float e0, float e1, float val)
+                {
+                    float t = Mathf.Clamp01((val - e0) / (e1 - e0));
+                    return t * t * (3f - 2f * t);
+                }
+
                 for (int y = 0; y < h; y++)
                 {
-                    float v = y / (float)(h - 1);
+                    float v = y / (float)(h - 1); // bottom-up matching Unity Texture2D.GetPixels()
                     for (int x = 0; x < w; x++)
                     {
                         float u = x / (float)(w - 1);
                         int i = y * w + x;
                         var c = px[i];
                         float l = c.r * 0.3f + c.g * 0.59f + c.b * 0.11f;
-                        float blue = Mathf.Clamp01((c.b - Mathf.Max(c.r, c.g) - 0.010f) * 9f);
-                        float shade = Mathf.Clamp(l * 2.35f, 0.14f, 1.32f);
+
+                        // Catch BOTH saturated SWAT blue AND muted slate-blue seams/folds so zero blue bleeds into olive/desert BDU
+                        float blueDiff = c.b - Mathf.Max(c.r, c.g);
+                        float warmGap = c.b - c.r;
+                        float blue = Mathf.Max(
+                            Mathf.Clamp01((blueDiff - 0.001f) * 40f),
+                            Mathf.Clamp01((warmGap - 0.014f) * 32f) * (c.b >= c.g - 0.008f ? 1f : 0f));
+
+                        // 1. Erase SWAT stencil smoothly within exact inner Velcro loop rect (`u=[0.749,0.799], v=[0.614,0.782]`) + compact chest IFF patch
+                        bool inBackPlacard = u >= 0.749f && u <= 0.799f && v >= 0.614f && v <= 0.782f;
+                        bool inFrontPlacard = u >= 0.482f && u <= 0.530f && v >= 0.654f && v <= 0.718f;
+                        if (inBackPlacard || inFrontPlacard)
+                        {
+                            float feather = inBackPlacard
+                                ? Mathf.Min(Smooth(0.749f, 0.755f, u), 1f - Smooth(0.793f, 0.799f, u)) * Mathf.Min(Smooth(0.614f, 0.622f, v), 1f - Smooth(0.772f, 0.782f, v))
+                                : Mathf.Min(Smooth(0.482f, 0.488f, u), 1f - Smooth(0.524f, 0.530f, u)) * Mathf.Min(Smooth(0.654f, 0.661f, v), 1f - Smooth(0.711f, 0.718f, v));
+
+                            float loopRib = 0.88f + 0.16f * Mathf.Sin(v * h * 0.85f) * (0.6f + 0.4f * Mathf.PerlinNoise(u * 120f, v * 120f));
+                            float vestLit = Mathf.Clamp(0.24f + l * 1.45f, 0.24f, 0.85f);
+                            Color cordura = rigTint * (0.72f * loopRib * Mathf.Max(0.48f, vestLit));
+
+                            bool inIffBar = inBackPlacard
+                                ? (u >= 0.765f && u <= 0.785f && v >= 0.656f && v <= 0.722f)
+                                : (u >= 0.491f && u <= 0.521f && v >= 0.674f && v <= 0.698f);
+                            if (inIffBar)
+                            {
+                                float weave = 0.88f + 0.16f * Mathf.PerlinNoise(u * 95f, v * 95f);
+                                bool irStripe = inBackPlacard ? (Mathf.Abs(u - 0.775f) < 0.0022f) : (Mathf.Abs(v - 0.686f) < 0.0028f);
+                                Color barCol = irStripe ? rigTint * 0.55f : iffColor;
+                                cordura = barCol * weave;
+                            }
+                            Color blended = Color.Lerp(c, cordura, feather);
+                            blended.a = c.a;
+                            px[i] = blended;
+                            continue;
+                        }
+
                         if (blue > 0.01f)
                         {
-                            Color cloth = clothA;
-                            if (clothB.a > 0.01f)
+                            // Domain-warped MultiCam BDU pattern + subtle ripstop weave + lifted fold shading
+                            float wx = u * 15f + (Mathf.PerlinNoise(u * 9f + 1.1f, v * 9f + 2.3f) - 0.5f) * 2.5f;
+                            float wy = v * 15f + (Mathf.PerlinNoise(u * 9f + 5.7f, v * 9f + 8.9f) - 0.5f) * 2.5f;
+                            float n1 = Mathf.PerlinNoise(wx, wy);
+                            float n2 = Mathf.PerlinNoise(u * 44f + 3.4f, v * 44f + 7.1f);
+                            float ripstop = (((x & 3) == 0) || ((y & 3) == 0)) ? 0.965f : 1.015f;
+
+                            Color cloth;
+                            if (!hostileFaction)
                             {
-                                float camo = Mathf.PerlinNoise(u * 22f + 1.3f, v * 22f + 3.7f);
-                                cloth = camo > 0.52f ? clothB : clothA;
+                                // Allied Task Force NATO MultiCam Ranger Olive (zero blue cast)
+                                if (n1 < 0.35f) cloth = new Color(0.22f, 0.26f, 0.17f);
+                                else if (n1 < 0.58f) cloth = new Color(0.32f, 0.38f, 0.23f);
+                                else if (n1 < 0.78f) cloth = new Color(0.43f, 0.45f, 0.32f);
+                                else cloth = new Color(0.53f, 0.49f, 0.36f);
+                                if (n2 > 0.75f) cloth = Color.Lerp(cloth, new Color(0.20f, 0.21f, 0.15f), 0.55f);
                             }
+                            else
+                            {
+                                // Enemy OpFor Shadow Company / Pale Arid Desert MultiCam (bright sand shoulders/sleeves vs. charcoal rig)
+                                if (n1 < 0.33f) cloth = new Color(0.50f, 0.42f, 0.30f);
+                                else if (n1 < 0.58f) cloth = new Color(0.64f, 0.56f, 0.42f);
+                                else if (n1 < 0.80f) cloth = new Color(0.76f, 0.68f, 0.53f);
+                                else cloth = new Color(0.85f, 0.78f, 0.63f);
+                                if (n2 > 0.75f) cloth = Color.Lerp(cloth, new Color(0.38f, 0.31f, 0.22f), 0.45f);
+                            }
+
+                            float shade = Mathf.Clamp((hostileFaction ? 0.40f : 0.32f) + l * 1.64f, hostileFaction ? 0.42f : 0.34f, 1.28f) * ripstop;
                             var dyed = new Color(cloth.r * shade, cloth.g * shade, cloth.b * shade, c.a);
                             px[i] = Color.Lerp(c, dyed, blue);
                         }
-                        else if (hostileFaction)
+                        else
                         {
-                            // Transform dark plate carrier / pouches / helmet trim into crimson tactical OpFor gear & replace white "SWAT" back stencil
-                            bool isSwatStencil = u >= 0.70f && u <= 0.78f && v >= 0.57f && v <= 0.80f && c.r > 0.55f && c.g > 0.55f && c.b > 0.55f;
-                            if (isSwatStencil)
+                            // Keep boots, gloves, pistol, holster, goggles & kneepads authentic matte charcoal/coyote gear;
+                            // apply natural Cordura rig tint ONLY to plate carrier & tactical pouches.
+                            bool inVest = (u >= 0.385f && v >= 0.568f && v <= 0.845f)
+                                || (u <= 0.150f && v >= 0.565f && v <= 0.820f)
+                                || (u >= 0.435f && v >= 0.495f && v < 0.568f);
+
+                            Color outCol = c;
+                            if (inVest && l > 0.06f && l < 0.76f)
                             {
-                                px[i] = new Color(0.46f, 0.08f, 0.07f, c.a);
+                                float rigShade = hostileFaction ? Mathf.Clamp(0.22f + l * 1.45f, 0.22f, 0.95f) : Mathf.Clamp(0.28f + l * 1.75f, 0.28f, 1.18f);
+                                var corduraCol = new Color(rigTint.r * rigShade, rigTint.g * rigShade, rigTint.b * rigShade, c.a);
+                                outCol = Color.Lerp(c, corduraCol, hostileFaction ? 0.80f : 0.62f);
                             }
-                            else if (vestTint.a > 0.01f && l > 0.09f && l < 0.76f)
+                            else if (hostileFaction && u >= 0.21f && u <= 0.47f && v >= 0.35f && v <= 0.57f && l > 0.08f)
                             {
-                                var rig = new Color(vestTint.r * shade, vestTint.g * shade, vestTint.b * shade, c.a);
-                                px[i] = Color.Lerp(c, rig, 0.68f);
+                                // Desert-suede coyote tint on combat boots for OpFor realism (not red)
+                                float bootShade = Mathf.Clamp(0.32f + l * 1.55f, 0.26f, 1.05f);
+                                outCol = Color.Lerp(c, new Color(0.34f * bootShade, 0.29f * bootShade, 0.22f * bootShade, c.a), 0.38f);
                             }
+
+                            // Gentle dark-leather floor lift so boots/gloves/goggles retain 3D readable edges (preserve deep OpFor vest contrast)
+                            float lumOut = outCol.r * 0.3f + outCol.g * 0.59f + outCol.b * 0.11f;
+                            if (lumOut < 0.15f && !(hostileFaction && inVest))
+                            {
+                                float tLift = Mathf.Clamp01((0.15f - lumOut) / 0.15f) * 0.42f;
+                                outCol = Color.Lerp(outCol, new Color(0.18f, 0.185f, 0.19f, c.a), tLift);
+                            }
+                            outCol.a = c.a;
+                            px[i] = outCol;
                         }
                     }
                 }
                 tex.SetPixels(px);
                 tex.Apply();
-                m.SetTexture("_BaseColorMap", SaveColorTexture(tex, $"{dir}/T_{name}.png"));
+                outTex = SaveColorTexture(tex, $"{dir}/T_{name}.png");
             }
-            m.SetColor("_BaseColor", Color.white);
+            var m = ConfigureCharacterVisibilityMaterial(body, name, outTex, 0.28f, hostileFaction ? 0.036f : 0.052f, 1.0f);
             return SaveMaterial(m, $"{dir}/M_{name}.mat");
         }
 
-        /// <summary>Balaclava + faction skull print painted in the SWAT head UV layout (bone-white for allies, crimson Marauder for enemies).</summary>
-        private static Material SkullMask(Material head, string dir, string matName, Color printColor)
+        /// <summary>
+        /// Call of Duty Ghost tactical skull balaclava aligned to MixamoSwat head UVs
+        /// (`uCenter = 0.503`, `L/R_eye` `du = +/-0.072`, `v_top = 0.322`, `nostrils = 0.431`, `mouth = 0.482`).
+        /// </summary>
+        private static Material SkullMask(Material head, string dir, string matName, bool hostileFaction)
         {
             if (head == null) return null;
-            var m = new Material(head) { name = matName };
+            Texture2D outTex = null;
             var src = head.GetTexture("_BaseColorMap");
             if (src != null)
             {
                 var tex = ReadableCopy(src, 1024);
                 int w = tex.width, h = tex.height;
                 var px = tex.GetPixels();
-                float E(float u, float v, float cu, float cv, float ru, float rv) { float a = (u - cu) / ru, b = (v - cv) / rv; return a * a + b * b; }
+                Color boneBase = hostileFaction ? new Color(0.89f, 0.85f, 0.78f, 1f) : new Color(0.93f, 0.90f, 0.84f, 1f);
+                Color warPaintRed = new Color(0.56f, 0.13f, 0.10f, 1f);
+
+                float Smooth(float e0, float e1, float val)
+                {
+                    float t = Mathf.Clamp01((val - e0) / (e1 - e0));
+                    return t * t * (3f - 2f * t);
+                }
+
                 for (int y = 0; y < h; y++)
+                {
+                    float v = 1f - y / (float)(h - 1); // v: 0 = top of image, 1 = bottom
                     for (int x = 0; x < w; x++)
                     {
                         int i = y * w + x;
-                        float u = x / (float)(w - 1), v = 1f - y / (float)(h - 1); // v: 0 = top of the image
+                        float u = x / (float)(w - 1);
                         var c = px[i];
                         float l = c.r * 0.3f + c.g * 0.59f + c.b * 0.11f;
-                        float knit = 0.5f + 0.5f * Mathf.Sin(x * 1.3f) * Mathf.Sin(y * 1.1f);
-                        Color fabric = new Color(0.045f, 0.046f, 0.05f) * (0.7f + l * 0.7f + knit * 0.18f);
+
+                        // Keep only exact centered irises/pupils on 3D eyeball UVs (`L=(0.2496,0.0498)`, `R=(0.3498,0.0498)`) framed in matte charcoal eye-black
+                        if (v < 0.155f || v > 0.655f)
+                        {
+                            float dL = Mathf.Sqrt((u - 0.2496f) * (u - 0.2496f) + (v - 0.0498f) * (v - 0.0498f));
+                            float dR = Mathf.Sqrt((u - 0.3498f) * (u - 0.3498f) + (v - 0.0498f) * (v - 0.0498f));
+                            float dEye = Mathf.Min(dL, dR);
+                            if (dEye < 0.049f)
+                            {
+                                float inIris = 1f - Smooth(0.0098f, 0.0122f, dEye);
+                                float innerSclera = (1f - inIris) * (1f - Smooth(0.0122f, 0.0235f, dEye));
+                                Color eyeRim = new Color(0.036f, 0.038f, 0.042f, 1f);
+                                Color eyeCol = eyeRim * (1f - inIris - innerSclera) + (c * 0.85f) * inIris + (c * 0.20f) * innerSclera;
+                                eyeCol.a = 1f;
+                                px[i] = eyeCol;
+                            }
+                            else
+                            {
+                                px[i] = new Color(0.088f, 0.092f, 0.098f, 1f);
+                            }
+                            continue;
+                        }
+
+                        // Tactical ribbed knit balaclava fabric preserving 3D facial contours
+                        float rib = 0.5f + 0.5f * Mathf.Sin(u * 420f);
+                        float cross = 0.5f + 0.5f * Mathf.Sin(v * 340f);
+                        Color fabric = new Color(0.140f, 0.146f, 0.158f) * (0.76f + l * 0.48f + rib * 0.11f + cross * 0.05f);
                         fabric.a = 1f;
 
-                        bool cranium = E(u, v, 0.5f, 0.355f, 0.15f, 0.165f) < 1f;
-                        bool jaw = E(u, v, 0.5f, 0.495f, 0.1f, 0.065f) < 1f;
-                        bool eye = E(u, v, 0.437f, 0.334f, 0.045f, 0.036f) < 1f || E(u, v, 0.563f, 0.334f, 0.045f, 0.036f) < 1f;
-                        bool nose = v > 0.37f && v < 0.423f && Mathf.Abs(u - 0.5f) < 0.004f + (v - 0.37f) * 0.32f;
-                        bool teethZone = v > 0.456f && v < 0.497f && Mathf.Abs(u - 0.5f) < 0.07f;
-                        bool mouthLine = teethZone && v > 0.472f && v < 0.479f;
-                        bool toothGap = teethZone && Mathf.Repeat(u * 55f, 1f) < 0.16f;
-                        float hollow = Mathf.Min(E(u, v, 0.4f, 0.43f, 0.045f, 0.035f), E(u, v, 0.6f, 0.43f, 0.045f, 0.035f));
+                        const float uCenter = 0.503f;
+                        float du = u - uCenter;
+                        float ad = Mathf.Abs(du);
 
-                        Color outc = fabric;
-                        if ((cranium || jaw) && v > 0.18f && v < 0.6f)
+                        // 1. Anatomical COD Ghost faceplate below forehead seam (brow arches -> zygomatic cheekbones -> carved sub-malar jaw -> tapered chin)
+                        float browArch = 0.256f + 0.020f * Mathf.Exp(-Mathf.Pow(ad / 0.026f, 2f)) + 0.048f * Smooth(0.075f, 0.145f, ad);
+                        float skullTop = Smooth(browArch - 0.005f, browArch + 0.006f, v);
+
+                        // Cheekbones flare gracefully at v=0.33..0.40, then flow down a smooth anatomical S-curve into narrow mandible & pointed chin
+                        float cheekHalfW = Mathf.Lerp(0.126f, 0.146f, Smooth(0.28f, 0.385f, v));
+                        float subMalarCut = Smooth(0.402f, 0.452f, v);
+                        float mandibleHalfW = 0.078f - 0.044f * Mathf.Pow(Smooth(0.465f, 0.568f, v), 1.35f);
+                        float activeHalfW = Mathf.Lerp(cheekHalfW, mandibleHalfW, subMalarCut);
+
+                        float sideMask = 1f - Smooth(activeHalfW - 0.006f, activeHalfW + 0.005f, ad);
+                        float jawBottom = 1f - Smooth(0.556f, 0.570f, v);
+                        float skullPaint = Mathf.Clamp01(skullTop * sideMask * jawBottom);
+
+                        // 2. Predatory angular slanted COD Ghost eye cutouts (brow slopes down toward nose bridge)
+                        float ex = ad - 0.072f;
+                        float ey = v - (0.319f + (0.072f - ad) * 0.17f);
+                        float boxDist = Mathf.Max(Mathf.Abs(ex) / 0.041f, Mathf.Abs(ey) / 0.025f);
+                        float ellDist = Mathf.Sqrt((ex / 0.043f) * (ex / 0.043f) + (ey / 0.026f) * (ey / 0.026f));
+                        float eyeDist = Mathf.Lerp(ellDist, boxDist, 0.42f);
+                        float eyeCut = 1f - Smooth(0.84f, 1.02f, eyeDist);
+                        float eyeGrease = (1f - Smooth(0.95f, 1.38f, eyeDist)) * 0.48f;
+
+                        // 3. Anatomical piriform nasal cavity (`v=0.354..0.430`, central vertical bone septum)
+                        float noseHeight = Smooth(0.354f, 0.362f, v) * (1f - Smooth(0.422f, 0.432f, v));
+                        float noseWidth = Mathf.Lerp(0.004f, 0.0265f, Mathf.Pow(Smooth(0.356f, 0.424f, v), 0.72f));
+                        float noseSide = 1f - Smooth(noseWidth - 0.004f, noseWidth + 0.004f, ad);
+                        float septum = 1f - Smooth(0.0020f, 0.0046f, ad);
+                        float noseCut = noseHeight * noseSide * (1f - septum * 0.90f);
+
+                        // Furrowed glabella frown lines between brows
+                        float frown = (1f - Smooth(0.0f, 0.024f, Mathf.Abs(v - 0.296f))) * (1f - Smooth(0.008f, 0.024f, ad)) * 0.55f;
+
+                        // 4. Sculpted anatomical upper & lower skull teeth along snarling occlusion curve vLine(ad)
+                        float vLine = 0.482f - 0.009f * Mathf.Pow(Mathf.Min(1f, ad / 0.072f), 2f);
+                        float avRel = Mathf.Abs(v - vLine);
+                        float mouthZone = (1f - Smooth(0.056f, 0.074f, ad)) * (1f - Smooth(0.022f, 0.032f, avRel));
+
+                        float tNorm = ad / 0.0124f;
+                        float tIdx = Mathf.Floor(tNorm);
+                        float tFrac = Mathf.Abs((tNorm - tIdx) - 0.5f) * 2f; // 0 = tooth center, 1 = embrasure cleft
+                        float toothCrownLen = tIdx <= 1f ? 0.0205f : (tIdx < 2.5f ? 0.0235f : Mathf.Lerp(0.0185f, 0.0115f, Mathf.Clamp01((tIdx - 2f) / 3.5f)));
+                        float tipRound = 0.0024f * tFrac * tFrac;
+                        float cleftHalfW = Mathf.Lerp(0.84f, 0.54f, Smooth(0.003f, 0.020f, avRel));
+                        float inToothMask = mouthZone * Smooth(0.0022f + tipRound, 0.0062f + tipRound, avRel)
+                            * (1f - Smooth(toothCrownLen - 0.0035f, toothCrownLen + 0.0035f, avRel))
+                            * (1f - Smooth(cleftHalfW - 0.12f, cleftHalfW + 0.08f, tFrac));
+                        float toothCylinderShade = 1.07f - 0.30f * tFrac * tFrac - 0.16f * Smooth(0.011f, toothCrownLen, avRel);
+                        float mouthShadow = mouthZone * (1f - Smooth(0.008f, 0.024f, avRel)) * (1f - inToothMask * 0.94f);
+                        float chinShadow = (1f - Smooth(0.030f, 0.052f, ad)) * (1f - Smooth(0.004f, 0.013f, Mathf.Abs(v - 0.514f))) * 0.42f;
+
+                        // 5. Subtle weathered ballistic paint patina + knit micro-grain (no squiggly spaghetti lines)
+                        float patina = 0.90f + 0.10f * Mathf.PerlinNoise(u * 22f + 1.3f, v * 22f + 4.7f);
+                        float scuff = Smooth(0.72f, 0.92f, Mathf.PerlinNoise(u * 48f + 7.1f, v * 48f + 2.9f));
+
+                        float cutout = Mathf.Clamp01(Mathf.Max(eyeCut, Mathf.Max(noseCut, mouthShadow)));
+                        float faceRelief = Mathf.Clamp(0.88f + (l - 0.35f) * 0.34f, 0.68f, 1.14f);
+                        float ribBlend = 0.94f + 0.06f * rib;
+
+                        Color boneCol = boneBase * (faceRelief * ribBlend * patina);
+                        // Subtle temple/brow bevel shading & raised cheekbone highlight
+                        float cheekRidge = Smooth(0.365f, 0.388f, v) * (1f - Smooth(0.402f, 0.422f, v)) * Smooth(0.045f, 0.085f, ad);
+                        float jawCreaseShade = Smooth(0.415f, 0.445f, v) * (1f - Smooth(0.465f, 0.485f, v)) * Smooth(0.055f, 0.078f, ad) * 0.16f;
+                        boneCol *= 1f + 0.14f * cheekRidge - 0.24f * eyeGrease - 0.22f * frown - 0.18f * chinShadow - jawCreaseShade;
+
+                        if (hostileFaction)
                         {
-                            Color bone = printColor * (0.82f + l * 0.3f);
-                            if (hollow < 1f) bone *= Mathf.Lerp(0.55f, 1f, hollow);
-                            float wear = Mathf.PerlinNoise(u * 38f, v * 38f);
-                            bone = Color.Lerp(bone, fabric, Mathf.Clamp01((0.3f - wear) * 4f) * 0.75f); // printed, worn
-                            outc = bone;
-                            if (eye || nose || mouthLine || toothGap) outc = new Color(0.012f, 0.012f, 0.014f);
+                            // Crisp tactical crimson twin claw/chevron war-paint over left cheekbone
+                            float slashA = Mathf.Abs((du + 0.072f) * 0.82f + (v - 0.378f) * 0.57f);
+                            float slashB = Mathf.Abs((du + 0.088f) * 0.82f + (v - 0.394f) * 0.57f);
+                            float cheekSpan = Smooth(0.355f, 0.368f, v) * (1f - Smooth(0.415f, 0.430f, v)) * Smooth(-0.135f, -0.095f, du) * (1f - Smooth(-0.042f, -0.025f, du));
+                            float warStripe = Mathf.Max(1f - Smooth(0.0045f, 0.0085f, slashA), 1f - Smooth(0.0045f, 0.0085f, slashB)) * cheekSpan;
+                            boneCol = Color.Lerp(boneCol, warPaintRed * faceRelief, warStripe * 0.85f);
                         }
-                        if (v < 0.17f || v > 0.72f) outc = new Color(0.02f, 0.02f, 0.022f); // eyeballs/teeth/tongue: void
+
+                        Color toothCol = boneBase * (1.03f * toothCylinderShade * faceRelief);
+                        Color paintedLayer = Color.Lerp(boneCol, toothCol, inToothMask);
+
+                        float effectiveSkull = Mathf.Clamp01(Mathf.Max(skullPaint, inToothMask)) * (1f - cutout) * (1f - scuff * 0.28f);
+                        Color darkSocket = new Color(0.036f, 0.038f, 0.043f) * (0.85f + l * 0.35f);
+                        Color baseWithCutout = Color.Lerp(fabric, darkSocket, cutout * skullPaint);
+
+                        Color outc = Color.Lerp(baseWithCutout, paintedLayer, effectiveSkull);
                         outc.a = 1f;
                         px[i] = outc;
                     }
+                }
                 tex.SetPixels(px);
                 tex.Apply();
-                m.SetTexture("_BaseColorMap", SaveColorTexture(tex, $"{dir}/T_{matName}.png"));
+                outTex = SaveColorTexture(tex, $"{dir}/T_{matName}.png");
             }
-            m.SetColor("_BaseColor", Color.white);
-            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.18f);
+            // Dampen Soldier_head_normal so underlying human lips/eyelids don't emboss through the sculpted skull balaclava on close-ups
+            var m = ConfigureCharacterVisibilityMaterial(head, matName, outTex, 0.24f, 0.042f, 0.16f);
             return SaveMaterial(m, $"{dir}/M_{matName}.mat");
         }
 

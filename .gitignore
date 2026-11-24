@@ -116,6 +116,8 @@ InitTestScene*.unity*
 /_LR2Staging/
 /_Backups/
 /.vscode/
+/Assets/_Recovery/
+/Assets/_Recovery.meta
 *.slnx
 # Files over GitHub's 100 MB hard limit (re-download from the Unity HDRI Pack if needed)
 /Assets/UnityTechnologies/UnityHDRI/MuirWood/MuirWoodWhiteBalanced.exr

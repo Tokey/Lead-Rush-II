@@ -124,6 +124,7 @@ namespace LR2.EditorTools
         public static bool BuildWindowsPlayer()
         {
             ConfigureBuildIdentity();
+            EditorUserBuildSettings.buildScriptsOnly = false;
             const string outExe = "H:/Unity Projects/Builds/Lead Rush II/Lead Rush II.exe";
             var scenes = Array.FindAll(EditorBuildSettings.scenes, s => s != null && s.enabled && File.Exists(s.path));
             var scenePaths = Array.ConvertAll(scenes, s => s.path);
@@ -140,6 +141,30 @@ namespace LR2.EditorTools
             bool ok = report != null && report.summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded;
             Debug.Log($"[LR2] Windows Build result={report?.summary.result} size={report?.summary.totalSize} errors={report?.summary.totalErrors} -> {outExe}");
             return ok;
+        }
+
+        /// <summary>Fast batch entry: rebuilds Ghost gear/uniforms, UI prefabs, and LR2_MainMenu hero scene without rebuilding map geometry.</summary>
+        public static void RebuildGearUiAndMenuBatch()
+        {
+            try
+            {
+                ConfigureBuildIdentity();
+                bool ok = true;
+                ok &= Step("Military visual & gear", LR2MilitaryVisualBuilder.ApplyToSoldiers);
+                ok &= Step("UI", LR2UIBuilder.Build);
+                ok &= Step("Main menu scene", LR2MapBuilder.BuildMenuScene);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+                RestoreMainMenuLastSceneSetup();
+                Debug.Log(ok ? "[LR2] RebuildGearUiAndMenuBatch: SUCCESS" : "[LR2] RebuildGearUiAndMenuBatch: FAILED");
+                if (Application.isBatchMode) EditorApplication.Exit(ok ? 0 : 1);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[LR2] RebuildGearUiAndMenuBatch FAILED: {ex}");
+                if (Application.isBatchMode) EditorApplication.Exit(1);
+                throw;
+            }
         }
 
         /// <summary>Batch entry: builds all content + maps if needed, then builds Windows 64-bit standalone executable.</summary>
@@ -159,7 +184,8 @@ namespace LR2.EditorTools
         [MenuItem("LR2/Configure Build Icon & Version", priority = 35)]
         public static void ConfigureBuildIdentity()
         {
-            PlayerSettings.bundleVersion = "11.23.26.1";
+            PlayerSettings.bundleVersion = "11.24.26.2";
+            EditorUserBuildSettings.buildScriptsOnly = false;
             const string iconPath = "Assets/LR2/UI/Icons/LR2_AppIcon.png";
             Directory.CreateDirectory(Path.GetDirectoryName(iconPath));
             if (!File.Exists(iconPath))
