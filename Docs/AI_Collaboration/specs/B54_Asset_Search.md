@@ -19,7 +19,7 @@
 
 Observed directly in vendor subfolders under `C:\Users\soulr\AppData\Roaming\Unity\Asset Store-5.x\`:
 
-| Package File | Size | Category | Why Better for LeadRush 2 |
+| Package File | Size | Category | Why Better for Lead Rush II |
 |---|---|---|---|
 | `AK-74 HDRP.unitypackage` (Creation Wasteland) | `85.4 MB` | Weapons | Native **HDRP** 4K-textured AK-74 model/materials (far sharper metal wear, wood/polymer normal/mask maps than legacy demo guns). |
 | `FPS Gun 4K - Assault Rifle 1.unitypackage` (Heart State Games) | `107.4 MB` | Weapons | 4K PBR assault rifle mesh + textures; strong candidate for an alternate tactical rifle or hero menu display gun. |

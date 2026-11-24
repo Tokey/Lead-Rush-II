@@ -129,13 +129,26 @@ namespace LR2.EditorTools
             return go;
         }
 
-        /// <summary>Ground hit under a point (terrain, slabs, floors). Returns false over water / off map.</summary>
+        /// <summary>Ground hit under a point (terrain, slabs, floors). Ignores trees and movable props.</summary>
         private static bool Ground(Vector2 xz, out RaycastHit hit, float fromY = 30f)
         {
-            if (!Physics.Raycast(new Vector3(xz.x, fromY, xz.y), Vector3.down, out hit, fromY + 20f, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore))
-                return false;
-            if (hit.collider is CapsuleCollider) return false; // tree trunk tops
-            return hit.point.y > -1.2f;
+            hit = default;
+            var hits = Physics.RaycastAll(new Vector3(xz.x, fromY, xz.y), Vector3.down, fromY + 25f, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore);
+            float bestY = float.NegativeInfinity;
+            bool found = false;
+            for (int i = 0; i < hits.Length; i++)
+            {
+                var h = hits[i];
+                if (h.collider == null || h.collider is CapsuleCollider) continue;
+                if (_props != null && h.collider.transform.IsChildOf(_props)) continue;
+                if (h.point.y > bestY)
+                {
+                    bestY = h.point.y;
+                    hit = h;
+                    found = true;
+                }
+            }
+            return found && hit.point.y > -2.5f;
         }
 
         private static bool Indoors(Vector3 p) =>
@@ -213,13 +226,13 @@ namespace LR2.EditorTools
             int ring = 0;
             for (int i = 0; i < 2400 && ring < _cfg.forestTrees; i++)
             {
-                var xz = new Vector2(R(-78f, 78f), R(-68f, 34f));
+                var xz = new Vector2(R(-76f, 76f), R(-68f, 25f));
                 if (xz.x > PlayMin.x - 1f && xz.x < PlayMax.x + 1f && xz.y > PlayMin.y - 1f && xz.y < PlayMax.y + 1f) continue;
-                if (!Ground(xz, out var hit) || hit.normal.y < 0.75f) continue;
+                if (!Ground(xz, out var hit) || !(hit.collider is TerrainCollider) || hit.normal.y < 0.78f) continue;
                 if (!FarFromTrees(hit.point, 4.2f)) continue;
                 bool dead = _rnd.NextDouble() < 0.12;
                 var prefab = dead ? Pick(deadTrees) : (_rnd.NextDouble() < 0.2 ? Pick(smallTrees) : Pick(bigTrees));
-                if (Plant(prefab, trees, hit.point - Vector3.up * 0.15f, Yaw(), R(0.9f, 1.35f), ColliderMode.Trunk, 0.35f) == null) continue;
+                if (Plant(prefab, trees, hit.point - Vector3.up * 0.28f, Yaw(), R(0.9f, 1.35f), ColliderMode.Trunk, 0.35f) == null) continue;
                 placedTrees.Add(hit.point);
                 ring++;
             }
@@ -248,9 +261,29 @@ namespace LR2.EditorTools
             for (int i = 0; i < 600 && logs < _cfg.fallenTrees; i++)
             {
                 var xz = new Vector2(R(PlayMin.x + 4.5f, PlayMax.x - 4.5f), R(PlayMin.y + 4.5f, PlayMax.y - 4.5f));
-                if (!Ground(xz, out var hit) || hit.normal.y < 0.9f || Indoors(hit.point) || NearKeepClear(hit.point, 6.0f)) continue;
+                if (!Ground(xz, out var hit) || !(hit.collider is TerrainCollider) || hit.normal.y < 0.9f || Indoors(hit.point) || NearKeepClear(hit.point, 6.0f)) continue;
                 if (Physics.CheckSphere(hit.point + Vector3.up * 3.8f, 4.0f, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore)) continue;
-                if (Plant(Pick(fallen), _structures, hit.point, Yaw(), R(0.9f, 1.05f), ColliderMode.Keep) == null) continue;
+                var rot = Quaternion.FromToRotation(Vector3.up, hit.normal) * Yaw();
+                var logGo = Plant(Pick(fallen), _structures, hit.point - Vector3.up * 0.06f, rot, R(0.9f, 1.05f), ColliderMode.Keep);
+                if (logGo == null) continue;
+                // Sink lowest endpoint flush onto terrain so sloped logs never float at one tip
+                Physics.SyncTransforms();
+                Bounds lb = default;
+                bool hasLb = false;
+                foreach (var r in logGo.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (!hasLb) { lb = r.bounds; hasLb = true; }
+                    else lb.Encapsulate(r.bounds);
+                }
+                if (hasLb)
+                {
+                    float minFloorY = GroundY(lb.center.x, lb.center.z);
+                    minFloorY = Mathf.Min(minFloorY, GroundY(lb.min.x + 0.25f, lb.min.z + 0.25f));
+                    minFloorY = Mathf.Min(minFloorY, GroundY(lb.max.x - 0.25f, lb.max.z - 0.25f));
+                    minFloorY = Mathf.Min(minFloorY, GroundY(lb.min.x + 0.25f, lb.max.z - 0.25f));
+                    minFloorY = Mathf.Min(minFloorY, GroundY(lb.max.x - 0.25f, lb.min.z + 0.25f));
+                    logGo.transform.position += Vector3.up * (minFloorY - lb.min.y - 0.06f);
+                }
                 logs++;
             }
 
@@ -261,7 +294,7 @@ namespace LR2.EditorTools
                 if (!Ground(xz, out var hit) || Indoors(hit.point) || NearKeepClear(hit.point, 3.4f)) continue;
                 if (Physics.CheckSphere(hit.point + Vector3.up * 0.65f, 0.65f, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore)) continue;
                 bool stump = i % 3 == 0;
-                Plant(stump ? Pick(stumps) : Pick(debris), under, hit.point, Quaternion.FromToRotation(Vector3.up, hit.normal) * Yaw(), R(0.8f, 1.1f), stump ? ColliderMode.Keep : ColliderMode.None);
+                Plant(stump ? Pick(stumps) : Pick(debris), under, hit.point - Vector3.up * 0.05f, Quaternion.FromToRotation(Vector3.up, hit.normal) * Yaw(), R(0.8f, 1.1f), stump ? ColliderMode.Keep : ColliderMode.None);
             }
 
             // ---- undergrowth (noise-driven patches on terrain only inside play, clear of doors/stairs/concrete)

@@ -7,6 +7,7 @@ it to claude.ai and rebuilds the mirror. If you change a source while Claude is 
 | Artifact | claude.ai (developer only) | Source (edit this) | Standalone mirror (GitHub, open in any browser) |
 |---|---|---|---|
 | LR2 Bot Lab: how a bot notices, decides, moves, aims, holds its gun; damage and gun specs; measured presets; how the agents built it | `Mj3oVBaf6NpdgRJSsxicPo` (v13, 11-20) | `Docs/Bot/src/bot-lab.html` | `Docs/Bot/bot-lab.html` |
+| LR2 LLM Architecture, 9 Tactical Maneuvers & 20 Hz Heatmap Lab: plain-English guide, 9 animated canvases w/ virtual keys, measured C1–C3 heatmaps, HLI scorecard & M1–M8 Groq study | Conversation artifact `LR2_LLM_Architecture.html` (11-24, `orchestrator-neon`) | `Docs/Bot/llm-architecture.html` (self-contained single HTML) | `Docs/Bot/llm-architecture.html` |
 | LR2 Weapon IK: one frame of the weapon pipeline, the 13 Kinemation layers, what carries over between frames, why the gun flips (B125) | `A9w3NHWzNKcb5VJghzQhrg` (v2, 11-20) | `Docs/Animation/weapon-ik-report.html` | `Docs/Animation/weapon-ik-report.standalone.html` |
 | LR2 Bot Brain (merged into the Bot Lab on 11-18) | `NrTa76HJCAAFzydVUuD2Zo` | redirect only | `Docs/Bot/bot-brain.html` |
 

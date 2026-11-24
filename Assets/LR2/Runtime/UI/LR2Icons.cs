@@ -182,6 +182,20 @@ namespace LR2.UI
                         }
                         return d;
                     };
+                case "flask":
+                    return p => U(
+                        Poly(p, V(-0.56f, -0.78f), V(0.56f, -0.78f), V(0.18f, 0.05f), V(-0.18f, 0.05f)),
+                        Box(p, 0f, 0.36f, 0.16f, 0.36f, 0.04f),
+                        Seg(p, -0.26f, 0.72f, 0.26f, 0.72f, 0.07f));
+                case "robot":
+                    return p => U(
+                        Cut(Box(p, 0f, -0.08f, 0.6f, 0.48f, 0.04f), U(Box(p, -0.24f, 0.02f, 0.14f, 0.08f), Box(p, 0.24f, 0.02f, 0.14f, 0.08f), Box(p, 0f, -0.3f, 0.3f, 0.06f))),
+                        Seg(p, 0f, 0.4f, 0f, 0.76f, 0.07f), Circle(p, 0f, 0.8f, 0.1f));
+                case "brain":
+                    return p => U(Circle(p, -0.28f, 0.12f, 0.34f), Circle(p, 0.28f, 0.12f, 0.34f), Circle(p, -0.26f, -0.24f, 0.28f), Circle(p, 0.26f, -0.24f, 0.28f), Seg(p, 0f, -0.45f, 0f, 0.42f, 0.05f));
+                case "copy":
+                    return p => U(Cut(Box(p, -0.18f, 0.18f, 0.42f, 0.48f, 0.05f), Box(p, -0.18f, 0.18f, 0.28f, 0.34f, 0.02f)),
+                                  Cut(Box(p, 0.18f, -0.18f, 0.42f, 0.48f, 0.05f), Box(p, 0.18f, -0.18f, 0.28f, 0.34f, 0.02f)));
                 default: return null;
             }
         }

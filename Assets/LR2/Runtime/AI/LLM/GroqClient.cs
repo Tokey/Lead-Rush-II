@@ -66,7 +66,24 @@ namespace LR2.AI.LLM
             for (int i = 0; i < args.Length - 1; i++)
                 if (args[i] == "-lr2GroqKeyFile") { _key = ReadFirstLine(args[i + 1]); if (_key != null) { KeySource = "key file (command line)"; return _key; } }
             _key = ReadFirstLine(DefaultKeyPath);
-            if (_key != null) KeySource = "key file in persistentDataPath";
+            if (_key != null) { KeySource = "key file in persistentDataPath"; return _key; }
+            var fallbacks = new System.Collections.Generic.List<string>
+            {
+                Path.Combine(Application.persistentDataPath, "groq_api_key..txt")
+            };
+            var parent = Directory.GetParent(Application.persistentDataPath);
+            if (parent != null)
+            {
+                fallbacks.Add(Path.Combine(parent.FullName, "LeadRush 2", KeyFileName));
+                fallbacks.Add(Path.Combine(parent.FullName, "LeadRush 2", "groq_api_key..txt"));
+                fallbacks.Add(Path.Combine(parent.FullName, "Lead Rush II", KeyFileName));
+                fallbacks.Add(Path.Combine(parent.FullName, "Lead Rush II", "groq_api_key..txt"));
+            }
+            foreach (var fb in fallbacks)
+            {
+                _key = ReadFirstLine(fb);
+                if (_key != null) { KeySource = "key file in fallback persistentDataPath"; return _key; }
+            }
             return _key;
         }
 

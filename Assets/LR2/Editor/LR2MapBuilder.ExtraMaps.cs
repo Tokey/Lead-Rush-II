@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using LR2.AI;
 using LR2.Audio;
 using LR2.Combat;
@@ -798,22 +799,22 @@ namespace LR2.EditorTools
             ApplyHdriSky(ve, profile, hdriAssetPath, skyExposure, rotationDeg: sunAz * 0.4f);
             // Global indirect/sky visibility floor so dark cover & interiors never swallow enemy silhouettes
             var ilcGlobal = profile.Add<IndirectLightingController>(true);
-            ilcGlobal.indirectDiffuseLightingMultiplier.Override(1.95f);
-            ilcGlobal.reflectionLightingMultiplier.Override(1.30f);
+            ilcGlobal.indirectDiffuseLightingMultiplier.Override(2.15f);
+            ilcGlobal.reflectionLightingMultiplier.Override(1.50f);
             var fog = profile.Add<Fog>(true);
             fog.enabled.Override(rainDefaultPreset >= 0);
-            fog.meanFreePath.Override(fogMfp);
+            fog.meanFreePath.Override(Mathf.Max(fogMfp, 72f));
             fog.baseHeight.Override(0f);
-            fog.maximumHeight.Override(32f);
+            fog.maximumHeight.Override(9.5f);
             fog.enableVolumetricFog.Override(rainDefaultPreset >= 0);
             fog.albedo.Override(fogColor);
             fog.anisotropy.Override(0.28f);
             fog.depthExtent.Override(90f);
             var exposure = profile.Add<Exposure>(true);
             exposure.mode.Override(ExposureMode.AutomaticHistogram);
-            exposure.compensation.Override(exposureComp);
-            exposure.limitMin.Override(evMin);
-            exposure.limitMax.Override(evMax);
+            exposure.compensation.Override(Mathf.Clamp(exposureComp, -0.15f, 0.30f));
+            exposure.limitMin.Override(Mathf.Min(evMin, 2.0f));
+            exposure.limitMax.Override(Mathf.Max(evMax, 14.5f));
             exposure.adaptationMode.Override(AdaptationMode.Progressive);
             exposure.adaptationSpeedDarkToLight.Override(2.8f);
             exposure.adaptationSpeedLightToDark.Override(1.8f);
@@ -872,25 +873,150 @@ namespace LR2.EditorTools
             }
         }
 
+        private static Texture2D EnsureHighCloudMapTexture()
+        {
+            const string path = LightDir + "/T_LR2_HighClouds.png";
+            var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (existing != null) return existing;
+
+            const int w = 512, h = 256;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, true);
+            var px = new Color32[w * h];
+            float TileFbm(float u, float v, float scale, int octaves, float seed)
+            {
+                float sum = 0f, amp = 0.55f, freq = scale;
+                for (int o = 0; o < octaves; o++)
+                {
+                    float a = u * Mathf.PI * 2f;
+                    float nx = Mathf.Cos(a) * (freq * 0.28f) + seed + o * 13.7f;
+                    float ny = Mathf.Sin(a) * (freq * 0.28f) + v * freq * 1.4f + seed + o * 7.3f;
+                    sum += Mathf.PerlinNoise(nx, ny) * amp;
+                    freq *= 2.05f;
+                    amp *= 0.5f;
+                }
+                return sum;
+            }
+
+            for (int y = 0; y < h; y++)
+            {
+                float v = y / (float)(h - 1);
+                float latFade = Mathf.Sin(v * Mathf.PI); // taper cleanly at poles
+                for (int x = 0; x < w; x++)
+                {
+                    float u = x / (float)w;
+                    float cumulusPatch = Mathf.Clamp01((TileFbm(u, v, 5f, 4, 3.1f) - 0.44f) * 2.4f) * latFade;
+                    float cirrusWisps = Mathf.Clamp01((TileFbm(u * 1.5f, v * 2.2f, 9f, 4, 19.4f) - 0.46f) * 2.6f) * latFade;
+                    px[y * w + x] = new Color32(
+                        (byte)Mathf.RoundToInt(cumulusPatch * 255f),
+                        (byte)Mathf.RoundToInt(cirrusWisps * 255f),
+                        (byte)Mathf.RoundToInt(cirrusWisps * 255f),
+                        (byte)Mathf.RoundToInt(Mathf.Max(cumulusPatch, cirrusWisps) * 255f));
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(true, false);
+            Directory.CreateDirectory(LightDir);
+            File.WriteAllBytes(path, tex.EncodeToPNG());
+            Object.DestroyImmediate(tex);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+            var imp = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (imp != null)
+            {
+                imp.sRGBTexture = false;
+                imp.wrapMode = TextureWrapMode.Repeat;
+                imp.filterMode = FilterMode.Bilinear;
+                imp.SaveAndReimport();
+            }
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
         private static void ApplyHdriSky(VisualEnvironment ve, VolumeProfile profile, string preferredPath, float exposureEv, float rotationDeg)
         {
-            var cube = AssetDatabase.LoadAssetAtPath<Cubemap>(preferredPath)
-                ?? AssetDatabase.LoadAssetAtPath<Cubemap>("Assets/LeartesStudios/Art/Textures/T_HDRI_01.HDR")
-                ?? AssetDatabase.LoadAssetAtPath<Cubemap>("Assets/LeartesStudios/AbandonedFactory/HDRP/Art/Textures/T_HdriSky.hdr");
-            if (cube != null)
-            {
-                ve.skyType.Override((int)SkyType.HDRI);
-                var hdri = profile.Add<HDRISky>(true);
-                hdri.hdriSky.Override(cube);
-                hdri.skyIntensityMode.Override(SkyIntensityMode.Exposure);
-                hdri.exposure.Override(exposureEv);
-                hdri.rotation.Override(rotationDeg);
-            }
-            else
-            {
-                ve.skyType.Override((int)SkyType.PhysicallyBased);
-                profile.Add<PhysicallyBasedSky>(true).aerosolDensity.Override(0.22f);
-            }
+            // B138: Multi-layer sky system — physical atmospheric scattering + high-altitude double CloudLayer
+            // + dual-deck VolumetricClouds reacting dynamically to weather & wind (zero HDRI zenith pinch).
+            ve.skyType.Override((int)SkyType.PhysicallyBased);
+            ve.skyAmbientMode.Override(SkyAmbientMode.Dynamic);
+            ve.cloudType.Override((int)CloudType.CloudLayer);
+            ve.windOrientation.Override(232f);
+            ve.windSpeed.Override(46f);
+
+            var phys = profile.Add<PhysicallyBasedSky>(true);
+            phys.type.Override(PhysicallyBasedSkyModel.EarthSimple);
+            phys.skyIntensityMode.Override(SkyIntensityMode.Exposure);
+            // PhysicallyBasedSky is calibrated to the physical sun; combat maps keep 0.0 EV (Main Menu -0.6 EV for moody lighting).
+            float pbrEv = exposureEv <= 10.8f ? -0.6f : 0.0f;
+            phys.exposure.Override(pbrEv);
+            phys.multiplier.Override(1.0f);
+            phys.aerosolDensity.Override(0.14f);
+            phys.horizonTint.Override(new Color(0.88f, 0.84f, 0.78f));
+            phys.zenithTint.Override(new Color(0.42f, 0.62f, 0.96f));
+
+            var cloudTex = EnsureHighCloudMapTexture();
+            var cloudLayer = profile.Add<CloudLayer>(true);
+            cloudLayer.opacity.Override(0.42f);
+            cloudLayer.upperHemisphereOnly.Override(true);
+            cloudLayer.layers.Override(CloudMapMode.Double);
+            cloudLayer.resolution.Override(CloudResolution.CloudResolution1024);
+            if (cloudTex != null) cloudLayer.layerA.cloudMap.Override(cloudTex);
+            cloudLayer.layerA.opacityR.Override(0.90f);
+            cloudLayer.layerA.opacityG.Override(0.0f);
+            cloudLayer.layerA.opacityB.Override(0.0f);
+            cloudLayer.layerA.opacityA.Override(0.0f);
+            cloudLayer.layerA.altitude.Override(4800f);
+            cloudLayer.layerA.rotation.Override(rotationDeg * 0.5f);
+            cloudLayer.layerA.tint.Override(new Color(0.95f, 0.96f, 1.0f, 1f));
+            cloudLayer.layerA.exposure.Override(-0.3f);
+            cloudLayer.layerA.distortionMode.Override(CloudDistortionMode.Procedural);
+            cloudLayer.layerA.scrollOrientation.Override(new WindParameter.WindParamaterValue { mode = WindParameter.WindOverrideMode.Custom, customValue = 220f, additiveValue = 0f, multiplyValue = 1f });
+            cloudLayer.layerA.scrollSpeed.Override(new WindParameter.WindParamaterValue { mode = WindParameter.WindOverrideMode.Custom, customValue = 18f, additiveValue = 0f, multiplyValue = 1f });
+            cloudLayer.layerA.lighting.Override(true);
+            cloudLayer.layerA.thickness.Override(0.45f);
+            if (cloudTex != null) cloudLayer.layerB.cloudMap.Override(cloudTex);
+            cloudLayer.layerB.opacityR.Override(0.0f);
+            cloudLayer.layerB.opacityG.Override(0.85f);
+            cloudLayer.layerB.opacityB.Override(0.0f);
+            cloudLayer.layerB.opacityA.Override(0.0f);
+            cloudLayer.layerB.altitude.Override(7800f);
+            cloudLayer.layerB.rotation.Override(rotationDeg * 0.5f + 95f);
+            cloudLayer.layerB.tint.Override(new Color(0.88f, 0.92f, 1.0f, 1f));
+            cloudLayer.layerB.exposure.Override(-0.5f);
+            cloudLayer.layerB.distortionMode.Override(CloudDistortionMode.Procedural);
+            cloudLayer.layerB.scrollOrientation.Override(new WindParameter.WindParamaterValue { mode = WindParameter.WindOverrideMode.Custom, customValue = 250f, additiveValue = 0f, multiplyValue = 1f });
+            cloudLayer.layerB.scrollSpeed.Override(new WindParameter.WindParamaterValue { mode = WindParameter.WindOverrideMode.Custom, customValue = 10f, additiveValue = 0f, multiplyValue = 1f });
+            cloudLayer.layerB.lighting.Override(true);
+            cloudLayer.layerB.thickness.Override(0.32f);
+
+            var clouds = profile.Add<VolumetricClouds>(true);
+            clouds.enable.Override(true);
+            clouds.cloudControl.Override(VolumetricClouds.CloudControl.Simple);
+            clouds.cloudSimpleMode.Override(VolumetricClouds.CloudSimpleMode.Quality);
+            clouds.bottomAltitude.Override(1100f);
+            clouds.altitudeRange.Override(2200f);
+            clouds.densityCurve.Override(new AnimationCurve(
+                new Keyframe(0f, 0f),
+                new Keyframe(0.14f, 1f),
+                new Keyframe(0.55f, 0.72f),
+                new Keyframe(1f, 0.08f)));
+            clouds.numPrimarySteps.Override(64);
+            clouds.numLightSteps.Override(6);
+            clouds.densityMultiplier.Override(0.42f);
+            // Higher shapeFactor (0.855) carves clear blue sky gaps between sculpted billowing cumulus decks.
+            clouds.shapeFactor.Override(0.855f);
+            clouds.shapeScale.Override(4.6f);
+            clouds.erosionFactor.Override(0.88f);
+            clouds.erosionScale.Override(75f);
+            clouds.microErosionFactor.Override(0.65f);
+            clouds.microErosionScale.Override(280f);
+            clouds.multiScattering.Override(0.55f);
+            clouds.powderEffectIntensity.Override(0.72f);
+            clouds.ambientLightProbeDimmer.Override(0.85f);
+            clouds.sunLightDimmer.Override(1.0f);
+            clouds.scatteringTint.Override(Color.black);
+            clouds.globalWindSpeed.Override(new WindParameter.WindParamaterValue { mode = WindParameter.WindOverrideMode.Custom, customValue = 54f, additiveValue = 0f, multiplyValue = 1f });
+            clouds.orientation.Override(new WindParameter.WindParamaterValue { mode = WindParameter.WindOverrideMode.Custom, customValue = Mathf.Repeat(232f + rotationDeg * 0.2f, 360f), additiveValue = 0f, multiplyValue = 1f });
+            clouds.shadows.Override(true);
+            clouds.shadowResolution.Override(VolumetricClouds.CloudShadowResolution.Low128);
+            clouds.shadowOpacity.Override(0.40f);
         }
 
         private static void AddArenaReflectionProbe(Transform parent, Vector3 pos, Vector3 size)

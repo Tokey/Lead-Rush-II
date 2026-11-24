@@ -146,38 +146,110 @@ namespace LR2.EditorTools
 
         private static void Floating(StringBuilder sb)
         {
+            var targets = new List<Transform>();
             var propsGo = GameObject.Find("Environment/Props");
-            var hits = new List<(float gap, string path)>();
             if (propsGo != null)
             {
-                Transform pt = propsGo.transform;
-                for (int i = 0; i < pt.childCount; i++)
+                for (int i = 0; i < propsGo.transform.childCount; i++) targets.Add(propsGo.transform.GetChild(i));
+            }
+            var gpGo = GameObject.Find("Environment/Gameplay");
+            if (gpGo != null)
+            {
+                foreach (var ac in gpGo.GetComponentsInChildren<AmmoCrate>(true))
+                    if (ac != null) targets.Add(ac.transform);
+            }
+            var lightGo = GameObject.Find("Environment/Lighting");
+            if (lightGo != null)
+            {
+                for (int i = 0; i < lightGo.transform.childCount; i++)
                 {
-                    var ch = pt.GetChild(i);
-                    if (ch.GetComponent<ParticleSystem>() != null || ch.GetComponent<Light>() != null) continue;
-                    var rs = ch.GetComponentsInChildren<Renderer>(true);
-                    if (rs.Length == 0) continue;
-                    Bounds b = default;
-                    bool hasB = false;
-                    foreach (var r in rs)
-                    {
-                        if (r is ParticleSystemRenderer || r is LineRenderer) continue;
-                        if (!hasB) { b = r.bounds; hasB = true; }
-                        else b.Encapsulate(r.bounds);
-                    }
-                    if (!hasB) continue;
-                    var selfCols = new HashSet<Collider>(ch.GetComponentsInChildren<Collider>(true));
-                    Vector3 origin = new Vector3(b.center.x, b.min.y + 0.25f, b.center.z);
-                    var rayHits = Physics.RaycastAll(origin, Vector3.down, 4.0f, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore);
+                    var ch = lightGo.transform.GetChild(i);
+                    if (ch.name.StartsWith("LampPole")) targets.Add(ch);
+                }
+            }
+            var natureGo = GameObject.Find("Environment/Nature");
+            if (natureGo != null)
+            {
+                foreach (var sub in new[] { "Trees", "Undergrowth" })
+                {
+                    var st = natureGo.transform.Find(sub);
+                    if (st == null) continue;
+                    for (int i = 0; i < st.childCount; i++) targets.Add(st.GetChild(i));
+                }
+            }
+            var structGo = GameObject.Find("Environment/Structures");
+            if (structGo != null)
+            {
+                string[] groundPropKeys = { "Desk", "Workbench", "Lockers", "Crate", "Barrel", "Chair", "Lantern", "Gascylender", "fireextinguisher", "Trashcan", "Tire", "Jersey", "Cablespool", "ConcreteBlock", "Bollard", "FallenTree", "BurntLog" };
+                foreach (var t in structGo.GetComponentsInChildren<Transform>(true))
+                {
+                    if (t == structGo.transform || t.name.Contains("_LOD") || t.name == "Mesh" || (t.parent != null && (t.parent.name == "Mesh" || t.parent.GetComponent<LODGroup>() != null))) continue;
+                    bool match = false;
+                    for (int k = 0; k < groundPropKeys.Length; k++)
+                        if (t.name.IndexOf(groundPropKeys[k], StringComparison.OrdinalIgnoreCase) >= 0) { match = true; break; }
+                    if (!match) continue;
+                    if (t.GetComponentInParent<Light>() != null) continue;
+                    targets.Add(t);
+                }
+            }
+
+            var seen = new HashSet<Transform>();
+            var hits = new List<(float gap, string path)>();
+            foreach (var ch in targets)
+            {
+                if (ch == null || !seen.Add(ch)) continue;
+                if (ch.GetComponent<ParticleSystem>() != null || ch.GetComponent<Light>() != null) continue;
+                var rs = ch.GetComponentsInChildren<Renderer>(true);
+                if (rs.Length == 0) continue;
+                Bounds b = default;
+                bool hasB = false;
+                foreach (var r in rs)
+                {
+                    if (r is ParticleSystemRenderer || r is LineRenderer) continue;
+                    if (!hasB) { b = r.bounds; hasB = true; }
+                    else b.Encapsulate(r.bounds);
+                }
+                if (!hasB || b.size.y < 0.02f) continue;
+                var selfCols = new HashSet<Collider>(ch.GetComponentsInChildren<Collider>(true));
+                bool isTree = ch.parent != null && ch.parent.name == "Trees";
+
+                float SampleGap(float rx, float rz)
+                {
+                    float rayStart = Mathf.Max(b.min.y + Mathf.Min(0.45f, Mathf.Max(0.22f, b.size.y * 0.5f)), ch.position.y + (isTree ? 1.5f : 0.25f));
+                    Vector3 origin = new Vector3(rx, rayStart, rz);
+                    var rayHits = Physics.RaycastAll(origin, Vector3.down, 6.0f, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore);
                     float bestFloorY = float.NegativeInfinity;
                     foreach (var h in rayHits)
                     {
-                        if (selfCols.Contains(h.collider) || h.normal.y < 0.55f) continue;
+                        if (selfCols.Contains(h.collider) || h.normal.y < 0.45f) continue;
                         if (h.point.y > bestFloorY) bestFloorY = h.point.y;
                     }
-                    float gap = float.IsNegativeInfinity(bestFloorY) ? 9.99f : (b.min.y - bestFloorY);
-                    if (gap > 0.08f) hits.Add((gap, PathOf(ch)));
+                    return float.IsNegativeInfinity(bestFloorY) ? 9.99f : (b.min.y - bestFloorY);
                 }
+
+                float minGap = float.MaxValue;
+                if (isTree)
+                {
+                    // For branching trees, probe the trunk root base rather than wide overhanging leaf canopy edges.
+                    Vector3 tc = ch.position;
+                    float[] tGaps = { SampleGap(tc.x, tc.z), SampleGap(tc.x + 0.3f, tc.z), SampleGap(tc.x - 0.3f, tc.z), SampleGap(tc.x, tc.z + 0.3f), SampleGap(tc.x, tc.z - 0.3f) };
+                    foreach (float g in tGaps) if (g < minGap) minGap = g;
+                }
+                else
+                {
+                    float insetX = Mathf.Min(0.12f, b.extents.x * 0.35f);
+                    float insetZ = Mathf.Min(0.12f, b.extents.z * 0.35f);
+                    float[] gaps =
+                    {
+                        SampleGap(b.center.x, b.center.z),
+                        SampleGap(b.min.x + insetX, b.min.z + insetZ),
+                        SampleGap(b.max.x - insetX, b.min.z + insetZ),
+                        SampleGap(b.min.x + insetX, b.max.z - insetZ),
+                        SampleGap(b.max.x - insetX, b.max.z - insetZ)
+                    };
+                    foreach (float g in gaps) if (g < minGap) minGap = g;
+                }
+                if (minGap > 0.08f) hits.Add((minGap, PathOf(ch)));
             }
             sb.AppendLine($"FLOATING ({hits.Count} movable props > 8 cm above static floor):");
             foreach (var h in hits.OrderByDescending(x => x.gap).Take(40))

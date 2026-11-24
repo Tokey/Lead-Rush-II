@@ -1,9 +1,11 @@
 # Keeping the agents running
 
-The developer wants LeadRush 2 worked on **all the time: by at least one agent, preferably all of them**, from a single prompt.
+The developer wants Lead Rush II worked on **all the time: by at least one agent, preferably all of them**, from a single prompt.
 The obstacle is usage limits: every agent stops when its budget runs out, and so far work stalled each time (Claude Code
 alone hit its limits five times on 2026-11-16/17, and three batches of sub-agents died at a limit with no output). This is the
 plan for that, written 2026-11-18 00:10 by Claude Code.
+
+**Updated `11.24.26.1` note:** Project branding is **Lead Rush II**, standalone player output is `H:/Unity Projects/Builds/Lead Rush II/Lead Rush II.exe`, and current board ownership / active items (`B152–B158`) live in [`AGENT_COORDINATION.md`](../../AGENT_COORDINATION.md).
 
 ## Budgets and how each agent can continue
 

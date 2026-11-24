@@ -39,7 +39,13 @@ not. Regenerate with `python Tools/make_bot_lab_gifs.py` (headless Edge renders 
 | ![Investigate a shot](Media/bot/lab-7-investigate-a-shot.gif) | ![Contest the flag](Media/bot/lab-8-contest-the-flag.gif) |
 | You fire out of sight 29 m away. It sprints to a fuzzy guess of the position (noises over 20 m away are sprinted to) and spots you on the way. | Capture the Flag: you start capturing. Stopping a capture outranks everything but survival and orders, so it drops its patrol and sprints to contest. |
 
-## 0. Six-Component Pipeline (`Assets/LR2/Runtime/AI/`)
+## 0. Six-Component Pipeline & Four Bot Archetypes (`Assets/LR2/Runtime/AI/`)
+
+**Four Selectable Bot Archetypes (`BotArchetype`, `11.24.26.1`):**
+- **`HumanLike`:** Full procedural biomechanical aim (Fitts + Balabit + `125 ms` ESTA lag + Perlin tremor) paired with tactical cover/flanking.
+- **`DumbRobotic` (`B154`):** K/D-calibrated mechanical control bot (linear slew, fixed reaction lag, isotropic cone, zero crouch/sprint/ADAD) used to prove why scoreboard parity alone fails Human-Likeness Index (`47.6%` HLI vs `HumanLike` `93.0%`).
+- **`LlmEnhanced`:** Groq Cloud `Commander`, `TacticalMicro`, or `AvatarPilot` (works across **1v1 Duel, FFA, and team squads**).
+- **`HumanFitted` (`B157`):** Loads participant-fitted constants from `Data/Profiles/human_behavior_fit.json` (`HumanBehaviorProfile.cs`), scaling fitted timers across `Recruit` (`0.72×`), `Regular` (`0.90×`), `Hardened` (`1.00×`), and `Veteran` (`1.15×`).
 
 | Component | Rate | Source File | Responsibility |
 |---|---|---|---|
@@ -180,7 +186,7 @@ The [Bot Lab](Bot/bot-lab.html) simulation uses the same presets, detection spee
 
 ![Rotating CTF flag zone and live tactical chat](Media/bot/ctf-and-chat.gif)
 
-- **Game Modes (`MatchSettings.cs` / `MatchManager.cs`):** Supports **1v1 Duel**, **Free-For-All**, **Team Deathmatch**, and **Unified Rotating Capture the Flag (`B51`)** with a configurable **Bot Team Mode (`BotTeamMode`)** in Settings, Deploy, and Mode Rules (**Squads**, **Free-For-All**, **All Bots Same Team**, or **All Bots Player Team**). Bots receive **32 randomized funny gamertags** via Fisher-Yates shuffle (`B62`). Scoring: `+100` kill, `+50` headshot, `+25` assist, `+250` flag capture.
+- **Game Modes (`MatchSettings.cs` / `MatchManager.cs`):** Supports **1v1 Duel**, **Free-For-All**, **Team Deathmatch**, and **Unified Rotating Capture the Flag (`B51`)** with a configurable **Bot Team Mode (`BotTeamMode`)** in Settings, Deploy, and Mode Rules (**Squads**, **Free-For-All**, **All Bots Same Team**, or **All Bots Player Team**). Bots receive **32 randomized funny gamertags** via Fisher-Yates shuffle (`B62`). Scoring: `+100` kill, `+50` headshot, `+25` assist, `+250` flag capture. Also see **[Human-Likeness Evaluation & 20 Hz Heatmaps](Research/HUMAN_LIKENESS_EVALUATION.md)** and **[Telemetry Columns](Research/DATA_COLUMNS.md)** for the `EXPERIMENTS` tab workflow (`AI VS AI` moved there in `11.24.26.1`).
 - **Smart Flag-Playing Bot AI (`FlagZoneController.cs` & `TacticalBotBrain.cs`, `B63`):** Zone rotates after capture or `55 s` idle timeout. Inside the `2.6 m` core, capture speed runs at **`2.25×`**, decaying smoothly out to **`0.28×`** at `11.5 m` (`Lerp(2.25, 0.28, t^0.65)`). Bots use `CountZoneOccupants` and `IsHostileCapturingOrContesting` for three smart tactical behaviors:
   1. **Step 2.5 Urgent Flag Contest:** When a hostile team is actively capturing or contesting within `45 m`, bots sprint straight into the `2.6 m` core to halt progress.
   2. **Step 6.5 Role-Adaptive Flag AI (`ObjectiveFlag`):** Bots split roles between **Contested Breach** (tight core push when contested/enemy-owned), **Core `2.25×` Anchor** (deterministic 8-slot golden ring inside `2.45 m` when ≤1 ally is on point), and **Perimeter Crossfire Overwatch** (`6.0 m–8.5 m` outer ring when 2+ allies already anchor the core).
@@ -190,7 +196,7 @@ The [Bot Lab](Bot/bot-lab.html) simulation uses the same presets, detection spee
 
 ---
 
-## 6. How AI Agents Build LeadRush 2 (`AGENT_COORDINATION.md`)
+## 6. How AI Agents Build Lead Rush II (`AGENT_COORDINATION.md`)
 
 ![How Claude, Gemini, Copilot, and Codex collaborate through AGENT_COORDINATION.md](Media/bot/ai-4agent-workflow.gif)
 

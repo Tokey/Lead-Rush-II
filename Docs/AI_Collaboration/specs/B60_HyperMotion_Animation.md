@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary
 
-Can EA Sports' **HyperMotion / HyperMotion V** principles improve **LeadRush 2** (`Unity 6000.5.0f1 HDRP`, `Kinemation FPSAnimator` + `RetargetProxy` Humanoid muscle retargeting)?
+Can EA Sports' **HyperMotion / HyperMotion V** principles improve **Lead Rush II** (`Unity 6000.5.0f1 HDRP`, `Kinemation FPSAnimator` + `RetargetProxy` Humanoid muscle retargeting)?
 
 **Yes — selectively at the mathematical & kinematic layer, NOT by importing full-team optical capture or replacing Kinemation's procedural firearm solvers with a multi-gigabyte ML black box.**
 

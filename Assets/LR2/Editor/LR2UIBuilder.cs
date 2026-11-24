@@ -477,9 +477,9 @@ namespace LR2.EditorTools
             const float step = 58f;
             const float startY = -246f;
 
-            void AddSectionHeader(Transform tabRoot, string name, string text, float x)
+            void AddSectionHeader(Transform tabRoot, string name, string text, float x, float yPos = -196f)
             {
-                var h = Txt(name, tabRoot, text, 21f, TextAlignmentOptions.MidlineLeft, new Vector2(0.5f, 1f), new Vector2(x, -196f), new Vector2(540f, 28f), true, accent);
+                var h = Txt(name, tabRoot, text, 21f, TextAlignmentOptions.MidlineLeft, new Vector2(0.5f, 1f), new Vector2(x, yPos), new Vector2(540f, 28f), true, accent);
                 ((RectTransform)h.transform).pivot = new Vector2(0f, 0.5f);
             }
 
@@ -490,13 +490,23 @@ namespace LR2.EditorTools
             SelectorColRow(playTab, "HITMARKER PALETTE", leftCol, y, out s.colorBlindPrev, out s.colorBlindNext, out s.colorBlindValue); y -= step;
             s.laserSight = ToggleColRow(playTab, "LASER SIGHT [L]", leftCol, y); y -= step;
             s.minimapBottom = ToggleColRow(playTab, "MINIMAP ABOVE HEALTH (OFF: TOP-LEFT)", leftCol, y); // B96
-            AddSectionHeader(playTab, "PlayRight", "MATCH OPTIONS", rightCol);
-            var matchHint = Txt("MatchHint", playTab, "Mode, map, bots (difficulty and team per bot), score and time limits are set in SKIRMISH, " +
-                "so a match always plays exactly as its lobby shows.", 20f, TextAlignmentOptions.TopLeft, new Vector2(0.5f, 1f),
-                new Vector2(rightCol, startY + 12f), new Vector2(620f, 180f), false, dim);
+            AddSectionHeader(playTab, "PlayRight", "MATCH & LLM BOT OPTIONS", rightCol);
+            var matchHint = Txt("MatchHint", playTab, "Match mode, map, bot tiers, score & time limits live in SKIRMISH. Configure optional Groq LLM squad control below:", 18f, TextAlignmentOptions.TopLeft, new Vector2(0.5f, 1f),
+                new Vector2(rightCol, startY + 14f), new Vector2(620f, 84f), false, dim);
             matchHint.textWrappingMode = TextWrappingModes.Normal;
             matchHint.overflowMode = TextOverflowModes.Truncate;
             ((RectTransform)matchHint.transform).pivot = new Vector2(0f, 1f);
+
+            // B151: Groq LLM integration depth, team assignment, cadence, and key status
+            AddSectionHeader(playTab, "LlmRight", "LLM BOT INTEGRATION (GROQ)", rightCol, -342f);
+            SelectorColRow(playTab, "LLM CONTROL MODE", rightCol, -392f, out s.llmModePrev, out s.llmModeNext, out s.llmModeValue);
+            SelectorColRow(playTab, "LLM TEAMS", rightCol, -450f, out s.llmTeamsPrev, out s.llmTeamsNext, out s.llmTeamsValue);
+            SelectorColRow(playTab, "DECISION CADENCE", rightCol, -508f, out s.llmIntervalPrev, out s.llmIntervalNext, out s.llmIntervalValue);
+            s.llmKeyStatus = Txt("LlmKeyStatus", playTab, "GROQ API: CHECKING KEY...", 16f, TextAlignmentOptions.TopLeft, new Vector2(0.5f, 1f),
+                new Vector2(rightCol, -552f), new Vector2(620f, 54f), false, accent);
+            s.llmKeyStatus.textWrappingMode = TextWrappingModes.Normal;
+            s.llmKeyStatus.overflowMode = TextOverflowModes.Truncate;
+            ((RectTransform)s.llmKeyStatus.transform).pivot = new Vector2(0f, 1f);
 
             // Tab 1: GRAPHICS (P5 + B43 + B48)
             var gfxTab = s.tabPanels[1].transform;
@@ -776,7 +786,7 @@ namespace LR2.EditorTools
 
             var main = Rect("MainPanel", root, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
             mm.mainPanel = main.gameObject.AddComponent<CanvasGroup>();
-            Txt("Title", main, "LEADRUSH 2", 118f, TextAlignmentOptions.Left, left, new Vector2(465f, 345f), new Vector2(800f, 130f), true);
+            Txt("Title", main, "LEAD RUSH II", 118f, TextAlignmentOptions.Left, left, new Vector2(465f, 345f), new Vector2(800f, 130f), true);
 
             Button MenuBtn(string label, float y, float h = 60f)
             {
@@ -856,7 +866,7 @@ namespace LR2.EditorTools
             mm.settingsPanel = settings.GetComponent<CanvasGroup>();
             mm.settingsBackButton = back;
             mm.loadingPanel = Panel("Loading", root, new Color(0.035f, 0.042f, 0.055f, 1f));
-            var lBrand = Txt("BrandWordmark", mm.loadingPanel.transform, "LEADRUSH II", 13f, TextAlignmentOptions.Left,
+            var lBrand = Txt("BrandWordmark", mm.loadingPanel.transform, "LEAD RUSH II", 13f, TextAlignmentOptions.Left,
                 new Vector2(0f, 1f), new Vector2(48f, -42f), new Vector2(320f, 26f), true, new Color(1f, 1f, 1f, 0.34f));
             lBrand.rectTransform.pivot = new Vector2(0f, 1f);
             lBrand.characterSpacing = 6f;

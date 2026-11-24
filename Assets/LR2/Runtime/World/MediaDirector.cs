@@ -1,11 +1,13 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using LR2.Combat;
 using LR2.Core;
 using LR2.Game;
 using UnityEngine;
 using UnityEngine.Rendering.HighDefinition;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace LR2.World
@@ -21,6 +23,13 @@ namespace LR2.World
     public class MediaDirector : MonoBehaviour
     {
         private string _mode, _out;
+
+        private static string ArgVal(string[] args, string flag)
+        {
+            for (int i = 0; i < args.Length - 1; i++)
+                if (string.Equals(args[i], flag, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
+            return null;
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot()
@@ -41,22 +50,61 @@ namespace LR2.World
             md._out = outDir;
             if (mode == "bench")
             {
-                // before MatchManager.Start: AI vs AI, team Alpha and team Bravo each get one bot per difficulty
-                SkirmishSetup.Active = true;
-                SkirmishSetup.PlayerSpectates = true;
-                SkirmishSetup.Mode = GameModeType.TeamDeathmatch;
-                SkirmishSetup.Bots.Clear();
-                foreach (var t in new[] { TeamId.Alpha, TeamId.Bravo })
-                    for (int d = 0; d < 4; d++) SkirmishSetup.Bots.Add(new SkirmishBot { team = t, difficulty = d });
-                // a bench-only match (no asset touched): no score or time limit cuts the sample short
-                var bench = ScriptableObject.CreateInstance<MatchSettings>();
-                bench.mode = GameModeType.TeamDeathmatch;
-                bench.scoreLimit = 999;
-                bench.timeLimitSeconds = 900f;
-                bench.countdownSeconds = 2f;
-                bench.spawnOrbs = false;
-                LR2Session.PendingSettings = bench;
+                IsBenchRun = true;
+                ConfigureBenchSkirmish(args);
             }
+        }
+
+        public static bool IsBenchRun { get; private set; }
+
+        private static void ConfigureBenchSkirmish(string[] args)
+        {
+            // before MatchManager.Start: AI vs AI; -lr2AlphaDiff / -lr2BravoDiff + -lr2BenchArchetypes Alpha=DumbRobotic,Bravo=HumanLike
+            string tOut = ArgVal(args, "-lr2TelemetryOut");
+            if (!string.IsNullOrEmpty(tOut)) ExperimentTelemetryRecorder.CliOutputRoot = tOut;
+            SkirmishSetup.Active = true;
+            SkirmishSetup.PlayerSpectates = true;
+            SkirmishSetup.BlindMode = false;
+            string benchMode = ArgVal(args, "-lr2BenchMode");
+            bool isCtf = string.Equals(benchMode, "CTF", StringComparison.OrdinalIgnoreCase);
+            SkirmishSetup.Mode = isCtf ? GameModeType.CaptureTheFlag : GameModeType.TeamDeathmatch;
+            SkirmishSetup.Bots.Clear();
+
+            var teamArch = new Dictionary<TeamId, LR2.AI.BotArchetype>();
+            string archArg = ArgVal(args, "-lr2BenchArchetypes");
+            if (!string.IsNullOrEmpty(archArg))
+            {
+                foreach (var tok in archArg.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var kv = tok.Split('=');
+                    if (kv.Length == 2 && Enum.TryParse(kv[0].Trim(), true, out TeamId tid) && Enum.TryParse(kv[1].Trim(), true, out LR2.AI.BotArchetype at))
+                        teamArch[tid] = at;
+                }
+            }
+
+            void AddTeamBots(TeamId team, string spec)
+            {
+                LR2.AI.BotArchetype arch = teamArch.TryGetValue(team, out var a) ? a : LR2.AI.BotArchetype.HumanLike;
+                if (!string.IsNullOrWhiteSpace(spec) && int.TryParse(spec, out int single))
+                {
+                    int d = Mathf.Clamp(single, 0, 3);
+                    for (int k = 0; k < 4; k++) SkirmishSetup.Bots.Add(new SkirmishBot { team = team, difficulty = d, archetype = arch });
+                }
+                else
+                {
+                    for (int d = 0; d < 4; d++) SkirmishSetup.Bots.Add(new SkirmishBot { team = team, difficulty = d, archetype = arch });
+                }
+            }
+            AddTeamBots(TeamId.Alpha, ArgVal(args, "-lr2AlphaDiff"));
+            AddTeamBots(TeamId.Bravo, ArgVal(args, "-lr2BravoDiff"));
+            // a bench-only match (no asset touched): no score or time limit cuts the sample short
+            var bench = ScriptableObject.CreateInstance<MatchSettings>();
+            bench.mode = SkirmishSetup.Mode;
+            bench.scoreLimit = 999;
+            bench.timeLimitSeconds = 900f;
+            bench.countdownSeconds = 2f;
+            bench.spawnOrbs = false;
+            LR2Session.PendingSettings = bench;
         }
 
         private IEnumerator Start()
@@ -115,7 +163,8 @@ namespace LR2.World
             yield return Frames("lobby_tdm_bg", 18, 0.15f);
             Click(lobby.transform, "4-WAY"); yield return new WaitForSecondsRealtime(1.6f); yield return Shot("lobby_4way");
             Click(lobby.transform, "FFA"); yield return new WaitForSecondsRealtime(2.2f); yield return Frames("lobby_ffa_bg", 22, 0.15f);
-            Click(lobby.transform, "AI VS AI"); yield return new WaitForSecondsRealtime(1.6f); yield return Shot("lobby_aivsai");
+            Click(lobby.transform, "EXPERIMENTS"); yield return new WaitForSecondsRealtime(1.6f); yield return Shot("lobby_experiments");
+            SkirmishSetup.ApplyPreset("AI VS AI"); SkirmishSetup.PlayerSpectates = true;
             Note($"starting AI vs AI: {SkirmishSetup.Bots.Count} bots, spectate={SkirmishSetup.PlayerSpectates}");
             Click(lobby.transform, "START");
             // the match scene loads; this object survives it
@@ -295,6 +344,18 @@ namespace LR2.World
             float secs = 120f;
             var args = Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++) if (args[i] == "-lr2BenchSeconds") float.TryParse(args[i + 1], out secs);
+            DateTime runStartedUtc = DateTime.UtcNow.AddSeconds(-2);
+            string benchScene = ArgVal(args, "-lr2BenchScene") ?? "LR2_Saltworks";
+            if (MatchManager.Instance == null && !SceneManager.GetActiveScene().name.Equals(benchScene, StringComparison.OrdinalIgnoreCase))
+            {
+                ConfigureBenchSkirmish(args);
+                SceneManager.LoadScene(benchScene);
+                float loadWait = Time.realtimeSinceStartup + 30f;
+                while (MatchManager.Instance == null && Time.realtimeSinceStartup < loadWait) yield return null;
+            }
+            float playWait = Time.realtimeSinceStartup + 20f;
+            while (MatchManager.Instance != null && MatchManager.Instance.State != MatchState.Playing && Time.realtimeSinceStartup < playWait)
+                yield return null;
             float t0 = Time.time;
             // B125 layer ablation: -lr2AblateLayers Sway,Ads,... sets those Kinemation layer types' alpha to 0 (read live) for the
             // bench, restored at the end, to find which layer turns the weapon bone
@@ -479,10 +540,55 @@ namespace LR2.World
             foreach (var lc in LR2.AI.LLM.LLMCommander.All)
                 if (lc != null)
                     teams.AppendLine(FormattableString.Invariant(
-                        $"# {lc.Team} LLM: decisions={lc.Decisions} failures={lc.Failures} orders={lc.OrdersIssued} rejected={lc.OrdersRejected} avgLatency={(lc.Decisions - lc.Failures > 0 ? lc.TotalLatency / (lc.Decisions - lc.Failures) : 0f):0.00}s tokens={lc.PromptTokens}+{lc.CompletionTokens} lastPlan='{lc.LastPlan}' lastError='{lc.LastError}'"));
+                        $"# {lc.Team} LLM: mode={lc.Mode} decisions={lc.Decisions} failures={lc.Failures} orders={lc.OrdersIssued} rejected={lc.OrdersRejected} interrupts={lc.InterruptsTriggered} micro={lc.MicroChunksIssued} util={lc.UtilityOrdersIssued} avgLatency={(lc.Decisions - lc.Failures > 0 ? lc.TotalLatency / (lc.Decisions - lc.Failures) : 0f):0.00}s tokens={lc.PromptTokens}+{lc.CompletionTokens} lastPlan='{lc.LastPlan}' lastError='{lc.LastError}'"));
             teams.AppendLine(FormattableString.Invariant($"# Groq requests={LR2.AI.LLM.GroqClient.Requests} failures={LR2.AI.LLM.GroqClient.Failures} rateLimited={LR2.AI.LLM.GroqClient.RateLimited} key={LR2.AI.LLM.GroqClient.KeySource}"));
             File.WriteAllText(Path.Combine(_out, "teams.csv"), teams.ToString());
             Note("teams written:\n" + teams);
+
+            // B149: Per-bot stats table & LLM decision logs for tier-vs-LLM behavioral study
+            var botsSb = new System.Text.StringBuilder("team,commander,name,difficulty,shots,hits,accuracy,kills,deaths,kd,headshots\n");
+            foreach (var c in Combatant.All)
+            {
+                if (c == null || c.GetComponent<LR2.AI.BotController>() == null) continue;
+                string bn = c.DisplayName ?? "Bot";
+                int bi = bn.LastIndexOf('['), bj = bn.LastIndexOf(']');
+                string tier = bi >= 0 && bj > bi ? bn.Substring(bi + 1, bj - bi - 1) : "BOT";
+                LR2.AI.LLM.LLMCommander cmd = null;
+                foreach (var lc in LR2.AI.LLM.LLMCommander.All) if (lc != null && lc.Team == c.Team) cmd = lc;
+                float acc = c.stats.shotsFired > 0 ? (float)c.stats.shotsHit / c.stats.shotsFired : 0f;
+                float bkd = c.stats.deaths > 0 ? (float)c.stats.kills / c.stats.deaths : c.stats.kills;
+                botsSb.AppendLine(FormattableString.Invariant($"{c.Team},{(cmd != null ? "LLM" : "rules")},\"{bn.Replace('"', '\'')}\",{tier},{c.stats.shotsFired},{c.stats.shotsHit},{acc:0.000},{c.stats.kills},{c.stats.deaths},{bkd:0.00},{c.stats.headshots}"));
+            }
+            File.WriteAllText(Path.Combine(_out, "bots.csv"), botsSb.ToString());
+            string llmDir = Application.isEditor ? Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Logs", "LR2_LLM"))
+                                                 : Path.Combine(Application.persistentDataPath, "LLM");
+            if (Directory.Exists(llmDir))
+            {
+                foreach (var jf in Directory.GetFiles(llmDir, "llm_*.jsonl"))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTimeUtc(jf) >= runStartedUtc)
+                            File.Copy(jf, Path.Combine(_out, Path.GetFileName(jf)), true);
+                    }
+                    catch (Exception) { }
+                }
+            }
+            if (ExperimentTelemetryRecorder.Instance != null || !string.IsNullOrEmpty(ExperimentTelemetryRecorder.CliOutputRoot))
+            {
+                mmEnd?.EndMatch();
+                float waitUntil = Time.realtimeSinceStartup + 12f;
+                while (!ExperimentTelemetryRecorder.IsIdleOrSaveComplete && Time.realtimeSinceStartup < waitUntil)
+                    yield return null;
+            }
+            if (Array.IndexOf(args, "-lr2QuitOnDone") >= 0)
+            {
+                Note("bench complete; quitting (-lr2QuitOnDone)");
+#if UNITY_EDITOR
+                if (Application.isEditor) UnityEditor.EditorApplication.Exit(0); else
+#endif
+                Application.Quit(0);
+            }
         }
 
         // ------------------------------------------------------------------ headshot bullet cam

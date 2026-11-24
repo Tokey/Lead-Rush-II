@@ -730,6 +730,7 @@ namespace LR2.EditorTools
             File.WriteAllText(Path.Combine(VerifyDir, "report.txt"), fullLog);
 
             SessionState.SetBool(KeyActive, false);
+            SessionState.SetBool("LR2ReadmeMedia.LobbyOnly", false);
             EditorApplication.update -= Tick;
             Application.logMessageReceived -= OnLog;
 
@@ -920,17 +921,22 @@ namespace LR2.EditorTools
         }
 
         [MenuItem("LR2/Media/Capture README Gallery", priority = 223)]
-        public static void CaptureReadmeMediaInteractive() => Begin(autoExit: false);
+        public static void CaptureReadmeMediaInteractive() => Begin(autoExit: false, lobbyOnly: false);
 
-        public static void CaptureReadmeMediaBatch() => Begin(autoExit: true);
+        public static void CaptureReadmeMediaBatch() => Begin(autoExit: true, lobbyOnly: false);
 
-        private static void Begin(bool autoExit)
+        public static void CaptureLobbyTabsBatch() => Begin(autoExit: true, lobbyOnly: true);
+
+        private static void Begin(bool autoExit, bool lobbyOnly = false)
         {
             if (EditorApplication.isPlaying) return;
             AssetDatabase.DisallowAutoRefresh();
             Directory.CreateDirectory(MediaDir);
-            Directory.CreateDirectory(GifDir);
-            foreach (string old in Directory.GetFiles(GifDir, "*.png")) File.Delete(old);
+            if (!lobbyOnly)
+            {
+                Directory.CreateDirectory(GifDir);
+                foreach (string old in Directory.GetFiles(GifDir, "*.png")) File.Delete(old);
+            }
 
             _savedBotTeam = LR2Settings.BotTeamMode;
             _savedWeapon = LR2Session.SelectedPrimaryWeapon;
@@ -939,6 +945,7 @@ namespace LR2.EditorTools
 
             SessionState.SetBool(KeyActive, true);
             SessionState.SetBool("LR2ReadmeMedia.AutoExit", autoExit);
+            SessionState.SetBool("LR2ReadmeMedia.LobbyOnly", lobbyOnly);
             EditorSceneManager.playModeStartScene = null;
             EditorSceneManager.OpenScene("Assets/LR2/Scenes/LR2_MainMenu.unity", OpenSceneMode.Single);
             EditorApplication.ExecuteMenuItem("Window/General/Game");
@@ -964,6 +971,7 @@ namespace LR2.EditorTools
             LR2Settings.Save();
 
             SessionState.SetBool(KeyActive, false);
+            SessionState.SetBool("LR2ReadmeMedia.LobbyOnly", false);
             bool autoExit = SessionState.GetBool("LR2ReadmeMedia.AutoExit", false)
                 || System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-lr2AutoExit") >= 0;
             if (autoExit)
@@ -1023,12 +1031,18 @@ namespace LR2.EditorTools
                         mm.SelectMap(0); // Saltworks
                         LR2Settings.LaserEnabled = true;
                         LR2Settings.BodycamMotion = 0f;
-                        // B31: Capture the minimalistic loading / starter title screen cleanly first, then dismiss it before main_menu_hero.png
-                        LR2LoadingIntro.SetCapturePreviewTitleScreen(true);
-                        yield return new WaitForSecondsRealtime(0.25f);
-                        yield return SaveScreenPng(Path.Combine(MediaDir, "title_screen.png"));
-                        yield return SaveScreenPng(Path.Combine(MediaDir, "loading_screen.png"));
-                        LR2LoadingIntro.SetCapturePreviewTitleScreen(false);
+                        bool lobbyOnly = SessionState.GetBool("LR2ReadmeMedia.LobbyOnly", false)
+                            || System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-lr2LobbyOnly") >= 0;
+
+                        if (!lobbyOnly)
+                        {
+                            // B31: Capture the minimalistic loading / starter title screen cleanly first, then dismiss it before main_menu_hero.png
+                            LR2LoadingIntro.SetCapturePreviewTitleScreen(true);
+                            yield return new WaitForSecondsRealtime(0.25f);
+                            yield return SaveScreenPng(Path.Combine(MediaDir, "title_screen.png"));
+                            yield return SaveScreenPng(Path.Combine(MediaDir, "loading_screen.png"));
+                            LR2LoadingIntro.SetCapturePreviewTitleScreen(false);
+                        }
 
                         // Wait for the boot intro to finish fading: the 11-18 10:12 hero caught "LEADRUSH II / DEPLOYMENT READY"
                         // at half opacity over the menu (Claude 10:30). Then let auto-exposure settle.
@@ -1036,53 +1050,78 @@ namespace LR2.EditorTools
                         while ((LR2LoadingIntro.IsCoveringScreen || LR2LoadingIntro.IsShowingTitleScreen) && Time.realtimeSinceStartup - tIntro < 20f)
                             yield return null;
                         yield return new WaitForSecondsRealtime(1.6f);
-                        yield return SaveScreenPng(Path.Combine(MediaDir, "main_menu_hero.png"));
-
-                        // 1b. Mode Rules panel
-                        if (mm.modeRulesButton != null)
+                        if (!lobbyOnly)
                         {
-                            mm.modeRulesButton.onClick.Invoke();
-                            yield return new WaitForSecondsRealtime(0.4f);
-                            yield return SaveScreenPng(Path.Combine(MediaDir, "mode_rules.png"));
-                            if (mm.modeRulesBackButton != null) mm.modeRulesBackButton.onClick.Invoke();
-                            yield return new WaitForSecondsRealtime(0.25f);
-                        }
+                            yield return SaveScreenPng(Path.Combine(MediaDir, "main_menu_hero.png"));
 
-                        // 1c. Settings Graphics & Controls tabs
-                        if (mm.settingsButton != null)
-                        {
-                            mm.settingsButton.onClick.Invoke();
-                            yield return new WaitForSecondsRealtime(0.35f);
-                            var spPanel = mm.settingsPanel != null ? mm.settingsPanel.GetComponentInChildren<SettingsPanel>(true) : null;
-                            if (spPanel != null) spPanel.SelectTab(1);
-                            yield return new WaitForSecondsRealtime(0.25f);
-                            yield return SaveScreenPng(Path.Combine(MediaDir, "settings_graphics.png"));
-                            yield return SaveScreenPng(Path.Combine(MediaDir, "settings_graphics_v2.png"));
-                            if (spPanel != null)
+                            // 1b. Mode Rules panel
+                            if (mm.modeRulesButton != null)
                             {
-                                spPanel.SelectTab(2);
+                                mm.modeRulesButton.onClick.Invoke();
+                                yield return new WaitForSecondsRealtime(0.4f);
+                                yield return SaveScreenPng(Path.Combine(MediaDir, "mode_rules.png"));
+                                if (mm.modeRulesBackButton != null) mm.modeRulesBackButton.onClick.Invoke();
                                 yield return new WaitForSecondsRealtime(0.25f);
-                                yield return SaveScreenPng(Path.Combine(MediaDir, "settings_controls.png"));
-                                spPanel.SelectTab(0);
                             }
-                            if (mm.settingsBackButton != null) mm.settingsBackButton.onClick.Invoke();
-                            yield return new WaitForSecondsRealtime(0.25f);
+
+                            // 1c. Settings Graphics & Controls tabs
+                            if (mm.settingsButton != null)
+                            {
+                                mm.settingsButton.onClick.Invoke();
+                                yield return new WaitForSecondsRealtime(0.35f);
+                                var spPanel = mm.settingsPanel != null ? mm.settingsPanel.GetComponentInChildren<SettingsPanel>(true) : null;
+                                if (spPanel != null) spPanel.SelectTab(1);
+                                yield return new WaitForSecondsRealtime(0.25f);
+                                yield return SaveScreenPng(Path.Combine(MediaDir, "settings_graphics.png"));
+                                yield return SaveScreenPng(Path.Combine(MediaDir, "settings_graphics_v2.png"));
+                                if (spPanel != null)
+                                {
+                                    spPanel.SelectTab(2);
+                                    yield return new WaitForSecondsRealtime(0.25f);
+                                    yield return SaveScreenPng(Path.Combine(MediaDir, "settings_controls.png"));
+                                    spPanel.SelectTab(0);
+                                }
+                                if (mm.settingsBackButton != null) mm.settingsBackButton.onClick.Invoke();
+                                yield return new WaitForSecondsRealtime(0.25f);
+                            }
                         }
 
-                        // 2. Capture The Flag Deploy Staging with Half & Half (3 Ally / 3 Enemy)
-                        if (mm.ctfButton != null) mm.ctfButton.onClick.Invoke();
-                        yield return new WaitForSecondsRealtime(0.45f);
-                        for (int step = 0; step < LR2Session.BotTeamModeLabels.Length && LR2Settings.BotTeamMode != (int)BotTeamAlignment.HalfAndHalf; step++)
+                        // 2. Dual-Tab Combat Lobby (Skirmish + Experiments)
+                        if (mm.duelButton != null)
                         {
-                            if (mm.deployBotTeamNextButton != null) mm.deployBotTeamNextButton.onClick.Invoke();
-                            yield return null;
+                            mm.duelButton.onClick.Invoke();
+                            yield return new WaitForSecondsRealtime(0.65f);
+                            var lobby = Object.FindAnyObjectByType<LR2.UI.SkirmishLobby>();
+                            if (lobby != null)
+                            {
+                                lobby.SwitchTab(false);
+                                yield return new WaitForSecondsRealtime(0.45f);
+                                yield return SaveScreenPng(Path.Combine(MediaDir, "lobby_skirmish_tab.png"));
+                                yield return SaveScreenPng(Path.Combine(MediaDir, "menu_deploy.png"));
+                                lobby.SwitchTab(true);
+                                yield return new WaitForSecondsRealtime(0.55f);
+                                yield return SaveScreenPng(Path.Combine(MediaDir, "lobby_experiments_tab.png"));
+                                lobby.SwitchTab(false);
+                                yield return new WaitForSecondsRealtime(0.25f);
+                            }
+                            if (lobbyOnly)
+                            {
+                                Finish(_errors);
+                                yield break;
+                            }
+                            // 3. Deploy directly into Saltworks in CTF Half & Half
+                            SkirmishSetup.ApplyPreset("2 TEAMS");
+                            SkirmishSetup.Mode = GameModeType.CaptureTheFlag;
+                            SkirmishSetup.PlayerSpectates = false;
+                            SkirmishSetup.Active = true;
+                            LR2Session.PrepareConfiguredMatch(mm.ctfSettings);
+                            SceneManager.LoadScene("LR2_Saltworks");
                         }
-                        if (mm.deployBotsSlider != null) mm.deployBotsSlider.value = 6f;
-                        yield return new WaitForSecondsRealtime(0.35f);
-                        yield return SaveScreenPng(Path.Combine(MediaDir, "menu_deploy.png"));
-
-                        // 3. Deploy directly into Saltworks in CTF Half & Half
-                        if (mm.deployStartButton != null) mm.deployStartButton.onClick.Invoke();
+                        else if (lobbyOnly)
+                        {
+                            Finish(_errors);
+                            yield break;
+                        }
                     }
 
                     // Wait for Saltworks active play

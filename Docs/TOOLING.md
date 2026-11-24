@@ -1,4 +1,4 @@
-# LeadRush 2 Tooling
+# Lead Rush II Tooling
 
 Run commands from the Unity project root unless a command explicitly names a project path.
 
@@ -13,7 +13,8 @@ Run commands from the Unity project root unless a command explicitly names a pro
 | LR2 scope & grenade builder | Upgrades PiP optic materials to circular `LR2/PipScope` & binds `AA_LR2_GrenadeThrow` | `LR2ScopeBuilder.UpgradePipScopesAndGrenades` | Circular clipped scope materials + grenade throw clip |
 | LR2 prop & spawn audit | Audits thin geometry, squashed pack props (>2.2x), prop overlap, floating props (>8 cm) & spawn capsule clearance | Unity menu `LR2 > Prop Audit` / `LR2.EditorTools.LR2PropAudit.RunBatch` | `Logs/LR2_PropAudit/report.txt` |
 | LR2 glass builder | Creates clean, dirty and cracked HDRP glass materials | Unity menu `LR2 > Build Glass Materials` | `M_LR2_Glass_*` materials and mask textures |
-| README/media builders | Creates and refreshes in-game screenshots, previews & 24-frame combat GIF sequences (`-lr2GifDir`) | `LR2MapPreviewCapture` and `LR2ReadmeMediaRunner` | `Docs/Media`, `Temp/GifFrames` / `-lr2GifDir`, and map preview PNGs |
+| README/media builders | Creates and refreshes in-game screenshots, previews, dual-tab lobby captures & 24-frame combat GIFs (`-lr2GifDir`) | `LR2MapPreviewCapture` (`CaptureLobbyTabsBatch`) and `LR2ReadmeMediaRunner` | `Docs/Media`, `lobby_*_tab.png`, `Temp/GifFrames` / `-lr2GifDir`, and map preview PNGs |
+| Offline experiment analyzer | Mines `Data/Logs/<id>_<runId>/`, computes 5-pillar HLI + 5-fold C2ST AUC + Sliced Wasserstein EMDs, plots 4 heatmaps & fits `human_behavior_fit.json` | `python Tools/analyze_experiment_session.py --session <dir> --out <dir>` | `report.md`, `human_behavior_fit.json`, `artifact_heatmaps.json`, 4 PNGs |
 
 ## QA and smoke tests
 
@@ -27,6 +28,7 @@ Run commands from the Unity project root unless a command explicitly names a pro
 
 ## Bot explainer manual and media
 
+- [`Docs/Bot/llm-architecture.html`](Bot/llm-architecture.html) is the interactive **LLM Architecture, 9 Tactical Maneuvers & 20 Hz Heatmap Lab** (plain-English walkthrough, 9 live key-pulsing maneuver canvases, and measured C1–C3 + M1–M8 charts).
 - [`Docs/Bot/bot-lab.html`](Bot/bot-lab.html) is the interactive manual in three parts: the bot, game modes, and how it
   was built. Its artifact source is `Docs/Bot/src/bot-lab.html`; `python Tools/make_bot_lab_gifs.py` rebuilds the
   GitHub copy and the eight scenario GIFs. `Docs/Bot/bot-brain.html` redirects to it (merged 2026-11-18).
@@ -69,11 +71,15 @@ Run commands from the Unity project root unless a command explicitly names a pro
 
 - `Docs/AI_Collaboration/data/tasks.csv`: delivered work by agent/model.
 - `Docs/AI_Collaboration/data/bugs.csv`: escaped, reviewed and pre-push defects.
-- `Docs/AI_Collaboration/analysis/analyze.py`: computes model/task quality summaries.
+- `Docs/AI_Collaboration/data/token_estimates.csv`: estimated coding model + exact Groq runtime API token counts (`B150`).
+- `Docs/AI_Collaboration/analysis/analyze.py`: computes model/task quality summaries, protocol comparisons, and token usage ranking plots (`token_usage_ranking_by_model`, `token_efficiency_per_task_by_model`, `token_share_by_agent_and_phase`).
 - `Docs/AI_Collaboration/analysis/provenance.py`: decision provenance (who decided what), the atomic feature table page, figures and the animated chart.
 - `Docs/AI_Collaboration/RESEARCH_LOG.md`: narrative research and protocol evidence.
+- `Docs/Guides/LLM_BOT_IMPLEMENTATION.md`: C# & Groq Cloud architecture tutorial for `GroqClient.cs` and `LLMCommander.cs`.
+- `Docs/Research/DATA_COLUMNS.md` & `Docs/Research/HUMAN_LIKENESS_EVALUATION.md`: `InvasionFramerate`-modeled `Data/` external telemetry layout (`Data/SessionState.csv`, `Data/Presets/`, `Data/Profiles/human_behavior_fit.json`, `Data/Logs/<id>_<runId>/`), CSV schemas, HLI formulas, and C1–C3 heatmap results.
+- Standalone Windows build output path (`11.23.26.1+`): `H:/Unity Projects/Builds/Lead Rush II/Lead Rush II.exe`.
 
-## Weapon-stability and LLM switches (B125, B127)
+## Weapon-stability, LLM & Experiment Telemetry switches (`B125`, `B127`, `B151`, `B154`–`B156`)
 
 | Switch | What it does |
 |---|---|
@@ -82,7 +88,9 @@ Run commands from the Unity project root unless a command explicitly names a pro
 | `-lr2AdsWallCheck` | First-person check: aiming into a wall head-on, at 45 degrees, into a soldier and dying against a wall (`adswall.csv`) |
 | `-lr2FlipGuard` | Turns on the after-animation flip clamp (off by default since the root causes were fixed) |
 | `-lr2SharedIkMotions`, `-lr2NoItemReset` | Restore the old behaviour (shared motion assets, no gun-pose reset) for A/B tests |
-| `-lr2LlmTeams Alpha,Bravo`, `-lr2LlmModel <name>`, `-lr2LlmInterval <s>`, `-lr2GroqKeyFile <path>` | LLM squad commander for those teams; the key can also come from `GROQ_API_KEY` or `groq_api_key.txt` in the persistent data folder |
+| `-lr2LlmTeams Alpha,Bravo`, `-lr2LlmMode Commander\|TacticalMicro\|AvatarPilot`, `-lr2LlmModel <name>`, `-lr2LlmInterval <s>`, `-lr2GroqKeyFile <path>` | LLM integration depth & model/interval switches; key reads from `GROQ_API_KEY`, `-lr2GroqKeyFile`, or fallback `groq_api_key.txt` |
+| `-lr2BenchArchetypes Alpha=DumbRobotic,Bravo=HumanLike`, `-lr2AlphaDiff 0..3`, `-lr2BravoDiff 0..3` | Assigns per-team `BotArchetype` (`HumanLike`, `DumbRobotic`, `LlmEnhanced`, `HumanFitted`) and difficulty tier during `-lr2AimBench` |
+| `-lr2RecordTelemetry`, `-lr2TelemetryOut <dir>` | Enables zero-stutter 20/30/60 Hz telemetry recording (`Ticks_*.csv`, `Events_*.csv`, `Flicks_*.csv`, `Recoil_*.csv`, `Summary_*.csv`, `Meta_*.json`) outside the Experiments tab or redirects output directory |
 
 ## Tuning ADS sway (Kinemation animator layers)
 

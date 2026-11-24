@@ -1,23 +1,23 @@
 {
- "features": 270,
+ "features": 287,
  "origin_counts": {
-  "dir": 84,
-  "ai": 81,
+  "dir": 96,
+  "ai": 83,
   "init": 35,
-  "dbug": 57,
+  "dbug": 60,
   "qa": 13
  },
  "origin_pct": {
-  "dir": 31.1,
-  "ai": 30.0,
-  "init": 13.0,
-  "dbug": 21.1,
-  "qa": 4.8
+  "dir": 33.4,
+  "ai": 28.9,
+  "init": 12.2,
+  "dbug": 20.9,
+  "qa": 4.5
  },
- "goal_by_developer": 222,
+ "goal_by_developer": 239,
  "goal_by_ai": 48,
- "design_by_developer": 84,
- "design_by_ai": 186,
+ "design_by_developer": 96,
+ "design_by_ai": 191,
  "by_agent": {
   "Claude": {
    "dir": 45,
@@ -27,10 +27,10 @@
    "qa": 5
   },
   "Gemini": {
-   "dir": 34,
-   "ai": 32,
+   "dir": 46,
+   "ai": 34,
    "init": 5,
-   "dbug": 11,
+   "dbug": 14,
    "qa": 4
   },
   "Copilot": {
@@ -53,32 +53,32 @@
    "dir": 10,
    "ai": 7,
    "init": 1,
-   "dbug": 4,
+   "dbug": 5,
    "qa": 3
   },
   "animation": {
-   "dir": 3,
+   "dir": 4,
    "ai": 5,
    "init": 5,
-   "dbug": 19,
+   "dbug": 20,
    "qa": 4
   },
   "bots": {
-   "dir": 7,
+   "dir": 10,
    "ai": 11,
    "init": 5,
    "dbug": 1,
    "qa": 1
   },
   "audio": {
-   "dir": 4,
+   "dir": 5,
    "ai": 11,
    "init": 2,
    "dbug": 2,
    "qa": 1
   },
   "vfx": {
-   "dir": 13,
+   "dir": 14,
    "ai": 8,
    "init": 2,
    "dbug": 10,
@@ -88,11 +88,11 @@
    "dir": 0,
    "ai": 12,
    "init": 1,
-   "dbug": 4,
+   "dbug": 5,
    "qa": 0
   },
   "ui": {
-   "dir": 14,
+   "dir": 16,
    "ai": 7,
    "init": 3,
    "dbug": 6,
@@ -120,14 +120,14 @@
    "qa": 3
   },
   "docs": {
-   "dir": 13,
-   "ai": 7,
+   "dir": 16,
+   "ai": 8,
    "init": 1,
    "dbug": 0,
    "qa": 0
   },
   "process": {
-   "dir": 8,
+   "dir": 9,
    "ai": 5,
    "init": 2,
    "dbug": 1,
@@ -169,27 +169,41 @@
    "init": 4,
    "dbug": 6,
    "qa": 0
+  },
+  "2026-11-23": {
+   "dir": 8,
+   "ai": 0,
+   "init": 0,
+   "dbug": 3,
+   "qa": 0
+  },
+  "2026-11-24": {
+   "dir": 4,
+   "ai": 2,
+   "init": 0,
+   "dbug": 0,
+   "qa": 0
   }
  },
  "by_model": {
   "Claude · claude-opus-5-5": 146,
   "Gemini · gemini-4-hydrogen": 45,
   "Copilot · gpt-5.6-luna": 21,
+  "Gemini · orchestrator-neon": 19,
   "Gemini · gemini-4-hydrogen-high": 18,
   "Codex · gpt-6": 17,
   "Gemini · argon": 16,
-  "Gemini · argon/hydrogen": 5,
-  "Gemini · orchestrator-neon": 2
+  "Gemini · argon/hydrogen": 5
  },
  "outcomes": {
   "dir": {
-   "kept": 64,
+   "kept": 76,
    "changed": 19,
    "reverted": 0,
    "open": 1
   },
   "ai": {
-   "kept": 53,
+   "kept": 55,
    "changed": 21,
    "reverted": 2,
    "open": 5
@@ -201,7 +215,7 @@
    "open": 8
   },
   "dbug": {
-   "kept": 43,
+   "kept": 46,
    "changed": 8,
    "reverted": 2,
    "open": 4
@@ -213,23 +227,23 @@
    "open": 0
   }
  },
- "kept_pct_all": 78.2,
+ "kept_pct_all": 79.6,
  "kept_pct": {
   "dir": {
-   "n": 83,
-   "kept": 77.1
+   "n": 95,
+   "kept": 80.0
   },
   "ai": {
-   "n": 76,
-   "kept": 69.7
+   "n": 78,
+   "kept": 70.5
   },
   "init": {
    "n": 27,
    "kept": 88.9
   },
   "dbug": {
-   "n": 53,
-   "kept": 81.1
+   "n": 56,
+   "kept": 82.1
   },
   "qa": {
    "n": 13,
@@ -264,44 +278,44 @@
  ],
  "confidence": {
   "medium": 23,
-  "high": 245,
+  "high": 262,
   "low": 2
  },
- "prompts": 268,
- "prompts_verbatim": 254,
+ "prompts": 319,
+ "prompts_verbatim": 305,
  "prompts_by_agent": {
   "Claude": 165,
-  "Gemini": 91,
+  "Gemini": 142,
   "mixed": 11,
   "Copilot": 1
  },
  "prompt_words_median": 18,
- "prompt_words_total": 7734,
+ "prompt_words_total": 9521,
  "pattern_counts": {
-  "D": 69,
-  "F": 61,
-  "I": 52,
+  "D": 78,
+  "F": 78,
+  "I": 62,
   "V": 6,
-  "L": 8,
-  "P": 72
+  "L": 13,
+  "P": 82
  },
- "task_prompts": 196,
+ "task_prompts": 237,
  "pattern_pct_of_task_prompts": {
-  "D": 35.2,
-  "F": 31.1,
-  "I": 26.5,
-  "V": 3.1,
-  "L": 4.1
+  "D": 32.9,
+  "F": 32.9,
+  "I": 26.2,
+  "V": 2.5,
+  "L": 5.5
  },
- "automation_pct": 66.3,
+ "automation_pct": 65.8,
  "spec_counts": {
-  "E": 68,
-  "G": 109,
-  "O": 5
+  "E": 79,
+  "G": 139,
+  "O": 6
  },
  "spec_pct": {
-  "E": 37.4,
-  "G": 59.9,
+  "E": 35.3,
+  "G": 62.1,
   "O": 2.7
  },
  "spec_by_day": {
@@ -329,10 +343,25 @@
    "E": 1,
    "G": 2,
    "O": 0
+  },
+  "2026-11-22": {
+   "E": 3,
+   "G": 17,
+   "O": 0
+  },
+  "2026-11-23": {
+   "E": 6,
+   "G": 11,
+   "O": 0
+  },
+  "2026-11-24": {
+   "E": 2,
+   "G": 2,
+   "O": 1
   }
  },
- "features_with_prompt": 208,
- "prompts_with_features": 128,
+ "features_with_prompt": 225,
+ "prompts_with_features": 141,
  "top_prompts": [
   {
    "pid": "P061",
@@ -366,25 +395,26 @@
   }
  ],
  "ai_choices_from_short_prompts": 10,
- "bugs": 87,
+ "bugs": 106,
  "bugs_found_by": {
-  "developer": 39,
-  "ai": 48
+  "developer": 50,
+  "ai": 56
  },
  "bugs_stage": {
-  "escaped": 42,
-  "review": 42,
+  "escaped": 56,
+  "review": 47,
   "pre-push": 3
  },
  "bugs_by_finder_detail": {
-  "user": 39,
+  "user": 50,
   "claude-review": 18,
+  "claude-self": 10,
   "gemini-review": 6,
-  "claude-self": 6,
   "copilot-review": 6,
   "runtime-check": 6,
+  "codex-review": 4,
   "qa-bot": 3,
-  "codex-review": 2,
+  "gemini-self": 2,
   "push-check": 1
  },
  "bugs_by_day": {
@@ -404,7 +434,16 @@
    "ai": 8
   },
   "2026-11-20": {
+   "developer": 6,
+   "ai": 4
+  },
+  "2026-11-22": {
+   "ai": 3,
    "developer": 4
+  },
+  "2026-11-23": {
+   "ai": 1,
+   "developer": 5
   }
  },
  "ticks": 152,
@@ -418,7 +457,10 @@
   "2026-11-17": 118,
   "2026-11-18": 59,
   "2026-11-19": 74,
-  "2026-11-20": 4
+  "2026-11-20": 4,
+  "2026-11-22": 27,
+  "2026-11-23": 19,
+  "2026-11-24": 5
  },
  "validation": {
   "status": "pending",

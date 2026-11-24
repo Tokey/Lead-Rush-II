@@ -2,7 +2,7 @@
 
 **Status:** Research & Design Complete (`2026-11-22`, zero changes applied to `B136` OG Kinemation `FPSGenericPlayer` robot prefabs per user instruction)  
 **Owners:** Gemini + Codex (cross-review)  
-**Goal:** Evaluate realistic tactical soldier visual upgrades inspired by *Battlefield 6* (**NATO** conventional western infantry vs **Pax Armata** sleek PMC/hybrid operators) while guaranteeing a **1-flag, zero-risk revertible swap** over LeadRush 2's current OG Kinemation Generic rig (`FPSGenericPlayer` / `LR2ContentBuilder.Robot.cs`).
+**Goal:** Evaluate realistic tactical soldier visual upgrades inspired by *Battlefield 6* (**NATO** conventional western infantry vs **Pax Armata** sleek PMC/hybrid operators) while guaranteeing a **1-flag, zero-risk revertible swap** over Lead Rush II's current OG Kinemation Generic rig (`FPSGenericPlayer` / `LR2ContentBuilder.Robot.cs`).
 
 ---
 

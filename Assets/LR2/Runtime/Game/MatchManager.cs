@@ -108,6 +108,7 @@ namespace LR2.Game
                 new GameObject("[LR2 Killcam]").AddComponent<LR2.World.KillcamDirector>();
             LR2.World.MapAmbientFx.Ensure();
             LR2.World.SkyCloudMotion.Ensure();
+            LR2.World.ExperimentTelemetryRecorder.EnsureForMatch();
 
             _teamScore[TeamId.Alpha] = 0;
             _teamScore[TeamId.Bravo] = 0;
@@ -221,19 +222,20 @@ namespace LR2.Game
         }
 
         private static readonly string[] DifficultyTags = { "REC", "REG", "HRD", "VET", "ADP" };
+        private static readonly string[] ArchetypeTags = { "", "DUMB", "LLM", "FIT" };
 
         /// <summary>
-        /// Skirmish lobby (user 11-19): every slot has its own team and difficulty (3-way and 4-way games); AI vs AI spawns no
-        /// player and hands the screen to <see cref="SpectatorCamera"/>. With mixed difficulties the names carry a tag so the
-        /// scoreboard shows which difficulty is winning.
+        /// Skirmish &amp; Experiments lobby spawner: every slot has its own archetype, difficulty and team; AI vs AI spawns no
+        /// player and hands the screen to <see cref="SpectatorCamera"/>. Blind Mode hides bot tags from the HUD/scoreboard.
         /// </summary>
         private void SpawnSkirmish()
         {
             bool teams = SkirmishSetup.IsTeamGame;
             bool mixed = false;
             for (int i = 1; i < SkirmishSetup.Bots.Count; i++)
-                if (SkirmishSetup.Bots[i].difficulty != SkirmishSetup.Bots[0].difficulty) mixed = true;
-            bool tag = mixed || SkirmishSetup.PlayerSpectates;
+                if (SkirmishSetup.Bots[i].difficulty != SkirmishSetup.Bots[0].difficulty ||
+                    SkirmishSetup.Bots[i].archetype != SkirmishSetup.Bots[0].archetype) mixed = true;
+            bool tag = !SkirmishSetup.BlindMode && (mixed || SkirmishSetup.PlayerSpectates);
 
             if (!SkirmishSetup.PlayerSpectates)
                 LocalPlayer = Spawn(playerPrefab, teams ? TeamId.Alpha : TeamId.None, LR2Settings.PlayerName, true); // B116: you are always Alpha (blue)
@@ -241,8 +243,15 @@ namespace LR2.Game
             {
                 TeamId t = teams ? slot.team : TeamId.None;
                 int d = Mathf.Clamp(slot.difficulty, 0, DifficultyTags.Length - 1);
-                string name = tag ? $"{NextName()} [{DifficultyTags[d]}]" : NextName();
-                var bot = Spawn(botPrefab, t, name, false, d);
+                int a = Mathf.Clamp((int)slot.archetype, 0, ArchetypeTags.Length - 1);
+                string aTag = !SkirmishSetup.BlindMode && !string.IsNullOrEmpty(ArchetypeTags[a]) ? ArchetypeTags[a] : "";
+                string dTag = tag ? DifficultyTags[d] : "";
+                string suffix = (!string.IsNullOrEmpty(aTag) && !string.IsNullOrEmpty(dTag)) ? $" [{aTag}·{dTag}]"
+                              : !string.IsNullOrEmpty(aTag) ? $" [{aTag}]"
+                              : !string.IsNullOrEmpty(dTag) ? $" [{dTag}]"
+                              : "";
+                string name = NextName() + suffix;
+                var bot = Spawn(botPrefab, t, name, false, d, slot.archetype);
                 var bc = bot != null ? bot.GetComponent<BotController>() : null;
                 if (bc != null && LocalPlayer != null && t != TeamId.None && t == LocalPlayer.Team) bc.SetSquadLeader(LocalPlayer);
             }
@@ -311,7 +320,7 @@ namespace LR2.Game
         };
         private const float FeaturedWeight = 4f;
 
-        private Combatant Spawn(GameObject prefab, TeamId team, string displayName, bool local, int difficultyIndex = -1)
+        private Combatant Spawn(GameObject prefab, TeamId team, string displayName, bool local, int difficultyIndex = -1, BotArchetype archetype = BotArchetype.HumanLike)
         {
             if (team != TeamId.None) _teamsInPlay.Add(team);
             var sp = PickSpawn(team, null);
@@ -337,6 +346,8 @@ namespace LR2.Game
                 {
                     int di = difficultyIndex >= 0 ? difficultyIndex : LR2Settings.BotDifficulty;
                     bot.Difficulty = difficulties[Mathf.Clamp(di, 0, difficulties.Length - 1)];
+                    bot.TierIndex = Mathf.Clamp(di, 0, 3);
+                    bot.Archetype = archetype;
                     if (difficultyIndex >= 0) bot.AdaptiveOverride = difficultyIndex == 4; // per-slot difficulty beats the global one
                 }
             }
@@ -742,6 +753,11 @@ namespace LR2.Game
 
         public void QuitToMenu()
         {
+            if (ExperimentSessionRunner.IsSessionActive)
+            {
+                ExperimentSessionRunner.AbortSession();
+                return;
+            }
             Time.timeScale = 1f;
             LR2Session.ActiveSettings = null;
             if (Application.CanStreamedLevelBeLoaded(LR2Session.MenuScene)) SceneManager.LoadScene(LR2Session.MenuScene);

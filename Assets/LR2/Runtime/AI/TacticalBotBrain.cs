@@ -31,6 +31,7 @@ namespace LR2.AI
 
         private Vector3 _followOffset;
         private float _followRepickAt;
+        private float _lastUtilityDirectiveUntil = -1f;
 
         public BotGoal CurrentGoal => _goal;
 
@@ -58,6 +59,9 @@ namespace LR2.AI
             var intent = new BotIntent { allowFire = true, desiredRange = bb.effectiveRange * Mathf.Lerp(0.8f, 0.35f, aggression) };
             float now = bb.time;
 
+            if (_bot != null && _bot.Archetype == BotArchetype.DumbRobotic)
+                return ThinkDumb(bb, intent, now);
+
             // ---------------------------------------------------------- 1. retreat to regenerate health
             float retreatAt = d != null ? d.retreatHealth : 0.38f;
             if (!_retreating && bb.health01 < retreatAt && (bb.recentlyDamaged || bb.underFire) && bb.target != null)
@@ -84,32 +88,67 @@ namespace LR2.AI
                 }
             }
 
-            // ---------------------------------------------------------- 2. directives (squad commands / future LLM)
+            // ---------------------------------------------------------- 2. directives (squad commands / B151 Tactical Micro & Avatar Pilot)
             if (bb.hasDirective && now < bb.directiveUntil && bb.directive.order != BotOrder.FreeRoam)
             {
                 var dir = bb.directive;
+                intent.peekStyle = dir.peek;
+                intent.burstStyle = dir.burst;
+                if (dir.stance == BotStanceOrder.Crouch) intent.crouch = true;
+                else if (dir.stance == BotStanceOrder.Prone) intent.prone = true;
+
+                if (dir.utility == BotUtilityAction.ThrowFrag && !Mathf.Approximately(_lastUtilityDirectiveUntil, bb.directiveUntil))
+                {
+                    if (bb.target != null && (bb.targetVisible || bb.TimeSinceSeen < 12f) && bb.targetDistance >= 7f && bb.targetDistance <= 28f)
+                    {
+                        _lastUtilityDirectiveUntil = bb.directiveUntil;
+                        intent.throwGrenade = true;
+                    }
+                }
+                else if (dir.utility == BotUtilityAction.SafeReload && bb.ammo01 < 0.78f && !bb.isReloading && !bb.targetVisible)
+                {
+                    intent.forceReload = true;
+                }
+
+                bool holdFire = dir.utility == BotUtilityAction.HoldFire && (!bb.targetVisible || bb.targetDistance > 9f) && !bb.underFire;
                 switch (dir.order)
                 {
                     case BotOrder.HoldPosition:
-                        if (bb.targetVisible) return Engage(bb, intent, now, false);
+                        if (bb.targetVisible)
+                        {
+                            var eng = Engage(bb, intent, now, false);
+                            if (holdFire) eng.allowFire = false;
+                            return eng;
+                        }
                         SetGoal(BotGoal.HoldPosition, now);
                         intent.goal = BotGoal.HoldPosition;
                         intent.hasDestination = Vector3.Distance(bb.position, dir.position) > 1.5f;
                         intent.destination = dir.position;
+                        intent.forceAds = dir.peek == BotPeekStyle.HoldAngle;
                         LookAtThreat(ref intent, bb);
                         return intent;
                     case BotOrder.MoveTo:
-                        if (bb.targetVisible && bb.targetDistance < 25f) return Engage(bb, intent, now, true);
+                        if (bb.targetVisible && (bb.targetDistance < 25f || dir.aggression > 0.2f))
+                        {
+                            var eng = Engage(bb, intent, now, true);
+                            if (holdFire) eng.allowFire = false;
+                            return eng;
+                        }
                         SetGoal(BotGoal.MoveTo, now);
                         intent.goal = BotGoal.MoveTo;
                         intent.hasDestination = true;
                         intent.destination = dir.position;
-                        intent.allowSprint = true;
+                        intent.allowSprint = dir.aggression >= -0.3f;
                         return intent;
                     case BotOrder.Attack:
                         if (dir.target != null && dir.target.IsAlive)
                         {
-                            if (bb.target == dir.target && bb.targetVisible) return Engage(bb, intent, now, true);
+                            if (bb.target == dir.target && bb.targetVisible)
+                            {
+                                var eng = Engage(bb, intent, now, true);
+                                if (holdFire) eng.allowFire = false;
+                                return eng;
+                            }
                             SetGoal(BotGoal.Hunt, now);
                             intent.goal = BotGoal.Hunt;
                             intent.hasDestination = true;
@@ -529,6 +568,45 @@ namespace LR2.AI
             if (_goal == goal) return;
             _goal = goal;
             _goalSince = now;
+        }
+
+        private BotIntent ThinkDumb(BotBlackboard bb, BotIntent intent, float now)
+        {
+            if (bb.target != null && bb.targetVisible)
+            {
+                SetGoal(BotGoal.Engage, now);
+                intent.goal = BotGoal.Engage;
+                intent.target = bb.target;
+                intent.allowFire = true;
+                intent.hasDestination = bb.targetDistance > intent.desiredRange * 0.95f;
+                intent.destination = bb.targetLastKnown;
+                intent.allowSprint = false;
+                LookAtThreat(ref intent, bb);
+                return intent;
+            }
+            if (bb.target != null && bb.TimeSinceSeen < 8f)
+            {
+                SetGoal(BotGoal.Hunt, now);
+                intent.goal = BotGoal.Hunt;
+                intent.target = bb.target;
+                intent.hasDestination = true;
+                intent.destination = bb.targetLastKnown;
+                intent.allowSprint = false;
+                return intent;
+            }
+            var flag = LR2.Game.FlagZoneController.Instance;
+            if (flag != null)
+            {
+                SetGoal(BotGoal.MoveTo, now);
+                intent.goal = BotGoal.MoveTo;
+                intent.hasDestination = Vector3.Distance(bb.position, flag.ActiveFlagPosition) > 2f;
+                intent.destination = flag.ActiveFlagPosition;
+                intent.allowSprint = false;
+                return intent;
+            }
+            var pat = Patrol(bb, intent, now);
+            pat.allowSprint = false;
+            return pat;
         }
     }
 }

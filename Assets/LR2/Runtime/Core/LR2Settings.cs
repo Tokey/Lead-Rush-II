@@ -62,6 +62,15 @@ namespace LR2.Core
         public static bool ToggleAim { get => GetB("v4.ToggleAim", false); set => SetB("v4.ToggleAim", value); }
         public static bool ToggleSprint { get => GetB("v4.ToggleSprint", false); set => SetB("v4.ToggleSprint", value); }
         public static bool AutoSprint { get => GetB("v4.AutoSprint", false); set => SetB("v4.AutoSprint", value); }
+        /// <summary>B151: Groq LLM integration depth: 0 Off (Rules only), 1 Commander (Macro), 2 Tactical Micro, 3 Avatar Pilot (Action Chunking).</summary>
+        public static int LlmMode { get => Mathf.Clamp(GetI("v6.LlmMode", 0), 0, 3); set => SetI("v6.LlmMode", Mathf.Clamp(value, 0, 3)); }
+        /// <summary>B151: Teams commanded by LLM when LlmMode > 0: 0 None, 1 Alpha Team, 2 Bravo Team, 3 Both Teams.</summary>
+        public static int LlmTeams { get => Mathf.Clamp(GetI("v6.LlmTeams", 1), 0, 3); set => SetI("v6.LlmTeams", Mathf.Clamp(value, 0, 3)); }
+        /// <summary>B151: Groq decision cadence index: 0=5s, 1=8s, 2=12s, 3=18s.</summary>
+        public static int LlmIntervalIndex { get => Mathf.Clamp(GetI("v6.LlmInterval", 1), 0, 3); set => SetI("v6.LlmInterval", Mathf.Clamp(value, 0, 3)); }
+        public static float LlmIntervalSeconds => LlmIntervalIndex == 0 ? 5f : LlmIntervalIndex == 1 ? 8f : LlmIntervalIndex == 2 ? 12f : 18f;
+        /// <summary>B155: Zero-stutter in-RAM telemetry CSV recording for human &amp; bots.</summary>
+        public static bool RecordTelemetry { get => GetB("v7.RecordTelemetry", true); set => SetB("v7.RecordTelemetry", value); }
         /// <summary>Bodycam camera motion (head bob, inertia sway, handheld shake). On by default (user asked for visible bodycam motion);
         /// new v3 key so an old saved 0 from the v2 default doesn't keep it off.</summary>
         public static float BodycamMotion { get => GetF("v3.BodycamMotion", 1f); set => SetF("v3.BodycamMotion", Mathf.Clamp(value, 0f, 1.5f)); }
@@ -85,6 +94,7 @@ namespace LR2.Core
                          "MasterVol", "SfxVol", "MusicVol", "UiVol", "Quality", "VSync", "FpsLimit", "ShowFps",
                          "MotionBlur", "v2.MotionBlur", "FilmGrain", "RayTracing", "HitmarkerSound", "v3.LaserEnabled", "v4.LaserEnabled", "BotDifficulty", "v3.BotTeamMode",
                          "v4.ToggleAim", "v4.ToggleSprint", "v4.AutoSprint",
+                         "v6.LlmMode", "v6.LlmTeams", "v6.LlmInterval", "v7.RecordTelemetry",
                          "BodycamLook", "v2.BodycamLook", "BodycamMotion", "v2.BodycamMotion", "v3.BodycamMotion" })
                 PlayerPrefs.DeleteKey(Prefix + key);
             Notify();

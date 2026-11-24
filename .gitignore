@@ -17,6 +17,8 @@
 /[Bb]uild/
 /[Bb]uilds/
 /[Ll]ogs/
+/[Dd]ata/Logs/
+/[Dd]ata/SessionState.csv
 /[Uu]ser[Ss]ettings/
 *.log
 

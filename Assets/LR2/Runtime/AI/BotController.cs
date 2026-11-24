@@ -28,6 +28,9 @@ namespace LR2.AI
         [SerializeField] private bool drawGizmos = true;
 
         public BotDifficulty Difficulty { get => difficulty; set => difficulty = value; }
+        public BotArchetype Archetype { get; set; } = BotArchetype.HumanLike;
+        public int TierIndex { get; set; } = 1;
+        public bool IsFlickingNow => _flickActive;
         public SoldierController Soldier { get; private set; }
         public Combatant Combatant { get; private set; }
         public NavMeshAgent Agent { get; private set; }
@@ -49,6 +52,12 @@ namespace LR2.AI
         /// <summary>Skirmish lobby per-slot difficulty: true/false beats the global Adaptive setting; null follows it.</summary>
         public bool? AdaptiveOverride { get; set; }
         private float _nextAdaptiveRefresh;
+
+        // B154 DumbRobotic state + B157 custom profile LUT
+        private float _dumbNextErrorAt;
+        private Vector2 _dumbErr;
+        private float[] _fittedCdf;
+        private float _fittedCdfA, _fittedCdfB;
 
         public bool IsAdaptiveMode => _isAdaptiveMode;
         public BotDifficulty ActiveDifficulty => _isAdaptiveMode && _runtimeAdaptiveDiff != null ? _runtimeAdaptiveDiff : difficulty;
@@ -172,6 +181,11 @@ namespace LR2.AI
         private bool _slideFrame;
         private bool _peekStanding;
         private float _nextPeekToggle;
+        // B151: Avatar Pilot micro-action chunk state & Tactical Micro modulation
+        private int _microIdx;
+        private float _microStepUntil;
+        private bool _microStepActionFired;
+        private float _lastProneToggle;
 
         private void Awake()
         {
@@ -276,7 +290,33 @@ namespace LR2.AI
             Blackboard.directive = directive;
             Blackboard.hasDirective = directive.order != BotOrder.None;
             Blackboard.directiveUntil = directive.duration > 0f ? Time.time + directive.duration : float.MaxValue;
+            _microIdx = 0;
+            _microStepUntil = 0f;
+            _microStepActionFired = false;
             _nextThink = 0f;
+        }
+
+        private bool TryGetActiveMicroStep(float now, out BotMicroAction step)
+        {
+            step = default;
+            var queue = Blackboard.directive.microQueue;
+            if (!Blackboard.hasDirective || now >= Blackboard.directiveUntil || queue == null || queue.Length == 0)
+                return false;
+            if (_microIdx >= queue.Length) return false;
+            if (_microStepUntil <= 0f)
+            {
+                _microStepUntil = now + Mathf.Max(0.4f, queue[_microIdx].duration);
+                _microStepActionFired = false;
+            }
+            while (now >= _microStepUntil)
+            {
+                _microIdx++;
+                if (_microIdx >= queue.Length) return false;
+                _microStepUntil = now + Mathf.Max(0.4f, queue[_microIdx].duration);
+                _microStepActionFired = false;
+            }
+            step = queue[_microIdx];
+            return step.kind != BotMicroActionKind.None;
         }
 
         public string DescribeState()
@@ -334,7 +374,8 @@ namespace LR2.AI
             input.move = Vector2.ClampMagnitude(new Vector2(Vector3.Dot(worldMove, right), Vector3.Dot(worldMove, fwd)), 1f);
             bool threatClose = (Blackboard.target != null && Blackboard.targetDistance < 16f) ||
                                (Blackboard.hasNoise && now - Blackboard.noiseTime < 3f && Vector3.Distance(transform.position, Blackboard.noisePosition) < 16f);
-            input.sprint = _slideFrame || (_intent.allowSprint && !Blackboard.targetVisible && !threatClose && input.move.y > 0.75f && Mathf.Abs(input.move.x) < 0.4f);
+            bool microSprint = TryGetActiveMicroStep(now, out var sprintStep) && sprintStep.kind == BotMicroActionKind.SprintTo;
+            input.sprint = _slideFrame || ((_intent.allowSprint || microSprint) && !Blackboard.targetVisible && !threatClose && input.move.y > 0.75f && Mathf.Abs(input.move.x) < 0.4f);
             UpdateStuck(ref input, now, dt);
         }
 
@@ -427,18 +468,31 @@ namespace LR2.AI
             Agent.nextPosition = transform.position;
             if ((Agent.nextPosition - transform.position).sqrMagnitude > 1f) Agent.Warp(transform.position);
 
-            if (!_intent.hasDestination)
+            bool hasDest = _intent.hasDestination;
+            Vector3 navDest = _intent.destination;
+            if (TryGetActiveMicroStep(now, out var mStep))
+            {
+                if (mStep.kind == BotMicroActionKind.SprintTo) { hasDest = true; navDest = mStep.targetPos; }
+                else if (mStep.kind == BotMicroActionKind.HoldAngle || mStep.kind == BotMicroActionKind.ProneAmbush)
+                {
+                    if (Agent.hasPath) Agent.ResetPath();
+                    _lastSteer = Vector3.zero;
+                    return Vector3.zero;
+                }
+            }
+
+            if (!hasDest)
             {
                 if (Agent.hasPath) Agent.ResetPath();
                 _lastSteer = Vector3.zero;
                 return Vector3.zero;
             }
 
-            if ((_intent.destination - _lastDestination).sqrMagnitude > 1f || now >= _nextRepath)
+            if ((navDest - _lastDestination).sqrMagnitude > 1f || now >= _nextRepath)
             {
-                _lastDestination = _intent.destination;
+                _lastDestination = navDest;
                 _nextRepath = now + 0.6f;
-                if (NavMesh.SamplePosition(_intent.destination, out var dest, 3f, NavMesh.AllAreas))
+                if (NavMesh.SamplePosition(navDest, out var dest, 3f, NavMesh.AllAreas))
                     Agent.SetDestination(dest.position);
             }
 
@@ -482,11 +536,109 @@ namespace LR2.AI
             }
         }
 
-        // ------------------------------------------------------------------ aim (human mouse deltas + realistic recoil pull-down)
-        private void UpdateAim(ref SoldierInput input, Vector3 worldMove, float now, float dt)
+        private float HumanProfileFitted(float u, float a, float b)
+        {
+            if (Mathf.Approximately(a, HumanBetaA) && Mathf.Approximately(b, HumanBetaB)) return HumanProfile(u);
+            if (_fittedCdf == null || !Mathf.Approximately(a, _fittedCdfA) || !Mathf.Approximately(b, _fittedCdfB))
+            {
+                _fittedCdfA = a; _fittedCdfB = b;
+                const int n = 128;
+                var c = new float[n + 1];
+                float acc = 0f;
+                for (int i = 1; i <= n; i++)
+                {
+                    float x = (i - 0.5f) / n;
+                    acc += Mathf.Pow(x, Mathf.Max(1.05f, a) - 1f) * Mathf.Pow(1f - x, Mathf.Max(1.05f, b) - 1f);
+                    c[i] = acc;
+                }
+                if (acc > 1e-6f) for (int i = 1; i <= n; i++) c[i] /= acc;
+                _fittedCdf = c;
+            }
+            float f = Mathf.Clamp01(u) * (_fittedCdf.Length - 1);
+            int k = Mathf.Min((int)f, _fittedCdf.Length - 2);
+            return Mathf.Lerp(_fittedCdf[k], _fittedCdf[k + 1], f - k);
+        }
+
+        private void UpdateAimDumb(ref SoldierInput input, Vector3 worldMove, float now, float dt)
         {
             var bb = Blackboard;
             var d = ActiveDifficulty;
+            Vector3 eye = Soldier.AimOrigin;
+            Combatant target = _intent.target != null ? _intent.target : bb.target;
+            bool engaging = _intent.goal == BotGoal.Engage || (bb.targetVisible && target != null && _intent.allowFire);
+            int tier = Mathf.Clamp(TierIndex, 0, 3);
+
+            // Fixed constant reaction timer (no peripheral eccentricity curve, no 125ms velocity lead)
+            if (bb.targetVisible && target != null)
+            {
+                if (target != _lastTarget || (!_wasVisible && now - _lostSightTime > 1.5f))
+                {
+                    float[] fixedReact = { 0.50f, 0.36f, 0.28f, 0.24f };
+                    _reactionReadyAt = now + fixedReact[tier];
+                    _useHead = d != null && Random.value < d.headshotChance;
+                    _lastTarget = target;
+                    _dumbNextErrorAt = 0f;
+                }
+            }
+            if (_wasVisible && !bb.targetVisible) _lostSightTime = now;
+            _wasVisible = bb.targetVisible;
+
+            Vector3 lookPoint;
+            bool hasLook = true;
+            if (engaging && target != null && bb.targetVisible)
+                lookPoint = _useHead ? target.HeadPosition : target.ChestPosition;
+            else if (_intent.hasLookPoint)
+                lookPoint = new Vector3(_intent.lookPoint.x, eye.y - 0.1f, _intent.lookPoint.z);
+            else if (Agent != null && Agent.hasPath && Agent.path != null && Agent.path.corners != null && Agent.path.corners.Length >= 2)
+                lookPoint = new Vector3(Agent.path.corners[1].x, eye.y - 0.1f, Agent.path.corners[1].z);
+            else if (worldMove.sqrMagnitude > 0.01f)
+                lookPoint = eye + worldMove * 6f;
+            else
+            {
+                lookPoint = eye + transform.forward * 6f;
+                hasLook = false;
+            }
+
+            Vector2 desired = LR2Math.DirectionToYawPitch(lookPoint - eye);
+            if (!hasLook) desired.y = 0f;
+
+            // Rigid discrete cone jump every 0.62s calibrated per difficulty tier (no Perlin tremor, no wrist bow, no bell curve)
+            if (now >= _dumbNextErrorAt)
+            {
+                _dumbNextErrorAt = now + 0.62f;
+                float[] coneDeg = { 3.45f, 2.55f, 2.20f, 1.95f };
+                float ang = Random.value * Mathf.PI * 2f;
+                float rad = Mathf.Sqrt(Random.value) * coneDeg[tier];
+                _dumbErr = new Vector2(Mathf.Cos(ang) * rad, Mathf.Sin(ang) * rad);
+            }
+            if (engaging && bb.targetVisible) desired += _dumbErr;
+
+            float[] slewDegPerSec = { 145f, 190f, 225f, 260f };
+            float maxStep = slewDegPerSec[tier] * dt;
+            float dy = Mathf.Clamp(Mathf.DeltaAngle(Soldier.Yaw, desired.x), -maxStep, maxStep);
+            float dp = Mathf.Clamp(desired.y - Soldier.Pitch, -maxStep, maxStep);
+            _aimYaw = Soldier.Yaw;
+            _aimPitch = Soldier.Pitch;
+            _flickActive = false;
+            input.absoluteLook = false;
+            input.look = new Vector2(dy, dp);
+        }
+
+        // ------------------------------------------------------------------ aim (human mouse deltas + realistic recoil pull-down)
+        private void UpdateAim(ref SoldierInput input, Vector3 worldMove, float now, float dt)
+        {
+            if (Archetype == BotArchetype.DumbRobotic)
+            {
+                UpdateAimDumb(ref input, worldMove, now, dt);
+                return;
+            }
+
+            var bb = Blackboard;
+            var d = ActiveDifficulty;
+            bool fitted = Archetype == BotArchetype.HumanFitted;
+            HumanBehaviorProfile fit = fitted ? HumanBehaviorProfileLoader.Current : null;
+            float fitSkill = fit != null ? fit.TierSkill(TierIndex) : 1f;
+
             Vector3 eye = Soldier.AimOrigin;
             Combatant target = _intent.target != null ? _intent.target : bb.target;
             bool engaging = _intent.goal == BotGoal.Engage || (bb.targetVisible && target != null && _intent.allowFire);
@@ -501,7 +653,9 @@ namespace LR2.AI
             {
                 if (target != _lastTarget || (!_wasVisible && now - _lostSightTime > 1.5f))
                 {
-                    float baseReact = d != null ? d.RandomReaction() : 0.4f;
+                    float baseReact = fitted && fit != null
+                        ? Mathf.Clamp(Mathf.Exp(fit.reactMu + fit.reactSigma * Gauss()) / fitSkill, 0.14f, 0.95f)
+                        : (d != null ? d.RandomReaction() : 0.4f);
                     float eccDeg = Vector3.Angle(Soldier.AimDirection, (target.ChestPosition - eye));
                     float eccFactor = Mathf.Lerp(0.76f, 1.58f, Mathf.Clamp01(eccDeg / 115f));
                     _reactionReadyAt = now + baseReact * eccFactor;
@@ -621,10 +775,6 @@ namespace LR2.AI
             }
 
             // Human biomechanical aiming (pure input.look mouse deltas, NEVER absoluteLook teleport):
-            // 1. Meyer Optimized Submovement + Flash-Hogan Minimum Jerk + Fitts's Law for large saccadic flicks (> 10.5 deg)
-            // 2. Empirical ESTA/CSKnow/Aim Lab anisotropic endpoint covariance (sigma_along ~ 2.27 * sigma_perp, primary undershoot bias)
-            // 3. Harris-Wolpert Signal-Dependent Noise (variance proportional to motor angular speed, 1.55:1 yaw/pitch wrist/arm ratio)
-            // 4. Human recoil pull-down after 65-135ms cognitive latency
             _aimYaw = Soldier.Yaw;
             _aimPitch = Soldier.Pitch;
             float w = d != null ? d.aimSpeed : 6f;
@@ -641,7 +791,9 @@ namespace LR2.AI
                 float skillScale = Mathf.Clamp(7.5f / Mathf.Max(2.5f, w), 0.62f, 1.55f);
                 _flickCasual = !LegacyAim && !(engaging && bb.targetVisible && target != null); // looking around, not acquiring someone
                 _flickDuration = _flickCasual ? HumanLookDuration(angularDist, w)
-                                              : Mathf.Clamp((0.065f + 0.042f * id) * skillScale, 0.085f, 0.38f);
+                                              : (fitted && fit != null
+                                                  ? Mathf.Clamp((fit.fittsA + fit.fittsB * id) / fitSkill, 0.075f, 0.42f)
+                                                  : Mathf.Clamp((0.065f + 0.042f * id) * skillScale, 0.085f, 0.38f));
                 _flickStartTime = now;
                 _flickStartYaw = _aimYaw;
                 _flickStartPitch = _aimPitch;
@@ -653,10 +805,12 @@ namespace LR2.AI
                 float nx = -uy;
                 float ny = ux;
                 float composure = d != null ? d.composure : 0.25f;
-                float sdnSigma = Mathf.Clamp(angularDist * (0.045f + 0.045f * _combatStress * (1f - composure)) * skillScale, 0.35f, 6.5f);
+                float alongCoef = fitted && fit != null ? fit.sigmaAlongFactor / fitSkill : 0.045f * skillScale;
+                float sdnSigma = Mathf.Clamp(angularDist * (alongCoef + 0.045f * _combatStress * (1f - composure)), 0.35f, 6.5f);
                 float muAlong = Mathf.Lerp(-0.075f, 0.035f, _combatStress) * angularDist;
                 // B89: now and then a fast flick sails past the target and corrects back (more often under stress)
-                float overChance = (d != null ? d.overshootChance : 0.16f) * Mathf.Lerp(1f, 1.4f, _combatStress);
+                float overBase = fitted && fit != null ? fit.overshootRate : (d != null ? d.overshootChance : 0.16f);
+                float overChance = overBase * Mathf.Lerp(1f, 1.4f, _combatStress);
                 _flickOvershoot = angularDist > 14f && Random.value < overChance;
                 if (_flickOvershoot)
                 {
@@ -666,8 +820,9 @@ namespace LR2.AI
                 // B89: a pro may already pull the trigger as the flick arrives (only onto a visible target)
                 _flickPreFire = engaging && bb.targetVisible && target != null && d != null && Random.value < d.preFireChance;
                 _statFlicks++;
+                float perpRatio = fitted && fit != null ? fit.sigmaPerpRatio : 0.44f;
                 float epsAlong = muAlong + ((Random.value + Random.value) - 1f) * sdnSigma;
-                float epsPerp = ((Random.value + Random.value) - 1f) * (0.44f * sdnSigma);
+                float epsPerp = ((Random.value + Random.value) - 1f) * (perpRatio * sdnSigma);
                 float endErrYaw = (ux * epsAlong + nx * epsPerp) * 1.08f;
                 float endErrPitch = (uy * epsAlong + ny * epsPerp) * 0.70f;
                 _flickGoalYaw = _aimYaw + rawYawErr + endErrYaw;
@@ -681,68 +836,59 @@ namespace LR2.AI
                     _flickOvershoot = false;
                     _flickPreFire = false;
                 }
-                // B118: the path bows sideways (half-normal, median ~8 % of the distance for casual looks, half that in a fight)
-                // the bow is a small wrist arc, never a swing: capped at 2 deg (user 11-19: the gun "keeps on going up then rotating")
                 _flickCurve = LegacyAim ? 0f : Mathf.Min(2f, angularDist * Mathf.Min(Mathf.Abs(Gauss()) * (_flickCasual ? 0.1f : 0.05f), _flickCasual ? 0.25f : 0.12f))
                               * (Random.value < 0.5f ? -1f : 1f);
                 _flickPerpYaw = nx;
                 _flickPerpPitch = ny;
                 _flickActive = true;
-                _nextFlickAllowedAt = now + _flickDuration + Random.Range(0.11f, 0.165f); // human visual feedback refractory period
+                _nextFlickAllowedAt = now + _flickDuration + Random.Range(0.11f, 0.165f);
             }
 
             float yawStepDeg, pitchStepDeg;
-            // B118: a casual look never delays a reaction: an enemy in sight ends it at once (a combat flick takes over)
             if (_flickActive && _flickCasual && engaging && bb.targetVisible && target != null) { _flickActive = false; _nextFlickAllowedAt = now; }
             if (engaging) _lookHoldUntil = 0f;
             if (_flickActive)
             {
                 float u = Mathf.Clamp01((now - _flickStartTime) / Mathf.Max(0.05f, _flickDuration));
-                // B118: human speed profile fitted to real mouse movements (peak at ~1/3, long deceleration), replacing the
-                // symmetric Flash & Hogan minimum-jerk quintic; the path bows sideways like a wrist arc
-                float s = LegacyAim ? u * u * u * (10f + u * (-15f + 6f * u)) : HumanProfile(u);
+                float s = LegacyAim ? u * u * u * (10f + u * (-15f + 6f * u))
+                        : (fitted && fit != null ? HumanProfileFitted(u, fit.betaA, fit.betaB) : HumanProfile(u));
                 float bow = _flickCurve * Mathf.Sin(Mathf.PI * s);
                 float subYaw = Mathf.LerpAngle(_flickStartYaw, _flickGoalYaw, s) + _flickPerpYaw * bow;
                 float subPitch = Mathf.Lerp(_flickStartPitch, _flickGoalPitch, s) + _flickPerpPitch * bow * 0.35f;
                 yawStepDeg = Mathf.DeltaAngle(_aimYaw, subYaw);
                 pitchStepDeg = subPitch - _aimPitch;
 
-                // Synchronize spring velocity so handoff from ballistic flick into closed-loop tracking has zero jerk spike
                 _yawVel = yawStepDeg / Mathf.Max(0.001f, dt);
                 _pitchVel = pitchStepDeg / Mathf.Max(0.001f, dt);
 
                 _flickProgress = u;
-                // an overshooting flick runs to its end point (passing through the target on the way)
                 if (u >= 1f || (!_flickOvershoot && angularDist < 2.2f))
                 {
                     _flickActive = false;
-                    // B118: 71 % of human movements pause 60-140 ms before the corrective submovement
                     if (_flickCasual && Random.value < 0.71f) _lookHoldUntil = now + Random.Range(0.06f, 0.14f);
                 }
             }
             else
             {
-                // Closed-loop foveal tracking + corrective submovement + Harris-Wolpert Signal-Dependent Noise
                 float zeta = engaging ? 0.80f : 1f;
                 float yawErr = rawYawErr;
                 float pitchErr = rawPitchErr;
 
-                // Human recoil pull-down delay & continuous-spray compensation fatigue
                 if (pitchErr > 0.2f && now < _recoilReactAt)
                     pitchErr *= 0.12f;
                 else if (pitchErr > 0.3f && _sprayHeat > 0.1f)
                 {
-                    float compEfficiency = d != null ? Mathf.Clamp(d.aimSpeed / 10.5f, 0.55f, 0.92f) : 0.74f;
+                    float baseComp = fitted && fit != null ? fit.recoilCompGain * fitSkill : (d != null ? d.aimSpeed / 10.5f : 0.74f);
+                    float compEfficiency = Mathf.Clamp(baseComp, 0.50f, 0.94f);
                     pitchErr *= Mathf.Clamp(compEfficiency * (1f - _sprayHeat * 0.22f), 0.45f, 0.94f);
                 }
 
-                // Harris-Wolpert SDN: high motor command magnitude amplifies execution tremor with 1.55:1 wrist/arm ratio
                 float cmdMag = Mathf.Sqrt(yawErr * yawErr + pitchErr * pitchErr);
                 float sdnAmp = Mathf.Min(1.6f, cmdMag * 0.032f * (0.55f + _combatStress * 0.65f));
                 yawErr += Mathf.Sin(_sdnPhase * 1.37f + _noiseSeed) * sdnAmp * 1.15f;
                 pitchErr += Mathf.Cos(_sdnPhase * 1.71f + _noiseSeed) * sdnAmp * 0.74f;
 
-                if (now < _lookHoldUntil && !engaging) { yawErr = 0f; pitchErr = 0f; _yawVel = 0f; _pitchVel = 0f; } // the dwell
+                if (now < _lookHoldUntil && !engaging) { yawErr = 0f; pitchErr = 0f; _yawVel = 0f; _pitchVel = 0f; }
                 _yawVel += (w * w * yawErr - 2f * zeta * w * _yawVel) * dt;
                 _pitchVel += (w * w * pitchErr - 2f * zeta * w * _pitchVel) * dt;
                 _yawVel = Mathf.Clamp(_yawVel, -900f, 900f);
@@ -767,8 +913,13 @@ namespace LR2.AI
             Combatant target = bb.target;
             float dist = bb.targetDistance;
             bool visible = bb.targetVisible && target != null;
+            bool dumb = Archetype == BotArchetype.DumbRobotic;
+            bool fitted = Archetype == BotArchetype.HumanFitted;
+            HumanBehaviorProfile fit = fitted ? HumanBehaviorProfileLoader.Current : null;
+            int tier = Mathf.Clamp(TierIndex, 0, 3);
 
             // Reload discipline (top off bot reserve if completely dry so long matches stay active).
+            float reloadFrac = fitted && fit != null ? fit.reloadAmmoFrac : 0.35f;
             if (gun != null && !gun.IsReloading)
             {
                 if (gun.AmmoInMagazine <= 0 && gun.ReserveAmmo <= 0 && gun.Definition != null)
@@ -777,64 +928,116 @@ namespace LR2.AI
                     input.reload = true;
                 }
                 else if (gun.AmmoInMagazine <= 0 && gun.ReserveAmmo > 0) input.reload = true;
-                else if (!visible && bb.ammo01 < 0.35f && bb.TimeSinceSeen > 1.5f && gun.ReserveAmmo > 0) input.reload = true;
+                else if (!visible && bb.ammo01 < reloadFrac && bb.TimeSinceSeen > 1.5f && gun.ReserveAmmo > 0) input.reload = true;
             }
+
+            if (!dumb && _intent.throwGrenade) input.grenade = true;
+            if (_intent.forceReload && gun != null && !gun.IsReloading && gun.AmmoInMagazine < gun.MagazineSize && gun.ReserveAmmo > 0)
+                input.reload = true;
 
             bool fire = false;
             if (visible && _intent.allowFire && gun != null && !gun.IsReloading && now >= _reactionReadyAt)
             {
                 Vector3 toTarget = (target.ChestPosition - Soldier.AimOrigin);
                 float angle = Vector3.Angle(Soldier.AimDirection, toTarget);
-                float tolerance = Mathf.Max(d != null ? d.fireTolerance : 3.5f, Mathf.Atan2(0.45f, Mathf.Max(dist, 0.5f)) * Mathf.Rad2Deg);
-                // B89 flick pre-fire: the shot is timed to the arrival of the flick, before the aim has settled on target
-                bool flickShot = _flickActive && _flickPreFire && _flickProgress >= 0.72f
+                float tolerance = dumb ? 4.2f : Mathf.Max(d != null ? d.fireTolerance : 3.5f, Mathf.Atan2(0.45f, Mathf.Max(dist, 0.5f)) * Mathf.Rad2Deg);
+                bool flickShot = !dumb && _flickActive && _flickPreFire && _flickProgress >= 0.72f
                     && Vector3.Angle(Quaternion.Euler(_flickGoalPitch, _flickGoalYaw, 0f) * Vector3.forward, toTarget) <= tolerance * 1.5f;
                 if (flickShot && _burstShotsLeft <= 0) _statFlickPreFires++;
                 if (angle <= tolerance || flickShot)
                 {
-                    if (dist < 13f) fire = true; // full auto up close
-                    else if (now >= _burstPauseUntil)
+                    if (dumb)
                     {
-                        if (_burstShotsLeft <= 0)
-                            _burstShotsLeft = d != null ? Random.Range(d.burstSize.x, d.burstSize.y + 1) : 4;
-                        fire = true;
+                        if (now >= _burstPauseUntil)
+                        {
+                            if (_burstShotsLeft <= 0)
+                            {
+                                int[] dBurst = { 4, 5, 5, 6 };
+                                _burstShotsLeft = dBurst[tier];
+                            }
+                            fire = true;
+                        }
+                    }
+                    else
+                    {
+                        bool allowContinuous = _intent.burstStyle == BotBurstStyle.FullAuto ? dist < 24f : (_intent.burstStyle == BotBurstStyle.Auto && dist < 13f);
+                        if (allowContinuous) fire = true;
+                        else if (now >= _burstPauseUntil)
+                        {
+                            if (_burstShotsLeft <= 0)
+                            {
+                                int baseBurst = fitted && fit != null ? Mathf.Max(2, Mathf.RoundToInt(fit.burstMean))
+                                              : (d != null ? Random.Range(d.burstSize.x, d.burstSize.y + 1) : 4);
+                                _burstShotsLeft = _intent.burstStyle == BotBurstStyle.Tap ? 2
+                                                : _intent.burstStyle == BotBurstStyle.Burst ? Mathf.Clamp(baseBurst, 3, 5)
+                                                : baseBurst;
+                            }
+                            fire = true;
+                        }
                     }
                 }
             }
-            else if (!visible && _intent.allowFire && target != null && gun != null && !gun.IsReloading &&
+            else if (!dumb && !visible && _intent.allowFire && target != null && gun != null && !gun.IsReloading &&
                      bb.TimeSinceSeen < 0.85f && bb.ammo01 > 0.35f && d != null && d.aggression > 0.45f &&
                      now >= _burstPauseUntil && Vector3.Angle(Soldier.AimDirection, (bb.targetLastKnown + Vector3.up * 1.3f) - Soldier.AimOrigin) < 8f)
             {
-                // Brief suppressive burst on the corner where the target just ducked into cover
                 if (_burstShotsLeft <= 0) _burstShotsLeft = 2;
                 fire = true;
             }
-            else if (!visible && _intent.allowFire && gun != null && !gun.IsReloading && d != null && d.preFireChance > 0f
+            else if (!dumb && !visible && _intent.allowFire && gun != null && !gun.IsReloading && d != null && d.preFireChance > 0f
                      && bb.ammo01 > 0.3f && now >= _burstPauseUntil && PreFireExpectedSpot(bb, d, now))
             {
-                // B89 corner pre-fire: a short burst at the spot where the target is expected, as that spot comes into view
                 if (_burstShotsLeft <= 0) _burstShotsLeft = Random.Range(2, 4);
                 fire = true;
             }
             input.fire = fire;
 
-            // ADS beyond close range, or when pre-aiming a corner during a hunt or recently lost cover edge.
-            bool wantAds = (visible && dist > 9f) ||
+            if (dumb)
+            {
+                _strafeDir = 0f;
+                input.aim = visible && dist > 12f;
+                return;
+            }
+
+            float adsMinDist = fitted && fit != null ? fit.adsRangeMeters : 9f;
+            bool wantAds = _intent.forceAds ||
+                           (visible && dist > adsMinDist) ||
                            (_intent.goal == BotGoal.Hunt && dist < 25f && dist > 6f) ||
                            (!visible && target != null && bb.TimeSinceSeen < 1.8f && dist < 28f);
-            input.aim = wantAds && !input.sprint;
+            bool wantCrouch = _intent.crouch;
+            bool wantProne = _intent.prone;
 
-            // Combat strafing (ADAD) and range keeping.
+            // Combat strafing (ADAD) and Tactical Micro peek styles.
             if (_intent.goal == BotGoal.Engage && visible)
             {
-                if (now >= _nextStrafeSwitch)
+                if (_intent.peekStyle == BotPeekStyle.Jiggle)
                 {
-                    float chance = d != null ? d.strafeChance : 0.4f;
-                    _strafeDir = Random.value < chance ? (Random.value < 0.5f ? -1f : 1f) : 0f;
-                    _nextStrafeSwitch = now + (d != null ? Random.Range(d.strafeInterval.x, d.strafeInterval.y) : 0.8f);
+                    _strafeDir = Mathf.Sin(now * 4.5f) >= 0f ? 1f : -1f;
+                    worldMove = worldMove * 0.45f + transform.right * _strafeDir * 0.95f;
                 }
-                Vector3 right = transform.right;
-                worldMove = worldMove * 0.65f + right * _strafeDir * 0.85f;
+                else if (_intent.peekStyle == BotPeekStyle.HoldAngle)
+                {
+                    _strafeDir = 0f;
+                    worldMove *= 0.15f;
+                    wantAds = true;
+                }
+                else if (_intent.peekStyle == BotPeekStyle.WideSwing)
+                {
+                    _strafeDir = _intent.overrideStrafeDir != 0f ? Mathf.Sign(_intent.overrideStrafeDir) : (_strafeDir != 0f ? _strafeDir : 1f);
+                    worldMove = worldMove * 0.70f + transform.right * _strafeDir * 1.05f;
+                }
+                else
+                {
+                    if (now >= _nextStrafeSwitch)
+                    {
+                        float chance = d != null ? d.strafeChance : 0.4f;
+                        _strafeDir = Random.value < chance ? (Random.value < 0.5f ? -1f : 1f) : 0f;
+                        float baseInterval = fitted && fit != null ? (1f / Mathf.Max(0.25f, fit.strafeSwitchHz))
+                                           : (d != null ? Random.Range(d.strafeInterval.x, d.strafeInterval.y) : 0.8f);
+                        _nextStrafeSwitch = now + baseInterval * Random.Range(0.75f, 1.25f);
+                    }
+                    worldMove = worldMove * 0.65f + transform.right * _strafeDir * 0.85f;
+                }
 
                 // Slide into close fights (veterans).
                 if (!_slideUsed && d != null && dist < 14f && dist > 6f && Soldier.IsSprinting && Random.value < d.slideChance)
@@ -852,9 +1055,45 @@ namespace LR2.AI
                 if (!visible) _slideUsed = false;
             }
 
+            // B151 Avatar Pilot 60Hz Action-Chunk Executor
+            if (TryGetActiveMicroStep(now, out var step))
+            {
+                switch (step.kind)
+                {
+                    case BotMicroActionKind.StrafeFire:
+                        worldMove = worldMove * 0.35f + transform.right * (step.strafeDir != 0f ? step.strafeDir : 1f) * 0.95f;
+                        if (step.ads) wantAds = true;
+                        break;
+                    case BotMicroActionKind.CrouchPeek:
+                        wantCrouch = Mathf.Sin(now * 3.8f) < 0.25f;
+                        worldMove += transform.right * (step.strafeDir != 0f ? step.strafeDir : 1f) * 0.65f;
+                        if (step.ads) wantAds = true;
+                        break;
+                    case BotMicroActionKind.HoldAngle:
+                        wantCrouch = true;
+                        worldMove = Vector3.zero;
+                        wantAds = true;
+                        break;
+                    case BotMicroActionKind.ProneAmbush:
+                        wantProne = true;
+                        worldMove = Vector3.zero;
+                        wantAds = true;
+                        break;
+                    case BotMicroActionKind.ThrowFrag:
+                        if (!_microStepActionFired) { _microStepActionFired = true; input.grenade = true; }
+                        break;
+                    case BotMicroActionKind.FallBackReload:
+                        worldMove = -transform.forward * 0.85f;
+                        if (gun != null && !gun.IsReloading && gun.AmmoInMagazine < gun.MagazineSize && gun.ReserveAmmo > 0)
+                            input.reload = true;
+                        break;
+                }
+            }
+
+            input.aim = wantAds && !input.sprint;
+
             // Crouch behind waist-high cover, stand up to peek/shoot.
-            bool wantCrouch = _intent.crouch;
-            if (wantCrouch && visible)
+            if (wantCrouch && visible && !TryGetActiveMicroStep(now, out _))
             {
                 if (now >= _nextPeekToggle)
                 {
@@ -863,11 +1102,16 @@ namespace LR2.AI
                 }
                 wantCrouch = !_peekStanding;
             }
-            else if (!wantCrouch && visible && d != null && dist > 15f && Random.value < d.crouchPeekChance * Time.deltaTime)
+            else if (!wantCrouch && !wantProne && visible && d != null && dist > 15f && Random.value < d.crouchPeekChance * Time.deltaTime)
             {
                 wantCrouch = true; // occasional crouch-spot while trading at range
             }
-            if (wantCrouch != Soldier.IsCrouching && now - _lastCrouchToggle > 0.45f && !Soldier.IsSprinting && !input.crouch)
+            if (wantProne != Soldier.IsProning && now - _lastProneToggle > 0.65f && !Soldier.IsSprinting && !input.prone)
+            {
+                input.prone = true;
+                _lastProneToggle = now;
+            }
+            if (!wantProne && wantCrouch != Soldier.IsCrouching && now - _lastCrouchToggle > 0.45f && !Soldier.IsSprinting && !input.crouch)
             {
                 input.crouch = true;
                 _lastCrouchToggle = now;
@@ -1033,17 +1277,34 @@ namespace LR2.AI
         private void OnGunFired()
         {
             var d = ActiveDifficulty;
+            bool dumb = Archetype == BotArchetype.DumbRobotic;
+            bool fitted = Archetype == BotArchetype.HumanFitted;
+            HumanBehaviorProfile fit = fitted ? HumanBehaviorProfileLoader.Current : null;
+            int tier = Mathf.Clamp(TierIndex, 0, 3);
+
             // Track sustained fire recoil stress & reaction lag (~65-135ms) before human hand starts pulling mouse down
             bool firstShotOfBurst = _sprayHeat < 0.08f;
             _sprayHeat = Mathf.Clamp01(_sprayHeat + (Soldier.IsAiming ? 0.13f : 0.19f));
-            if (firstShotOfBurst)
-                _recoilReactAt = Time.time + Random.Range(0.065f, 0.135f);
+            if (firstShotOfBurst && !dumb)
+            {
+                float baseLag = fitted && fit != null ? fit.recoilLagSec : 0.095f;
+                _recoilReactAt = Time.time + baseLag * Random.Range(0.70f, 1.35f);
+            }
 
-            if (Blackboard.targetDistance < 13f && _sprayHeat < 0.72f) return;
+            if (!dumb && Blackboard.targetDistance < 13f && _sprayHeat < 0.72f) return;
             _burstShotsLeft--;
             if (_burstShotsLeft <= 0)
             {
-                _burstPauseUntil = Time.time + (d != null ? Random.Range(d.burstPause.x, d.burstPause.y) : 0.3f);
+                if (dumb)
+                {
+                    float[] dumbPause = { 0.34f, 0.26f, 0.22f, 0.20f };
+                    _burstPauseUntil = Time.time + dumbPause[tier];
+                }
+                else
+                {
+                    float pause = fitted && fit != null ? fit.burstPauseSec : (d != null ? Random.Range(d.burstPause.x, d.burstPause.y) : 0.3f);
+                    _burstPauseUntil = Time.time + pause;
+                }
             }
         }
 

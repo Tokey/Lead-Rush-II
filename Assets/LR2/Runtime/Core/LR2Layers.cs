@@ -3,7 +3,7 @@ using UnityEngine;
 namespace LR2.Core
 {
     /// <summary>
-    /// Physics layer layout for LeadRush 2. Indices are fixed (see ProjectSettings/TagManager.asset) so code keeps
+    /// Physics layer layout for Lead Rush II. Indices are fixed (see ProjectSettings/TagManager.asset) so code keeps
     /// working even if a layer name is edited. The collision matrix is also enforced at runtime.
     /// </summary>
     public static class LR2Layers

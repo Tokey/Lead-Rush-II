@@ -590,29 +590,59 @@ namespace LR2.EditorTools
 
             var wa = LoadOrCreate<WeaponAudioProfile>(DataDir + "/Weapons/WA_AK12.asset");
             FillSoundSets(wa, audio + "/Weapons/AK12");
-            wa.magOutAt = 0.13f; wa.magInAt = 0.43f; wa.boltAt = 0.63f; wa.emptyReloadEndAt = 0.78f;
-            if (wa.firePlayerSuppressed != null) wa.firePlayerSuppressed.volume = 0.78f;
-            if (wa.fireNpcSuppressed != null) wa.fireNpcSuppressed.volume = 0.62f;
-            if (wa.fireTailSuppressed != null) wa.fireTailSuppressed.volume = 0.34f;
-            if (wa.fireTailInteriorSuppressed != null) wa.fireTailInteriorSuppressed.volume = 0.44f;
+            wa.magOutAt = 0.13f; wa.magInAt = 0.43f; wa.boltAt = 0.63f; wa.emptyReloadEndAt = 0.82f;
+            if (wa.firePlayerSuppressed != null) wa.firePlayerSuppressed.volume = 1.0f;
+            if (wa.fireNpcSuppressed != null) wa.fireNpcSuppressed.volume = 0.86f;
+            if (wa.fireTailSuppressed != null) wa.fireTailSuppressed.volume = 0.56f;
+            if (wa.fireTailInteriorSuppressed != null) wa.fireTailInteriorSuppressed.volume = 0.64f;
             EditorUtility.SetDirty(wa);
             foreach (var variant in new[] { "M4", "FAL", "Pistol" })
             {
                 if (!AssetDatabase.IsValidFolder(audio + "/Weapons/" + variant)) continue;
                 var wv = LoadOrCreate<WeaponAudioProfile>(DataDir + $"/Weapons/WA_{variant}.asset");
                 EditorUtility.CopySerialized(wa, wv);
+                // B143: Clear AK12 shot/tail/handling arrays before filling variant clips so M4/FAL/Pistol never inherit AK-47 NPC bands.
+                foreach (var set in new[]
+                {
+                    wv.firePlayer, wv.fireFirstShot, wv.fireMech, wv.fireMechAds, wv.fireTail, wv.fireTailInterior,
+                    wv.firePlayerSuppressed, wv.fireNpcSuppressed, wv.fireTailSuppressed, wv.fireTailInteriorSuppressed,
+                    wv.fireNpcClose, wv.fireNpcMed, wv.fireNpcFar, wv.fireNpcDistant,
+                    wv.dryFire, wv.magOut, wv.magIn, wv.boltCharge, wv.fireModeSwitch
+                })
+                {
+                    if (set != null) set.clips = System.Array.Empty<AudioClip>();
+                }
                 FillSoundSets(wv, audio + "/Weapons/" + variant);
+
+                // Backfill missing variant bands from THIS weapon's own recordings (never from AK12!).
+                AudioClip[] ownCore = wv.firePlayer.IsValid ? wv.firePlayer.clips : (wv.fireNpcClose.IsValid ? wv.fireNpcClose.clips : System.Array.Empty<AudioClip>());
+                AudioClip[] ownNpc = wv.fireNpcClose.IsValid ? wv.fireNpcClose.clips : ownCore;
+                if (!wv.firePlayer.IsValid && ownNpc.Length > 0) wv.firePlayer.clips = ownNpc;
+                if (!wv.fireFirstShot.IsValid && ownCore.Length > 0) wv.fireFirstShot.clips = ownCore;
+                if (!wv.fireNpcClose.IsValid && ownCore.Length > 0) wv.fireNpcClose.clips = ownCore;
+                if (!wv.fireNpcMed.IsValid && ownNpc.Length > 0) wv.fireNpcMed.clips = ownNpc;
+                if (!wv.fireNpcFar.IsValid && ownNpc.Length > 0) wv.fireNpcFar.clips = ownNpc;
+                if (!wv.fireNpcDistant.IsValid && ownNpc.Length > 0) wv.fireNpcDistant.clips = ownNpc;
+                if (!wv.fireMech.IsValid && wa.fireMech.IsValid) wv.fireMech.clips = wa.fireMech.clips;
+                if (!wv.fireMechAds.IsValid && wa.fireMechAds.IsValid) wv.fireMechAds.clips = wa.fireMechAds.clips;
+                if (!wv.fireTail.IsValid && wa.fireTail.IsValid) wv.fireTail.clips = wa.fireTail.clips;
+                if (!wv.fireTailInterior.IsValid && wa.fireTailInterior.IsValid) wv.fireTailInterior.clips = wa.fireTailInterior.clips;
+                if (!wv.dryFire.IsValid && wa.dryFire.IsValid) wv.dryFire.clips = wa.dryFire.clips;
+                if (!wv.fireModeSwitch.IsValid && wa.fireModeSwitch.IsValid) wv.fireModeSwitch.clips = wa.fireModeSwitch.clips;
+
                 if (variant == "M4")
                 {
-                    wv.magOutAt = 0.14f; wv.magInAt = 0.47f; wv.boltAt = 0.66f; wv.emptyReloadEndAt = 0.82f;
+                    wv.magOutAt = 0.14f; wv.magInAt = 0.47f; wv.boltAt = 0.66f; wv.emptyReloadEndAt = 0.86f;
+                    if (wv.firePlayerSuppressed != null) wv.firePlayerSuppressed.pitch = new Vector2(0.92f, 0.99f);
                 }
                 else if (variant == "FAL")
                 {
-                    wv.magOutAt = 0.17f; wv.magInAt = 0.55f; wv.boltAt = 0.74f; wv.emptyReloadEndAt = 0.87f;
+                    wv.magOutAt = 0.17f; wv.magInAt = 0.55f; wv.boltAt = 0.74f; wv.emptyReloadEndAt = 0.90f;
                 }
                 else if (variant == "Pistol")
                 {
-                    wv.magOutAt = 0.16f; wv.magInAt = 0.46f; wv.boltAt = 0.64f; wv.emptyReloadEndAt = 0.76f;
+                    wv.magOutAt = 0.16f; wv.magInAt = 0.46f; wv.boltAt = 0.64f; wv.emptyReloadEndAt = 0.81f;
+                    if (wv.firePlayerSuppressed.IsValid) wv.fireNpcSuppressed.clips = wv.firePlayerSuppressed.clips;
                     // suppressed sidearm: no big rifle tails, much shorter reach
                     wv.fireTail.volume = 0.15f;
                     wv.fireTailInterior.volume = 0.2f;

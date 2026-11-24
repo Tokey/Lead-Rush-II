@@ -1,6 +1,6 @@
 # Third-party assets (not in this public repository)
 
-LeadRush 2 uses paid or licensed Unity Asset Store content that cannot be redistributed publicly, so it is
+Lead Rush II uses paid or licensed Unity Asset Store content that cannot be redistributed publicly, so it is
 excluded by `.gitignore`. To open the project, import these packages into the listed folders (same names and
 paths, so existing GUID references resolve), then run **LR2 > Build Everything** in Unity 6000.5.0f1 (HDRP 17.5).
 

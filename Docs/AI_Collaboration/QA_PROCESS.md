@@ -1,4 +1,4 @@
-# How the AI agents test LeadRush 2
+# How the AI agents test Lead Rush II
 
 The agents cannot watch a screen the way a person does. They test the game by **running it and reading what it writes**:
 numbers in a report, log lines, CSV files and screenshots. This page explains every tool, walks through one full test cycle,

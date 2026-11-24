@@ -277,8 +277,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: LR2.Runtime::LR2.Weapons.LR2Grenade
   fuse: 2.8
-  lethalRadius: 3.2
-  maxRadius: 8
-  maxDamage: 160
-  force: 90
-  audibleRadius: 90
+  lethalRadius: 4.2
+  maxRadius: 10.5
+  maxDamage: 190
+  force: 140
+  audibleRadius: 140

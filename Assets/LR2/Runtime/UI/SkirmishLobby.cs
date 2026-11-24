@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using LR2.AI;
 using LR2.Combat;
 using LR2.Core;
 using LR2.Game;
@@ -22,10 +23,15 @@ namespace LR2.UI
         public CanvasGroup Group { get; private set; }
         public Action OnBack, OnOptions, OnRules;
         public Action<GameModeType> OnStart;
+        public Action<ExperimentSessionConfig> OnStartExperiment;
         /// <summary>Mode changed: the menu background cuts to a matching shot.</summary>
         public Action<GameModeType> OnModeChanged;
 
         private UITheme _theme;
+        private GameObject _skirmishRoot;
+        private ExperimentsTabView _experimentsView;
+        private Button _skirmishTabBtn, _experimentsTabBtn;
+        private bool _inExperiments;
         private RectTransform _content;
         private ScrollRect _scroll;
         private TMP_Text _countLabel, _summary;
@@ -53,9 +59,15 @@ namespace LR2.UI
             new Color(0.62f, 0.85f, 0.55f), new Color(0.80f, 0.86f, 0.92f), new Color(1f, 0.70f, 0.32f),
             new Color(1f, 0.38f, 0.32f), new Color(0.72f, 0.55f, 1f)
         };
+        private static readonly Color[] ArchColors =
+        {
+            new Color(0.45f, 0.76f, 1.0f), new Color(0.96f, 0.42f, 0.36f),
+            new Color(0.75f, 0.56f, 1.0f), new Color(0.36f, 0.88f, 0.56f)
+        };
         private static readonly string[] DiffIcons = { "rank1", "rank2", "rank3", "rank4", "adaptive" };
+        private static readonly string[] ArchIcons = { "player", "robot", "brain", "adaptive" };
         private static readonly string[] ModeIcons = { "tdm", "ffa", "ctf", "duel" };
-        private static readonly string[] PresetIcons = { "duel", "teams2", "teams3", "teams4", "ffa", "spectate" };
+        private static readonly string[] PresetIcons = { "duel", "teams2", "teams3", "teams4", "ffa" };
 
         public static SkirmishLobby Create(Transform parent, Func<GameModeType, MatchSettings> templateFor)
         {
@@ -72,6 +84,7 @@ namespace LR2.UI
         {
             _theme = Resources.Load<UITheme>("LR2/UITheme");
             SkirmishSetup.Load();
+            SkirmishSetup.PlayerSpectates = false;
             LoadRules();
             var root = (RectTransform)transform;
             Stretch(root);
@@ -84,40 +97,74 @@ namespace LR2.UI
             var band = Img(root, "ShadeBand", new Color(0.015f, 0.02f, 0.025f, 0.16f));
             Anchor(band.rectTransform, 0.12f, 0f, 0.88f, 1f);
 
-            var title = Label(root, "SKIRMISH", 66, Text, true);
-            title.overflowMode = TextOverflowModes.Overflow; // ellipsis hid the whole line when the box ran shorter than the font
-            Anchor(title.rectTransform, 0.135f, 0.885f, 0.6f, 0.965f);
-            var sub = Label(root, "ANY MATCH YOU WANT  ·  UP TO 20 BOTS  ·  2, 3 OR 4 TEAMS  ·  AI VS AI TEST BENCH", 19, Dim);
-            Anchor(sub.rectTransform, 0.136f, 0.852f, 0.865f, 0.89f);
+            var title = Label(root, "COMBAT LOBBY", 56, Text, true);
+            title.overflowMode = TextOverflowModes.Overflow;
+            Anchor(title.rectTransform, 0.135f, 0.89f, 0.44f, 0.965f);
+            var sub = Label(root, "SKIRMISH CUSTOM MATCHES  ·  CONTROLLED EXPERIMENTS, AI VS AI BENCH & TURING TELEMETRY", 16, Dim);
+            Anchor(sub.rectTransform, 0.136f, 0.854f, 0.865f, 0.888f);
+
+            // B153 Dual Tab Switcher ([ SKIRMISH ] | [ EXPERIMENTS ])
+            _skirmishTabBtn = IconBtn(root, "tdm", "SKIRMISH", 22, () => SwitchTab(false), ButtonBg, Accent);
+            Anchor((RectTransform)_skirmishTabBtn.transform, 0.48f, 0.892f, 0.668f, 0.962f);
+            _experimentsTabBtn = IconBtn(root, "flask", "EXPERIMENTS", 22, () => SwitchTab(true), ButtonBg, Accent);
+            Anchor((RectTransform)_experimentsTabBtn.transform, 0.677f, 0.892f, 0.865f, 0.962f);
+
+            _skirmishRoot = Rect(root, "SkirmishTab");
+            var sr = _skirmishRoot.rectTransform();
+            Stretch(sr);
 
             // presets: icon tiles
-            var presets = Rect(root, "Presets");
-            Anchor(presets.rectTransform(), 0.135f, 0.762f, 0.865f, 0.852f);
+            var presets = Rect(sr, "Presets");
+            Anchor(presets.rectTransform(), 0.135f, 0.762f, 0.865f, 0.850f);
             var ph = presets.AddComponent<HorizontalLayoutGroup>();
             ph.spacing = 10f; ph.childForceExpandWidth = true; ph.childControlWidth = true; ph.childControlHeight = true;
             for (int i = 0; i < SkirmishSetup.Presets.Length; i++)
             {
                 string preset = SkirmishSetup.Presets[i];
-                bool aiVsAi = preset == "AI VS AI";
-                IconBtn(presets.transform, PresetIcons[i], preset, 23, () => { SkirmishSetup.ApplyPreset(preset); LoadRules(); Rebuild(); OnModeChanged?.Invoke(SkirmishSetup.Mode); },
-                        aiVsAi ? new Color(0.45f, 0.30f, 0.85f, 0.6f) : ButtonBg, aiVsAi ? new Color(0.85f, 0.75f, 1f) : Accent);
+                IconBtn(presets.transform, PresetIcons[i], preset, 22, () => { SkirmishSetup.ApplyPreset(preset); SkirmishSetup.PlayerSpectates = false; LoadRules(); Rebuild(); OnModeChanged?.Invoke(SkirmishSetup.Mode); },
+                        ButtonBg, Accent);
             }
 
-            BuildRoster(root);
-            BuildMatchColumn(root);
+            BuildRoster(sr);
+            BuildMatchColumn(sr);
 
-            var back = IconBtn(root, "back", "BACK", 26, () => OnBack?.Invoke(), ButtonBg, Text);
+            var back = IconBtn(sr, "back", "BACK", 26, () => OnBack?.Invoke(), ButtonBg, Text);
             Anchor((RectTransform)back.transform, 0.135f, 0.035f, 0.245f, 0.1f);
-            _startButton = IconBtn(root, "play", "START", 36, Start_, new Color(Accent.r, Accent.g, Accent.b, 0.9f), new Color(0.05f, 0.05f, 0.05f));
+            _startButton = IconBtn(sr, "play", "START", 36, Start_, new Color(Accent.r, Accent.g, Accent.b, 0.9f), new Color(0.05f, 0.05f, 0.05f));
             Anchor((RectTransform)_startButton.transform, 0.665f, 0.03f, 0.865f, 0.11f);
             _startButton.GetComponentInChildren<TMP_Text>().color = new Color(0.05f, 0.05f, 0.05f);
-            _summary = Label(root, "", 19, Dim);
+            _summary = Label(sr, "", 19, Dim);
             _summary.alignment = TextAlignmentOptions.MidlineRight;
             Anchor(_summary.rectTransform, 0.255f, 0.035f, 0.655f, 0.1f);
+
+            _experimentsView = ExperimentsTabView.Create(root);
+            _experimentsView.OnBack = () => OnBack?.Invoke();
+            _experimentsView.OnStartExperiment = cfg => OnStartExperiment?.Invoke(cfg);
+            _experimentsView.OnModeChanged = m => OnModeChanged?.Invoke(m);
+            SwitchTab(false);
 
             Rebuild();
             RefreshCanvasText();
             StartCoroutine(RefreshTextAfterInitialCanvasPass());
+        }
+
+        public void SwitchTab(bool experiments)
+        {
+            _inExperiments = experiments;
+            if (_skirmishRoot != null) _skirmishRoot.SetActive(!experiments);
+            if (_experimentsView != null) _experimentsView.gameObject.SetActive(experiments);
+            StyleTabBtn(_skirmishTabBtn, !experiments);
+            StyleTabBtn(_experimentsTabBtn, experiments);
+            RefreshCanvasText();
+        }
+
+        private void StyleTabBtn(Button b, bool active)
+        {
+            if (b == null) return;
+            var img = b.GetComponent<Image>();
+            if (img != null) img.color = active ? new Color(Accent.r, Accent.g, Accent.b, 0.90f) : ButtonBg;
+            var txt = b.GetComponentInChildren<TMP_Text>(true);
+            if (txt != null) txt.color = active ? new Color(0.05f, 0.05f, 0.05f) : Text;
         }
 
         private void LateUpdate()
@@ -171,11 +218,16 @@ namespace LR2.UI
             var pr = panel.rectTransform;
 
             Icon(pr, "tdm", Accent, 0.025f, 0.915f, 0.07f, 0.985f);
-            _countLabel = Label(pr, "", 28, Text, true);
-            Anchor(_countLabel.rectTransform, 0.08f, 0.912f, 0.42f, 0.988f);
-            var all = Label(pr, "ALL BOTS", 16, Dim);
-            Anchor(all.rectTransform, 0.43f, 0.912f, 0.56f, 0.988f);
-            Stepper(pr, 0.56f, 0.918f, 0.975f, 0.982f, () => AllDifficultyLabel(), d =>
+            _countLabel = Label(pr, "", 26, Text, true);
+            Anchor(_countLabel.rectTransform, 0.08f, 0.912f, 0.37f, 0.988f);
+            Stepper(pr, 0.38f, 0.918f, 0.65f, 0.982f, () => AllArchetypeLabel(), d =>
+            {
+                int cur = SkirmishSetup.Bots.Count > 0 ? (int)SkirmishSetup.Bots[0].archetype : 0;
+                int next = (cur + d + SkirmishSetup.ArchetypeNames.Length) % SkirmishSetup.ArchetypeNames.Length;
+                foreach (var b in SkirmishSetup.Bots) b.archetype = (BotArchetype)next;
+                Rebuild();
+            }, null, () => SkirmishSetup.Bots.Count > 0 ? ArchIcons[Mathf.Clamp((int)SkirmishSetup.Bots[0].archetype, 0, 3)] : null);
+            Stepper(pr, 0.66f, 0.918f, 0.975f, 0.982f, () => AllDifficultyLabel(), d =>
             {
                 int cur = SkirmishSetup.Bots.Count > 0 ? SkirmishSetup.Bots[0].difficulty : 1;
                 int next = (cur + d + SkirmishSetup.DifficultyNames.Length) % SkirmishSetup.DifficultyNames.Length;
@@ -184,10 +236,10 @@ namespace LR2.UI
                 Rebuild();
             }, null, () => SkirmishSetup.Bots.Count > 0 ? DiffIcons[Mathf.Clamp(SkirmishSetup.Bots[0].difficulty, 0, 4)] : null);
 
-            foreach (var (text, x) in new[] { ("SLOT", 0.05f), ("DIFFICULTY", 0.37f), ("TEAM", 0.67f) })
+            foreach (var (text, x) in new[] { ("SLOT", 0.04f), ("TYPE", 0.25f), ("DIFFICULTY", 0.48f), ("TEAM", 0.72f) })
             {
-                var head = Label(pr, text, 15, Dim);
-                Anchor(head.rectTransform, x, 0.868f, x + 0.3f, 0.908f);
+                var head = Label(pr, text, 14, Dim);
+                Anchor(head.rectTransform, x, 0.868f, x + 0.25f, 0.908f);
             }
 
             var view = Rect(pr, "Viewport");
@@ -296,28 +348,29 @@ namespace LR2.UI
                 Destroy(old);
             }
             _buildingRows = true;
+            SkirmishSetup.PlayerSpectates = false;
+            SkirmishSetup.BlindMode = false;
             PlayerRow();
             for (int i = 0; i < SkirmishSetup.Bots.Count; i++) BotRow(i);
             _buildingRows = false;
             foreach (var r in _refresh) r();
             int n = SkirmishSetup.Bots.Count;
-            _countLabel.text = $"PLAYERS  <color=#{Hex(Accent)}>{n + (SkirmishSetup.PlayerSpectates ? 0 : 1)}</color><size=70%> / {SkirmishSetup.MaxBots + 1}</size>";
+            _countLabel.text = $"PLAYERS  <color=#{Hex(Accent)}>{n + 1}</color><size=70%> / {SkirmishSetup.MaxBots + 1}</size>";
             var sprite = Resources.Load<Sprite>(LR2Session.PreviewResourcePath(LR2Session.SelectedMapIndex));
             _preview.sprite = sprite;
             _preview.color = sprite != null ? Color.white : new Color(1f, 1f, 1f, 0.05f);
-            bool ok = n >= (SkirmishSetup.PlayerSpectates ? 2 : 1);
+            bool ok = n >= 1;
             _startButton.interactable = ok;
-            _summary.text = ok ? Summary() : SkirmishSetup.PlayerSpectates ? "AI VS AI NEEDS AT LEAST 2 BOTS" : "ADD AT LEAST ONE BOT";
+            _summary.text = ok ? Summary() : "ADD AT LEAST ONE BOT";
         }
 
         private string Summary()
         {
             int bots = SkirmishSetup.Bots.Count;
-            string who = SkirmishSetup.PlayerSpectates ? "AI VS AI" : "YOU";
-            if (!SkirmishSetup.IsTeamGame) return $"{who}  ·  FREE FOR ALL  ·  {bots} BOTS";
+            if (!SkirmishSetup.IsTeamGame) return $"YOU  ·  FREE FOR ALL  ·  {bots} BOTS";
             int teams = SkirmishSetup.TeamCount;
             string kind = teams >= 4 ? "4-WAY" : teams == 3 ? "3-WAY" : teams == 2 ? "2 TEAMS" : "1 TEAM";
-            return $"{who}  ·  {kind} {SkirmishSetup.ModeNames[ModeIndex()]}  ·  {bots} BOTS";
+            return $"YOU  ·  {kind} {SkirmishSetup.ModeNames[ModeIndex()]}  ·  {bots} BOTS";
         }
 
         private RectTransform Row(Color strip)
@@ -334,28 +387,17 @@ namespace LR2.UI
 
         private void PlayerRow()
         {
-            bool spec = SkirmishSetup.PlayerSpectates;
-            Color purple = new Color(0.72f, 0.55f, 1f);
-            var r = Row(spec ? purple : TeamUtil.FriendlyColor);
-            Icon(r, spec ? "spectate" : "player", spec ? purple : TeamUtil.FriendlyColor, 0.03f, 0.2f, 0.085f, 0.8f);
-            var name = Label(r, spec ? "SPECTATOR" : $"YOU  <color=#{Hex(Dim)}><size=72%>{LR2Settings.PlayerName}</size></color>", 26, Text, true);
-            Anchor(name.rectTransform, 0.1f, 0f, 0.35f, 1f);
-            Stepper(r, 0.355f, 0.14f, 0.66f, 0.86f, () => spec ? "AI VS AI" : "PLAYING", d =>
-            {
-                SkirmishSetup.PlayerSpectates = !SkirmishSetup.PlayerSpectates;
-                if (!SkirmishSetup.PlayerSpectates && SkirmishSetup.IsTeamGame) SkirmishSetup.PlayerTeam = TeamId.Alpha;
-                Rebuild();
-            }, spec ? purple : Text, () => spec ? "spectate" : "player");
-            if (!spec)
-            {
-                // B116: your team is always Alpha, so blue means your side in the lobby and in the match alike
-                bool teamMode = TeamsMatter;
-                if (teamMode) SkirmishSetup.PlayerTeam = TeamId.Alpha;
-                Color c = teamMode ? TeamUtil.FriendlyColor : Dim;
-                Icon(r, "shield", c, 0.675f, 0.2f, 0.715f, 0.8f);
-                var t = Label(r, teamMode ? "ALPHA · YOU" : "FREE FOR ALL", 17, c, true);
-                Anchor(t.rectTransform, 0.725f, 0f, 0.97f, 1f);
-            }
+            // B153: AI VS AI moved exclusively to the Experiments tab; Skirmish always spawns you in the match.
+            var r = Row(TeamUtil.FriendlyColor);
+            Icon(r, "player", TeamUtil.FriendlyColor, 0.025f, 0.2f, 0.068f, 0.8f);
+            var name = Label(r, $"YOU  <color=#{Hex(Dim)}><size=72%>{LR2Settings.PlayerName}</size></color>", 26, Text, true);
+            Anchor(name.rectTransform, 0.075f, 0f, 0.56f, 1f);
+            bool teamMode = TeamsMatter;
+            if (teamMode) SkirmishSetup.PlayerTeam = TeamId.Alpha;
+            Color c = teamMode ? TeamUtil.FriendlyColor : Dim;
+            Icon(r, teamMode ? "shield" : "ffa", c, 0.672f, 0.22f, 0.71f, 0.78f);
+            var t = Label(r, teamMode ? "ALPHA · YOU" : "FREE FOR ALL", 17, c, true);
+            Anchor(t.rectTransform, 0.72f, 0f, 0.97f, 1f);
         }
 
         private void BotRow(int index)
@@ -364,15 +406,21 @@ namespace LR2.UI
             bool teams = TeamsMatter;
             Color rowCol = teams && bot.team != TeamId.None ? TeamUtil.TeamColor(bot.team) : TeamUtil.EnemyColor; // FFA bots are red in the match too
             var r = Row(rowCol);
-            Icon(r, "bot", rowCol, 0.03f, 0.22f, 0.085f, 0.78f);
-            var name = Label(r, $"<color=#{Hex(Dim)}>{index + 1:00}</color>  BOT", 26, Text);
-            Anchor(name.rectTransform, 0.1f, 0f, 0.3f, 1f);
+            Icon(r, "bot", rowCol, 0.025f, 0.22f, 0.068f, 0.78f);
+            var name = Label(r, $"<color=#{Hex(Dim)}>{index + 1:00}</color>  BOT", 22, Text);
+            Anchor(name.rectTransform, 0.075f, 0f, 0.215f, 1f);
+            int a0 = Mathf.Clamp((int)bot.archetype, 0, ArchColors.Length - 1);
+            Stepper(r, 0.22f, 0.14f, 0.435f, 0.86f, () => SkirmishSetup.ArchetypeNames[a0], d =>
+            {
+                bot.archetype = (BotArchetype)((a0 + d + SkirmishSetup.ArchetypeNames.Length) % SkirmishSetup.ArchetypeNames.Length);
+                Rebuild();
+            }, ArchColors[a0], () => ArchIcons[a0]);
             int d0 = Mathf.Clamp(bot.difficulty, 0, DiffColors.Length - 1);
-            Stepper(r, 0.3f, 0.14f, 0.655f, 0.86f, () => SkirmishSetup.DifficultyNames[Mathf.Clamp(bot.difficulty, 0, 4)], d =>
+            Stepper(r, 0.442f, 0.14f, 0.658f, 0.86f, () => SkirmishSetup.DifficultyNames[d0], d =>
             {
                 bot.difficulty = (bot.difficulty + d + SkirmishSetup.DifficultyNames.Length) % SkirmishSetup.DifficultyNames.Length;
                 Rebuild();
-            }, DiffColors[d0], () => DiffIcons[Mathf.Clamp(bot.difficulty, 0, 4)]);
+            }, DiffColors[d0], () => DiffIcons[d0]);
             TeamStepper(r, () => bot.team, t => bot.team = t);
             var x = IconBtn(r, "trash", "", 16, () => { SkirmishSetup.Bots.Remove(bot); Rebuild(); }, new Color(1f, 0.3f, 0.27f, 0.16f), new Color(1f, 0.5f, 0.45f));
             Anchor((RectTransform)x.transform, 0.935f, 0.16f, 0.995f, 0.84f);
@@ -443,6 +491,14 @@ namespace LR2.UI
             Rebuild();
         }
 
+        private string AllArchetypeLabel()
+        {
+            if (SkirmishSetup.Bots.Count == 0) return "-";
+            var a = SkirmishSetup.Bots[0].archetype;
+            foreach (var b in SkirmishSetup.Bots) if (b.archetype != a) return "MIXED";
+            return SkirmishSetup.ArchetypeNames[Mathf.Clamp((int)a, 0, 3)];
+        }
+
         private string AllDifficultyLabel()
         {
             if (SkirmishSetup.Bots.Count == 0) return "-";
@@ -478,6 +534,9 @@ namespace LR2.UI
         private void Start_()
         {
             if (!_startButton.interactable) return;
+            ExperimentSessionRunner.AbortSession();
+            SkirmishSetup.PlayerSpectates = false;
+            SkirmishSetup.BlindMode = false;
             SaveRules();
             SkirmishSetup.Save();
             SkirmishSetup.Active = true;

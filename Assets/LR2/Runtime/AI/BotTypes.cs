@@ -7,6 +7,24 @@ namespace LR2.AI
     /// <summary>High-level orders an external commander (squad AI, debug console, future LLM) can give a bot.</summary>
     public enum BotOrder { None, FreeRoam, HoldPosition, MoveTo, Attack, FollowLeader, Flank, Retreat }
 
+    public enum BotArchetype { HumanLike = 0, DumbRobotic = 1, LlmEnhanced = 2, HumanFitted = 3 }
+
+    public enum BotStanceOrder { Auto, Stand, Crouch, Prone }
+    public enum BotPeekStyle { Auto, HoldAngle, Jiggle, WideSwing }
+    public enum BotBurstStyle { Auto, Tap, Burst, FullAuto }
+    public enum BotUtilityAction { None, ThrowFrag, SafeReload, HoldFire }
+    public enum BotMicroActionKind { None, SprintTo, StrafeFire, CrouchPeek, HoldAngle, ThrowFrag, FallBackReload, ProneAmbush }
+
+    [Serializable]
+    public struct BotMicroAction
+    {
+        public BotMicroActionKind kind;
+        public Vector3 targetPos;
+        public float strafeDir;
+        public float duration;
+        public bool ads;
+    }
+
     [Serializable]
     public struct BotDirective
     {
@@ -17,6 +35,13 @@ namespace LR2.AI
         public float duration;
         [Tooltip("Free text reason (useful for LLM traces / debugging).")]
         public string rationale;
+        // B151 optional deep tactical/avatar LLM parameters (0 / Auto keeps default Commander & chat behavior unchanged)
+        public BotStanceOrder stance;
+        public BotPeekStyle peek;
+        public BotBurstStyle burst;
+        public BotUtilityAction utility;
+        public float aggression;
+        public BotMicroAction[] microQueue;
     }
 
     /// <summary>What the tactical layer decided to do this moment.</summary>
@@ -33,8 +58,15 @@ namespace LR2.AI
         public bool hasLookPoint;
         public bool allowSprint;
         public bool crouch;
+        public bool prone;
         public bool allowFire;
         public float desiredRange;
+        public bool throwGrenade;
+        public bool forceReload;
+        public BotPeekStyle peekStyle;
+        public BotBurstStyle burstStyle;
+        public float overrideStrafeDir;
+        public bool forceAds;
     }
 
     /// <summary>Pluggable decision maker. The default is <see cref="TacticalBotBrain"/>; an LLM-driven brain can

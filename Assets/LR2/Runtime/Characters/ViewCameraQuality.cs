@@ -1,4 +1,4 @@
-// LeadRush 2 - anti-aliasing for the view camera (B43, user 2026-11-17: "enable TAA? edges are sharp").
+// Lead Rush II - anti-aliasing for the view camera (B43, user 2026-11-17: "enable TAA? edges are sharp").
 // TAA was already on, but the builder set taaSharpenStrength 0.65, which brings crisp, stair-stepped edges back. This applies
 // the LR2Settings.AntiAliasing mode with softer TAA values to the local player's camera and the menu camera.
 

@@ -112,12 +112,19 @@ namespace LR2.Characters
             return null;
         }
 
-        /// <summary>"LeftUpperArm" -> "Left_UpperArm" (Unity robot / Starter Assets armature), plus Mixamo names.</summary>
+        /// <summary>"LeftUpperArm" -> "Left_UpperArm" (Unity robot / Starter Assets armature), plus Mixamo names (incl. all 30 finger bones).</summary>
         public static IEnumerable<string> CandidateNames(HumanBodyBones bone)
         {
             string n = bone.ToString();
             if (n.StartsWith("Left")) yield return "Left_" + n.Substring(4);
             else if (n.StartsWith("Right")) yield return "Right_" + n.Substring(5);
+            if (n.Contains("Little"))
+            {
+                string pinky = n.Replace("Little", "Pinky");
+                if (pinky.StartsWith("Left")) yield return "Left_" + pinky.Substring(4);
+                else if (pinky.StartsWith("Right")) yield return "Right_" + pinky.Substring(5);
+                yield return pinky;
+            }
             yield return n;
             string mixamo = Mixamo(bone);
             if (mixamo != null) yield return "mixamorig:" + mixamo;
@@ -149,6 +156,36 @@ namespace LR2.Characters
                 case HumanBodyBones.RightFoot: return "RightFoot";
                 case HumanBodyBones.LeftToes: return "LeftToeBase";
                 case HumanBodyBones.RightToes: return "RightToeBase";
+                case HumanBodyBones.LeftThumbProximal: return "LeftHandThumb1";
+                case HumanBodyBones.LeftThumbIntermediate: return "LeftHandThumb2";
+                case HumanBodyBones.LeftThumbDistal: return "LeftHandThumb3";
+                case HumanBodyBones.LeftIndexProximal: return "LeftHandIndex1";
+                case HumanBodyBones.LeftIndexIntermediate: return "LeftHandIndex2";
+                case HumanBodyBones.LeftIndexDistal: return "LeftHandIndex3";
+                case HumanBodyBones.LeftMiddleProximal: return "LeftHandMiddle1";
+                case HumanBodyBones.LeftMiddleIntermediate: return "LeftHandMiddle2";
+                case HumanBodyBones.LeftMiddleDistal: return "LeftHandMiddle3";
+                case HumanBodyBones.LeftRingProximal: return "LeftHandRing1";
+                case HumanBodyBones.LeftRingIntermediate: return "LeftHandRing2";
+                case HumanBodyBones.LeftRingDistal: return "LeftHandRing3";
+                case HumanBodyBones.LeftLittleProximal: return "LeftHandPinky1";
+                case HumanBodyBones.LeftLittleIntermediate: return "LeftHandPinky2";
+                case HumanBodyBones.LeftLittleDistal: return "LeftHandPinky3";
+                case HumanBodyBones.RightThumbProximal: return "RightHandThumb1";
+                case HumanBodyBones.RightThumbIntermediate: return "RightHandThumb2";
+                case HumanBodyBones.RightThumbDistal: return "RightHandThumb3";
+                case HumanBodyBones.RightIndexProximal: return "RightHandIndex1";
+                case HumanBodyBones.RightIndexIntermediate: return "RightHandIndex2";
+                case HumanBodyBones.RightIndexDistal: return "RightHandIndex3";
+                case HumanBodyBones.RightMiddleProximal: return "RightHandMiddle1";
+                case HumanBodyBones.RightMiddleIntermediate: return "RightHandMiddle2";
+                case HumanBodyBones.RightMiddleDistal: return "RightHandMiddle3";
+                case HumanBodyBones.RightRingProximal: return "RightHandRing1";
+                case HumanBodyBones.RightRingIntermediate: return "RightHandRing2";
+                case HumanBodyBones.RightRingDistal: return "RightHandRing3";
+                case HumanBodyBones.RightLittleProximal: return "RightHandPinky1";
+                case HumanBodyBones.RightLittleIntermediate: return "RightHandPinky2";
+                case HumanBodyBones.RightLittleDistal: return "RightHandPinky3";
                 default: return null;
             }
         }

@@ -1,5 +1,7 @@
 using System;
 using LR2.Audio;
+using LR2.Characters;
+using LR2.Combat;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
@@ -48,10 +50,10 @@ namespace LR2.World
         public WeatherPreset[] presets =
         {
             new WeatherPreset { name = "Dusk", kind = WeatherKind.DuskClear, sun = 1f, fog = 1f, wind = 0.25f },
-            new WeatherPreset { name = "Overcast", kind = WeatherKind.Overcast, sun = 0.35f, fog = 1.6f, wind = 0.45f, exposure = -0.2f, fogTint = new Color(0.55f, 0.6f, 0.62f) },
-            new WeatherPreset { name = "Drizzle", kind = WeatherKind.Drizzle, sun = 0.2f, fog = 2.2f, rain = 0.45f, wind = 0.55f, exposure = -0.35f, fogTint = new Color(0.5f, 0.56f, 0.6f) },
-            new WeatherPreset { name = "Thunderstorm", kind = WeatherKind.Thunderstorm, sun = 0.08f, fog = 2.8f, rain = 1f, wind = 1f, lightning = 1.5f, exposure = -0.6f, fogTint = new Color(0.42f, 0.47f, 0.52f) },
-            new WeatherPreset { name = "Fog", kind = WeatherKind.Fog, sun = 0.45f, fog = 4.5f, wind = 0.1f, exposure = -0.1f, fogTint = new Color(0.66f, 0.7f, 0.7f) },
+            new WeatherPreset { name = "Overcast", kind = WeatherKind.Overcast, sun = 0.55f, fog = 1.6f, wind = 0.45f, exposure = -0.04f, fogTint = new Color(0.55f, 0.6f, 0.62f) },
+            new WeatherPreset { name = "Drizzle", kind = WeatherKind.Drizzle, sun = 0.54f, fog = 2.2f, rain = 0.45f, wind = 0.55f, exposure = -0.02f, fogTint = new Color(0.5f, 0.56f, 0.6f) },
+            new WeatherPreset { name = "Thunderstorm", kind = WeatherKind.Thunderstorm, sun = 0.45f, fog = 2.8f, rain = 1f, wind = 1f, lightning = 1.5f, exposure = -0.05f, fogTint = new Color(0.42f, 0.47f, 0.52f) },
+            new WeatherPreset { name = "Fog", kind = WeatherKind.Fog, sun = 0.58f, fog = 4.5f, wind = 0.1f, exposure = -0.03f, fogTint = new Color(0.66f, 0.7f, 0.7f) },
         };
 
         [Header("Scene references (wired by the map builder)")]
@@ -66,8 +68,14 @@ namespace LR2.World
         public float lightningLux = 9000f;
 
         public string CurrentName => presets.Length > 0 ? presets[_to].name : "-";
+        public WeatherKind ActiveWeatherKind => presets.Length > 0 ? presets[_to].kind : WeatherKind.DuskClear;
         public float EffectiveRain { get; private set; }
+        public float LightningFlash => _flash;
+        public float CloudStormWeight { get; private set; }
         public float Wetness { get; private set; }
+        public bool CameraIndoors => _cameraIndoors;
+        public bool IsNearRainPlaying => _rainNear != null && _rainNear.isPlaying;
+        public bool IsHighRainPlaying => rain != null && rain.isPlaying;
         public int WetSurfaceCount => _wetMats.Count + _wetTerrainLayers.Count;
 
         private struct WetMatRecord
@@ -120,11 +128,12 @@ namespace LR2.World
 
         private int _from, _to;
         private float _blend = 1f, _nextChange, _nextStrike = float.MaxValue;
-        private float _baseSun, _baseMfp, _baseExposure, _baseHdriExposure, _baseHdriMult;
+        private float _baseSun, _baseMfp, _baseExposure, _baseHdriExposure, _baseHdriMult, _basePhysExposure, _basePhysAerosol, _baseIndirectDiffuse = 2.25f;
         private Fog _fog;
         private Exposure _exposureOverride;
         private HDRISky _hdriSky;
         private PhysicallyBasedSky _physSky;
+        private IndirectLightingController _ilc;
         private AudioSource _rainSource;
         private float _flash;
         private readonly System.Random _noise = new System.Random();
@@ -140,12 +149,20 @@ namespace LR2.World
                 profile.TryGet(out _exposureOverride);
                 profile.TryGet(out _hdriSky);
                 profile.TryGet(out _physSky);
+                profile.TryGet(out _ilc);
                 if (_fog != null) _baseMfp = _fog.meanFreePath.value;
                 if (_exposureOverride != null) _baseExposure = _exposureOverride.compensation.value;
+                if (_ilc != null) _baseIndirectDiffuse = Mathf.Max(1.25f, _ilc.indirectDiffuseLightingMultiplier.value);
                 if (_hdriSky != null)
                 {
                     _baseHdriExposure = _hdriSky.exposure.value > 5f ? _hdriSky.exposure.value : 10.2f;
                     _baseHdriMult = _hdriSky.multiplier.value;
+                }
+                if (_physSky != null)
+                {
+                    float ev = _physSky.exposure.value;
+                    _basePhysExposure = (ev >= -2f && ev <= 2f) ? ev : 0.0f;
+                    _basePhysAerosol = _physSky.aerosolDensity.value;
                 }
             }
             if (lightning != null) lightning.intensity = 0f;
@@ -221,13 +238,13 @@ namespace LR2.World
             float gust = Mathf.PerlinNoise(Time.time * 0.13f, 3.7f);
             Wind = Mathf.Clamp01(windK * (0.65f + gust * 0.7f));
 
-            if (sun != null) sun.intensity = _baseSun * sunK;
+            if (sun != null) sun.intensity = _baseSun * Mathf.Max(0.45f, sunK);
             if (_fog != null)
             {
-                _fog.meanFreePath.value = _baseMfp / Mathf.Max(0.05f, fogK);
+                _fog.meanFreePath.value = Mathf.Max(48f, _baseMfp / Mathf.Max(0.25f, fogK));
                 _fog.albedo.value = tint;
             }
-            if (_exposureOverride != null) _exposureOverride.compensation.value = _baseExposure + expo;
+            if (_exposureOverride != null) _exposureOverride.compensation.value = _baseExposure + Mathf.Max(0.15f, expo + 0.20f);
             if (windZone != null)
             {
                 windZone.windMain = Wind * 2.5f;
@@ -244,29 +261,34 @@ namespace LR2.World
             EffectiveRain = effectiveRain;
             if (effectiveRain > 0.1f) Wind = Mathf.Max(Wind, 0.25f + effectiveRain * 0.70f);
 
-            // Darken sun, thicken storm fog & brood HDRi sky when rain builds; flash illuminates storm clouds on lightning
+            // Darken sun, thicken storm fog & react clouds/sky when rain builds; flash illuminates storm clouds on lightning
             float stormDark = Mathf.Clamp01(Mathf.Max(effectiveRain * 0.85f, thunderK * 0.85f));
+            WeatherKind wKind = ActiveWeatherKind;
+            float kindWeight = wKind == WeatherKind.Thunderstorm ? 1f : wKind == WeatherKind.Drizzle ? 0.65f : wKind == WeatherKind.Overcast ? 0.42f : wKind == WeatherKind.Fog ? 0.30f : 0.0f;
+            CloudStormWeight = Mathf.Clamp01(Mathf.Max(stormDark, kindWeight));
             if (sun != null)
             {
-                float stormSun = Mathf.Max(0.58f, sunK * Mathf.Lerp(1f, 0.72f, stormDark)) + _flash * 1.35f;
+                float stormSun = Mathf.Max(0.45f, sunK * Mathf.Lerp(1f, 0.72f, stormDark)) + _flash * 1.35f;
                 sun.intensity = _baseSun * stormSun;
             }
             if (_fog != null && stormDark > 0.05f)
             {
-                float stormMfp = Mathf.Min(_fog.meanFreePath.value, Mathf.Lerp(_baseMfp, Mathf.Max(_baseMfp * 0.75f, 85f), stormDark));
+                float stormMfp = Mathf.Max(45f, Mathf.Min(_fog.meanFreePath.value, Mathf.Lerp(_baseMfp, Mathf.Max(_baseMfp * 0.75f, 75f), stormDark)));
                 _fog.meanFreePath.value = stormMfp;
                 _fog.albedo.value = Color.Lerp(tint, new Color(0.38f, 0.44f, 0.52f), stormDark * 0.55f);
             }
             if (_hdriSky != null)
             {
-                _hdriSky.exposure.Override(Mathf.Max(9.2f, _baseHdriExposure - 0.85f * stormDark) + _flash * 2.2f);
-                _hdriSky.multiplier.Override(_baseHdriMult * (Mathf.Lerp(1f, 0.72f, stormDark) + _flash * 1.45f));
+                _hdriSky.exposure.Override(Mathf.Max(9.8f, _baseHdriExposure - 0.42f * stormDark) + _flash * 2.2f);
+                _hdriSky.multiplier.Override(_baseHdriMult * (Mathf.Lerp(1f, 0.88f, stormDark) + _flash * 1.45f));
             }
             else if (_physSky != null)
             {
-                _physSky.aerosolDensity.Override(Mathf.Lerp(0.22f, 0.75f, stormDark));
-                _physSky.exposure.Override(-2.1f * stormDark + _flash * 2.5f);
+                _physSky.skyIntensityMode.Override(SkyIntensityMode.Exposure);
+                _physSky.aerosolDensity.Override(Mathf.Lerp(Mathf.Clamp(_basePhysAerosol, 0.10f, 0.20f), 0.34f, CloudStormWeight));
+                _physSky.exposure.Override(_basePhysExposure + 0.25f - 0.12f * CloudStormWeight + _flash * 1.6f);
             }
+            if (_ilc != null) _ilc.indirectDiffuseLightingMultiplier.Override(Mathf.Max(2.65f, _baseIndirectDiffuse * Mathf.Lerp(1.25f, 1.60f, CloudStormWeight)));
 
             UpdateRain(effectiveRain);
             UpdateGroundSplashesAndVisor(effectiveRain);
@@ -274,39 +296,54 @@ namespace LR2.World
             UpdateLightning(strikes);
         }
 
+        private static Camera ActiveViewCamera()
+        {
+            var p = Combatant.FindLocalPlayer();
+            var sc = p != null ? p.GetComponent<SoldierController>() : null;
+            if (sc != null && sc.ViewCamera != null && sc.ViewCamera.isActiveAndEnabled) return sc.ViewCamera;
+            return Camera.main;
+        }
+
         private void UpdateRain(float amount)
         {
-            var cam = Camera.main;
+            var cam = ActiveViewCamera();
             _cameraIndoors = cam != null && LR2Audio.IsIndoors(cam.transform.position);
-            float visibleRain = _cameraIndoors ? 0f : amount;
+            float nearRain = _cameraIndoors ? 0f : amount;
 
             if (rain != null)
             {
-                // The camera-following volume otherwise drops below roofs and spawns rain indoors.
-                if (cam != null && !_cameraIndoors)
-                    rain.transform.position = cam.transform.position + Vector3.up * 14f + cam.transform.forward * 5f;
+                // B142: Keep high-altitude outdoor rain active even when camera is indoors, positioned well above
+                // all roofs so 3D Collision kills droplets hitting roofs while exterior rain outside windows/doors stays visible.
+                if (cam != null)
+                {
+                    float spawnY = cam.transform.position.y + 22f;
+                    if (_cameraIndoors && Physics.Raycast(cam.transform.position + Vector3.up * 0.5f, Vector3.up, out var roofHit, 24f, LR2.Core.LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore))
+                        spawnY = Mathf.Max(spawnY, roofHit.point.y + 10f);
+                    Vector3 horizFwd = new Vector3(cam.transform.forward.x, 0f, cam.transform.forward.z);
+                    if (horizFwd.sqrMagnitude > 1e-4f) horizFwd.Normalize();
+                    else horizFwd = Vector3.forward;
+                    rain.transform.position = new Vector3(cam.transform.position.x + horizFwd.x * 7f, spawnY, cam.transform.position.z + horizFwd.z * 7f);
+                }
                 var em = rain.emission;
-                em.rateOverTime = visibleRain * maxRainRate;
+                em.rateOverTime = amount * maxRainRate;
                 var vel = rain.velocityOverLifetime;
                 float wx = Wind * 3.4f;
                 vel.x = new ParticleSystem.MinMaxCurve(wx * 0.85f, wx * 1.15f);
                 vel.y = new ParticleSystem.MinMaxCurve(-22f, -18f);
                 vel.z = new ParticleSystem.MinMaxCurve(-0.35f, 0.35f);
-                if (_cameraIndoors && (rain.isPlaying || rain.particleCount > 0))
-                    rain.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-                else if (visibleRain > 0.01f && !rain.isPlaying) rain.Play();
+                if (amount > 0.01f && !rain.isPlaying) rain.Play();
                 else if (amount <= 0.01f && rain.isPlaying) rain.Stop();
                 if (_rainNear != null)
                 {
                     if (cam != null && !_cameraIndoors)
                         _rainNear.transform.position = cam.transform.position + Vector3.up * 5f + cam.transform.forward * 2.5f;
                     var nem = _rainNear.emission;
-                    nem.rateOverTime = visibleRain * 950f;
+                    nem.rateOverTime = nearRain * 950f;
                     var nv = _rainNear.velocityOverLifetime;
                     nv.x = new ParticleSystem.MinMaxCurve(wx * 0.85f, wx * 1.15f);
                     if (_cameraIndoors && (_rainNear.isPlaying || _rainNear.particleCount > 0))
                         _rainNear.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-                    else if (visibleRain > 0.01f && !_rainNear.isPlaying) _rainNear.Play();
+                    else if (nearRain > 0.01f && !_rainNear.isPlaying) _rainNear.Play();
                     else if (amount <= 0.01f && _rainNear.isPlaying) _rainNear.Stop();
                 }
             }
@@ -396,7 +433,7 @@ namespace LR2.World
             main.loop = true;
             main.maxParticles = 5200;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
-            main.startLifetime = new ParticleSystem.MinMaxCurve(1.35f, 1.85f);
+            main.startLifetime = new ParticleSystem.MinMaxCurve(1.85f, 2.55f);
             main.startSpeed = new ParticleSystem.MinMaxCurve(19f, 24f);
             main.startSize = new ParticleSystem.MinMaxCurve(0.016f, 0.026f);
             main.startColor = new ParticleSystem.MinMaxGradient(new Color(0.76f, 0.84f, 0.94f, 0.45f), new Color(0.90f, 0.95f, 1f, 0.75f));
@@ -405,7 +442,7 @@ namespace LR2.World
             var shape = rain.shape;
             shape.enabled = true;
             shape.shapeType = ParticleSystemShapeType.Box;
-            shape.scale = new Vector3(30f, 3f, 30f);
+            shape.scale = new Vector3(36f, 2f, 36f);
 
             var vel = rain.velocityOverLifetime;
             vel.enabled = true;
@@ -418,11 +455,13 @@ namespace LR2.World
             col.enabled = true;
             col.type = ParticleSystemCollisionType.World;
             col.mode = ParticleSystemCollisionMode.Collision3D;
+            col.quality = ParticleSystemCollisionQuality.High;
+            col.enableDynamicColliders = false;
             col.collidesWith = LR2.Core.LR2Layers.EnvironmentMask;
             col.dampen = 1f;
             col.bounce = 0f;
             col.lifetimeLoss = 1f;
-            col.radiusScale = 0.04f;
+            col.radiusScale = 0.08f;
 
             var psr = rain.GetComponent<ParticleSystemRenderer>();
             psr.renderMode = ParticleSystemRenderMode.Stretch;
@@ -544,32 +583,29 @@ namespace LR2.World
             }
 
             if (rainAmount <= 0.04f || _splashBurstPS == null || _puddleRipplePS == null) return;
-            var cam = Camera.main;
+            var cam = ActiveViewCamera();
             if (cam == null) return;
-            if (_cameraIndoors)
-            {
-                _splashAcc = 0f;
-                return;
-            }
 
-            // Emit real ground crown splashes & concentric water ripples strictly on outdoor surfaces
+            // Emit real ground crown splashes & concentric water ripples strictly on outdoor surfaces (still visible out windows/doors when indoors)
             float targetPerSec = Mathf.Lerp(60f, 340f, rainAmount); // B97: splashes you can see (10-90/s before)
             _splashAcc += targetPerSec * Time.deltaTime;
             int burstCount = Mathf.Min(14, Mathf.FloorToInt(_splashAcc));
             _splashAcc -= burstCount;
 
-            Vector3 originCenter = cam.transform.position + cam.transform.forward * 7f;
+            Vector3 originCenter = cam.transform.position + cam.transform.forward * (_cameraIndoors ? 9f : 7f);
+            float sampleRadius = _cameraIndoors ? 16f : 12f;
             int mask = LR2.Core.LR2Layers.EnvironmentMask;
             for (int i = 0; i < burstCount; i++)
             {
                 float angle = (float)(_noise.NextDouble() * Mathf.PI * 2.0);
-                float dist = Mathf.Sqrt((float)_noise.NextDouble()) * 12f;
+                float dist = Mathf.Sqrt((float)_noise.NextDouble()) * sampleRadius;
                 Vector3 sampleTop = new Vector3(
                     originCenter.x + Mathf.Cos(angle) * dist,
-                    cam.transform.position.y + 18f,
+                    cam.transform.position.y + 26f,
                     originCenter.z + Mathf.Sin(angle) * dist);
-                if (!Physics.Raycast(sampleTop, Vector3.down, out var hit, 42f, mask, QueryTriggerInteraction.Ignore)) continue;
+                if (!Physics.Raycast(sampleTop, Vector3.down, out var hit, 52f, mask, QueryTriggerInteraction.Ignore)) continue;
                 if (Vector3.Dot(hit.normal, Vector3.up) < 0.65f) continue;
+                if (_cameraIndoors && hit.point.y > cam.transform.position.y + 2.2f) continue; // skip roofs when viewing outside from indoors
 
                 // Small 2-3 droplet upward splash crown
                 int drops = _noise.Next(2, 4);
@@ -760,7 +796,7 @@ namespace LR2.World
         private void OnGUI()
         {
             if (Application.isBatchMode || EffectiveRain < 0.25f || _dropletTex == null) return;
-            var cam = Camera.main;
+            var cam = ActiveViewCamera();
             if (cam == null) return;
             // Subtle peripheral visor droplets only when outdoors under open rain
             if (_cameraIndoors) return;

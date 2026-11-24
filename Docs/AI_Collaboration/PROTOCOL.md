@@ -1,6 +1,6 @@
 # The coordination protocol
 
-These are the rules the AI agents on LeadRush 2 follow, each with the reason it exists. The live board,
+These are the rules the AI agents on Lead Rush II follow, each with the reason it exists. The live board,
 [`AGENT_COORDINATION.md`](../../AGENT_COORDINATION.md), carries the short version in its section 5. Most rules were added right
 after something went wrong; the incident is named in brackets so it can be traced in the [research log](RESEARCH_LOG.md).
 

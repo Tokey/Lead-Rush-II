@@ -108,7 +108,7 @@ MonoBehaviour:
     - {fileID: 8300000, guid: 396565383cfd34945b5628722d002196, type: 3}
     - {fileID: 8300000, guid: 1ec2cf00a48cb3d4c86a70e0e6fac0af, type: 3}
     - {fileID: 8300000, guid: 9415d29ef661b144d8885a020404abde, type: 3}
-    volume: 0.78
+    volume: 1
     pitch: {x: 0.97, y: 1.03}
     spatialBlend: 0.15
     minDistance: 1.5
@@ -123,7 +123,7 @@ MonoBehaviour:
     - {fileID: 8300000, guid: 9fd4e06f29e22e04aa1d6c86d05815e9, type: 3}
     - {fileID: 8300000, guid: 73e4ec94ef26c174db48bcc5e67e4a3a, type: 3}
     - {fileID: 8300000, guid: 61d25c5e117be4c4f8c105e7b9707a08, type: 3}
-    volume: 0.62
+    volume: 0.86
     pitch: {x: 0.97, y: 1.03}
     spatialBlend: 1
     minDistance: 1.5
@@ -138,7 +138,7 @@ MonoBehaviour:
     - {fileID: 8300000, guid: 5102b2661ac09ee438425785f53aa7eb, type: 3}
     - {fileID: 8300000, guid: 8f476d8bae181914d8e4bcdc20eac0d8, type: 3}
     - {fileID: 8300000, guid: 8e3bc3fbd9306ac44aa52c7662c92cc2, type: 3}
-    volume: 0.34
+    volume: 0.56
     pitch: {x: 0.97, y: 1.03}
     spatialBlend: 0.35
     minDistance: 1.5
@@ -153,7 +153,7 @@ MonoBehaviour:
     - {fileID: 8300000, guid: df725295e8af0304b9597910cccc3c50, type: 3}
     - {fileID: 8300000, guid: 27c7ef021d7602c48b2320e944c3232d, type: 3}
     - {fileID: 8300000, guid: b206743ac711ea54d8d4b972299e39ac, type: 3}
-    volume: 0.44
+    volume: 0.64
     pitch: {x: 0.97, y: 1.03}
     spatialBlend: 0.35
     minDistance: 1.5
@@ -315,4 +315,4 @@ MonoBehaviour:
   magOutAt: 0.13
   magInAt: 0.43
   boltAt: 0.63
-  emptyReloadEndAt: 0.78
+  emptyReloadEndAt: 0.82

@@ -101,4 +101,6 @@ Every developer prompt parsed from [`../PROMPTS.md`](../PROMPTS.md): `pid` (orde
 - `autonomy_ticks.csv`: Claude Code's self-prompting coordinator ticks per hour (from its session log).
 - `provenance_validation.csv`: a blind, stratified sample of 40 features for the developer to label (`developer_label`); the script then reports Cohen's kappa against the coder.
 - `provenance_stats.json`: every number on the provenance page, machine-readable.
+- `token_estimates.csv`: transparent coding-model token usage estimates paired with exact Groq Cloud API `llm_*.jsonl` totals (`agent,model,source_type,phase,work_units,input_tokens,output_tokens,total_tokens,basis`), charted by `analyze.py` (`token_charts`).
+- Gameplay research telemetry outputs (human + bot matches) live outside git in `<project|exe>/Data/` and are documented separately in [`../../Research/DATA_COLUMNS.md`](../../Research/DATA_COLUMNS.md).
 

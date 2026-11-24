@@ -1331,3 +1331,285 @@ Extracted from the same session log as the section above, including the messages
 **12:27 · to Claude Code**
 
 > maybe also do a atomic list of featurre table somewhere and put who did what was that an improvement what came directly from prompt what came from QA debug etc etc....
+
+### 2026-11-22
+
+**14:06 · to Antigravity (Gemini)**
+
+> <USER_REQUEST>
+> The tracers are quite invisible now, make them way more visible.
+>
+> and can you finish the tasks claude wasnt able to?
+>
+> Specially main menu is missing soldiers
+>
+> :::::
+>
+>
+> maybe some of them are already on the board, but take help:
+>
+>
+> https://assetstore.unity.com/packages/tools/animation/fps-animation-framework-238641?srsltid=AYCX9vIFsSLh4nD6zzoTePnRA9wbvGBx5aWkqFJdUc97cODqVlkfoCvh#content
+>
+> So the OG kinemation animations and the avatar doesnt have any issues holding gun or nor during any animation. i think the current rig doesnt have that, (fingers dont move). wehave tried fixing that, but never worked.
+>
+> so for now, can we swtich back to OG kinemation model? And maybe even use default gun, and their default IK values for ADS and different kinds of ads. For the animation lenghts you have shortened, keep them short, but, maybe, i'd like to enable all kination features, like different ads and stuff. and perfect hand pos with perfect animations.
+>
+> The unity default dummy may look bad, but then our next task would be to find a dummy that can replicate its behavior and doesnt look bad.
+>
+> But first, lets do default kination with all the features, and then change the dummy.
+>
+> I'm assuming reverting back to og will fix anim issues? You can change colors for diff teams as of now. But look for an asset that could mimic it.
+>
+> Artifact has details of how IK works, so that would help to set things up if anything breaks.
+>
+> And again, use the default weapons, just with different texture maybe? so the lates mk18 etc. that comes with kinemation.
+> ask me qeustions if needed.
+
+**14:06 · to Antigravity (Gemini)**
+
+> unity is closed
+
+**14:10 · to Antigravity (Gemini)**
+
+> work with codex. i turned it on.
+
+**14:10 · to Antigravity (Gemini)**
+
+> use the board.
+
+**14:24 · to Antigravity (Gemini)**
+
+> Q and E are reveresed. that needs fixing too/
+
+**14:26 · to Antigravity (Gemini)**
+
+> and your biggest task, can you find me a model, that would be a drop in replacement for the robot model? a humanoir rugged soldier faceless would per perfect , likfe bf6
+
+**14:27 · to Antigravity (Gemini)**
+
+> if its not drop in the do not replace. and even if you do make sure its very easily revertable.
+>
+> Then do the whole github, and push, change all readme and stuff. if any artifact stuff needs changing ,leave notes for claude in the board
+
+**14:27 · to Antigravity (Gemini)**
+
+> also double check each others code before calling it a day.
+
+**14:30 · to Antigravity (Gemini)**
+
+> fix ui overlap
+
+**14:30 · to Antigravity (Gemini)**
+
+> zoomed in part looks horrible, why is that a square for ak12?
+
+**14:31 · to Antigravity (Gemini)**
+
+> a lot of bugs here.
+
+**14:32 · to Antigravity (Gemini)**
+
+> and the bullet modular sounds may have been changed too. maybe work on that too? claude may not have been able to finish it.
+>
+> the reload anim should end a bit early for most guns, robot is rotating the gun, early, which should happen.
+
+**14:34 · to Antigravity (Gemini)**
+
+> for the ones that are ready for review, review claudes code. dont have any task left in the board.
+>
+> also thoroughly check the game with QA for animation bugs and such, because after dying a lot of bugs are happening, weapon going up and all, those were fixed in an earlier build with the oder humanoid mode, maybe look for those changes.
+
+**14:35 · to Antigravity (Gemini)**
+
+> the blood droplets in the gun should be on top so its more visible, currently its under the barrel. change that. and test.
+
+**14:38 · to Antigravity (Gemini)**
+
+> revamp the music a bit? Maybe sighlly different music for different levels, and diff for menu too.
+>
+> make the music more intense. but make it progressive. so it starts super mild, and gets insane at the end.
+>
+> also when the match is ending, add winning and lsoing musinc sound too, dpending on whats happening. generate the tunes if you cant find any good.
+>
+> Also the reload sfx may have empty in the beginning, they seem a bit dleayed. not perfect. make sure they match up perfectly with the animations.
+
+**14:40 · to Antigravity (Gemini)**
+
+> when pushing, change all the relevant screenshots and gifs. do this at the end.
+>
+> update the board accordingly.
+
+**14:40 · to Antigravity (Gemini)**
+
+> unity is closed.
+
+**14:46 · to Antigravity (Gemini)**
+
+> the grenade throw anim is doing an emote ,, fix that, aslo update controls inb the settings.
+
+**14:48 · to Antigravity (Gemini)**
+
+> if you are out of tasks, do claudes tasks. if it has a lot in the board. becasue claud is down for a week .
+
+**14:54 · to Antigravity (Gemini)**
+
+> testing, opening unity myself.
+
+**14:55 · to Antigravity (Gemini)**
+
+> unable. compilation error. u do the tests i'll do them later.
+
+**14:57 · to Antigravity (Gemini)**
+
+> when the compilation errors are fixed let me know.
+
+**15:03 · to Antigravity (Gemini)**
+
+> the audio needs work. no death sound. only a grunt? this wasnt like this in the previous build. check and repait. done testing closed unity. revamp the loading screen too. overlapping texts and stuff. in cam be something minimalistic and classy.
+
+**15:05 · to Antigravity (Gemini)**
+
+> the pain voice sounds horrible btw. i dont like it . it sounds fake.
+
+**15:06 · to Antigravity (Gemini)**
+
+> aslo there should be some sfx when health is replenished.
+
+**15:09 · to Antigravity (Gemini)**
+
+> and armor break sfx (for both me and target, with different sfx)
+
+**15:14 · to Antigravity (Gemini)**
+
+> the "Killcam" text font looks odd
+
+### 2026-11-23
+
+**17:06 · to Antigravity (Gemini)**
+
+> claude is down for the week. is there any free military model (can have face make it wear a ghost mask later) that can be used as a drop it replacement for the unity default model? because the unity default looks awful .
+>
+> Also, can we have volumentirc clouds and an actual sky with moving reacting clouds? when i look up whats wrong with the sky? check SS
+> The reload anim now cuts off a bit too early. The speed is okay but the animation needs to play a few more fframes, the mag didnt even go in fully. (needs just a tiny tweak)
+>
+> The throw of the grenade is not synced with when the granade object is seen to be thrown. also, use a much larger explosion with huge boom sound pls.
+>
+> Most importantly, currenly the rig animations are near perfect. make sure it stays that way after the model swap. Let me know if thats impossible. I think the previous model did not have bones in thei fingers thats why it was weird.
+>
+> the win sound is lame. Make it sound like the music, just more upbeat, and for losing, make it depressing. And start playing some of it when its getting closer to the win (mid match) so they player is able to tell by the music at the end of the match, that they are road to win. when indoors, the raindrops outside are not seen. any way to fix that?
+>
+> The same weapons for enemy and playerrs sound different? duribng replay, work on that too.
+
+**17:07 · to Antigravity (Gemini)**
+
+> unity is closed as of now
+
+**17:11 · to Antigravity (Gemini)**
+
+> in saltworks, theres a lot of pros that are flying above the ground. fix.
+
+**17:16 · to Antigravity (Gemini)**
+
+> make sure to update all github stuff, screenshots text and all. then do a build and a push at the end
+
+**17:23 · to Antigravity (Gemini)**
+
+> update the subpages too. promt page, who buit what, coordination etc etc. on github, at the end.
+
+**17:46 · to Antigravity (Gemini)**
+
+> what is this lighting?
+
+**17:47 · to Antigravity (Gemini)**
+
+> also, let me know why was the first models anims and hands so messed up but this one looks fine? what changed? build me an artifact to understand at the end.
+
+**17:52 · to Antigravity (Gemini)**
+
+> during replay, the animations of the enemies hand is very loose. the gun follwos a different anim and the hand follows a different one,. make sure that both are doing exactly the same thing as the player. player seems fine.
+
+**17:52 · to Antigravity (Gemini)**
+
+> fix the menu lighting too.
+
+**17:52 · to Antigravity (Gemini)**
+
+> also i see no clouds on the sky. i want proper volumetric clouds. with layers and stuff.
+
+**18:13 · to Antigravity (Gemini)**
+
+> the silenced mk18 sounds too tiny, add some bullet fire sfx there too, so it sounds like a proper gun too
+
+**18:13 · to Antigravity (Gemini)**
+
+> and the granade should have fire, just a huge explosion
+
+**18:17 · to Antigravity (Gemini)**
+
+> i hear the game. any bg stuff runnong?> or did u forget to close it?
+
+**18:19 · to Antigravity (Gemini)**
+
+> finish all reveiw and all leftover board item stuff. u have the lead.
+
+**18:25 · to Antigravity (Gemini)**
+
+> where should i put the groq key? after this you should put LLM bots vs our different level bots, and see how they perform against each other. Do a comprehensive study of their behavior, playstyle and give me a doc on how things can be improved so thay play and shoot like humans.
+
+**18:26 · to Antigravity (Gemini)**
+
+> Also rename everything to Lead Rush II, instead of Lead Rush 2 ... everywhere.
+
+**18:28 · to Antigravity (Gemini)**
+
+> api key added. Add a comprehensive doc with animations, charts table and whatevers needed and explain how the LLM bot is working. And then in the same page add the research findings too.
+>
+> Also teach us how the LLM bot was implemented somewhere in the githib too.
+
+**18:34 · to Antigravity (Gemini)**
+
+> also, on the how ai arre building this research page, can you add a few plots with raniking on token usage too? for each model?
+> If you dont have exsact data from each model, do an estimation based on their work, or history if you have access,
+
+**18:37 · to Antigravity (Gemini)**
+
+> also find ways to make the LLM be more integrated, give me settings for both, so commander level is the easiest, and direct control of the avatar is the trickiest (due to per tick prompts),, but try to get it more involved somehow. plan a way look at other researchers what they did, and also have all of this in the GH page too. Make an artifact (animated) if that will explain it better
+
+### 2026-11-24
+
+**10:10 · to Antigravity (Gemini)**
+
+> I need a new menu system. If you have anything left from yesterday, finish it, and then in the skirmish, there should be two tabs, skirmish and experiments.
+>
+> in the experiments section, i should be able to design, experimental sessions. For example, matches with me vs 1 reg, vet,, llm bot, and see how they perform in those scenarios. Lets say i want to designa an 8 match session. 4 wiht normal bol 4 with llm bots. or any other sort of customization. Make it super customizatble. And move AI VS AI to the experminetal section too.
+>
+> also i need you to log comprehensive, aiming movement and behavior data from the player (me) maybe as csv files, it can be tick or summary logs or both. save them end of the round (with a saving screen - so cant see stutter)
+>
+> then later that data needs to be mined, analyzed and equations fitt thorugh, and the non llm bot need to be redesigned, to follow movements like me, aiming like me, missing like me, stategy like me, with timers and behaviors like me and those timesr variying for different difficulty.
+>
+> ask me questions if needed. Also do a thorugh research on how others have done this research and make the data logging as comprehensive as possible.
+> i want heatmaps of the movmenet of the enemies to mimic the player too. heatmap of aaiming, pull dow, seek, flick, etc etc.... also figure out ways evaluate how a bots behavior can be comapred to a human, like a bot behaving 80% like human vs not.
+>
+> I also need a dumb bot later, that will not behave like human at all, like simple bot, robotic movements, no flicks and stuff, just very simple, but its K/D accuracy should match out current bot. Make this kind of bot before doing the exp too, so that i could test it. So our current close to human bot, dumb bot and LLM bot. Ultimate goal of this project is to make a bot that is indistiguishable from human players, and we are doing a data driven approach of this.
+>
+> go. Put all these in the board then start working.
+
+**10:45 · to Antigravity (Gemini)**
+
+> also, the LLM squad artifact makes less sense etc, thing adad starfe, what does those men? they all need an animation of their own too.
+
+**11:00 · to Antigravity (Gemini)**
+
+> also llm result matchups, i need way more than just kd acc stuff, i need their movement, behavior patterns, aiming, shooting miss style heatmaps and all. in the artifact.
+
+**11:20 · to Antigravity (Gemini)**
+
+> update entire github remo, all readmes all files that we read to understand the project at the end and push and build.
+
+**11:25 · to Antigravity (Gemini)**
+
+> H:\Unity Projects\GitHub Repos\InvasionFramerate
+>
+> for data logging, you can get inspiration from this project too, like the folder stucture and all.
+

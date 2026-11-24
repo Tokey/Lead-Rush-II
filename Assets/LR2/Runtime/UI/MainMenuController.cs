@@ -201,7 +201,12 @@ namespace LR2.UI
         /// </summary>
         private void BuildSkirmishLobby()
         {
-            SkirmishSetup.Active = false;
+            if (!LR2.World.MediaDirector.IsBenchRun && !ExperimentSessionRunner.IsSessionActive)
+            {
+                SkirmishSetup.Active = false;
+                SkirmishSetup.BlindMode = false;
+                LR2.AI.LLM.LLMCommanderConfig.ExperimentModeOverride = null;
+            }
             if (mainPanel == null || duelButton == null || mainPanel.transform.parent == null) return;
             _lobby = SkirmishLobby.Create(mainPanel.transform.parent, mode => SettingsFor(mode) ?? duelSettings);
             Show(_lobby.Group, false);
@@ -209,9 +214,13 @@ namespace LR2.UI
             _lobby.OnOptions = () => { _settingsReturn = _lobby.Group; SwitchLayer(settingsPanel, 1f); OnMenuShot?.Invoke(LR2.World.MenuCinematic.OptionsShot); };
             _lobby.OnRules = () => { _rulesFromLobby = true; OpenModeRules(SkirmishSetup.Mode); };
             _lobby.OnStart = mode => Play(SettingsFor(mode) ?? duelSettings);
+            _lobby.OnStartExperiment = cfg => ExperimentSessionRunner.StartSession(cfg, m => SettingsFor(m) ?? duelSettings, Play);
             _lobby.OnModeChanged = mode => OnMenuShot?.Invoke((int)mode);
             duelButton.onClick.AddListener(() => { SwitchLayer(_lobby.Group, 1f); _lobby.PlayIntro(); OnMenuShot?.Invoke((int)SkirmishSetup.Mode); });
             _duelBaseLabel = "PLAY";
+
+            if (!string.IsNullOrEmpty(ExperimentSessionRunner.JustCompletedSummary))
+                ShowExperimentCompletionBanner(ExperimentSessionRunner.JustCompletedSummary);
 
             var hide = new[] { ctfButton, ffaCtfButton, ffaButton, tdmButton, modeRulesButton };
             var keep = new[] { duelButton, settingsButton, quitButton };
@@ -262,10 +271,42 @@ namespace LR2.UI
             var theme = Resources.Load<UITheme>("LR2/UITheme");
             Color accent = theme != null ? theme.accent : new Color(1f, 0.71f, 0.28f);
             float top = 252f;
-            top = Tile(duelButton, "play", "PLAY", "SKIRMISH  ·  1V1 TO 4-WAY  ·  AI VS AI", 128f, top, accent, theme, true);
+            top = Tile(duelButton, "play", "PLAY", "SKIRMISH  ·  EXPERIMENTS  ·  AI VS AI", 128f, top, accent, theme, true);
             top = Tile(settingsButton, "gear", "SETTINGS", "GRAPHICS  ·  CONTROLS  ·  AUDIO", 86f, top, accent, theme, false);
             Tile(quitButton, "power", "QUIT", "BACK TO THE DESKTOP", 86f, top, accent, theme, false);
             BuildCallsignField(theme, accent);
+        }
+
+        private void ShowExperimentCompletionBanner(string summaryText)
+        {
+            ExperimentSessionRunner.JustCompletedSummary = "";
+            if (mainPanel == null) return;
+            var theme = Resources.Load<UITheme>("LR2/UITheme");
+            Color accent = theme != null ? theme.accent : new Color(1f, 0.71f, 0.28f);
+            var go = new GameObject("ExperimentBanner", typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(mainPanel.transform, false);
+            go.GetComponent<Image>().color = new Color(0.04f, 0.055f, 0.065f, 0.92f);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = new Vector2(0.06f, 0.03f); rt.anchorMax = new Vector2(0.75f, 0.09f); rt.offsetMin = rt.offsetMax = Vector2.zero;
+            var txtGo = new GameObject("Text", typeof(RectTransform));
+            txtGo.transform.SetParent(go.transform, false);
+            var txt = txtGo.AddComponent<TextMeshProUGUI>();
+            if (theme != null && theme.bodyFont != null) txt.font = theme.bodyFont;
+            txt.text = summaryText; txt.fontSize = 15f; txt.color = accent; txt.alignment = TextAlignmentOptions.MidlineLeft;
+            var trt = txt.rectTransform;
+            trt.anchorMin = new Vector2(0.02f, 0f); trt.anchorMax = new Vector2(0.88f, 1f); trt.offsetMin = trt.offsetMax = Vector2.zero;
+            var closeGo = new GameObject("Close", typeof(RectTransform), typeof(Image), typeof(Button));
+            closeGo.transform.SetParent(go.transform, false);
+            closeGo.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.1f);
+            var crt = (RectTransform)closeGo.transform;
+            crt.anchorMin = new Vector2(0.89f, 0.15f); crt.anchorMax = new Vector2(0.99f, 0.85f); crt.offsetMin = crt.offsetMax = Vector2.zero;
+            var ctGo = new GameObject("Text", typeof(RectTransform));
+            ctGo.transform.SetParent(closeGo.transform, false);
+            var ct = ctGo.AddComponent<TextMeshProUGUI>();
+            if (theme != null && theme.headingFont != null) ct.font = theme.headingFont;
+            ct.text = "OK"; ct.fontSize = 16f; ct.color = Color.white; ct.alignment = TextAlignmentOptions.Center;
+            ct.rectTransform.anchorMin = Vector2.zero; ct.rectTransform.anchorMax = Vector2.one; ct.rectTransform.offsetMin = ct.rectTransform.offsetMax = Vector2.zero;
+            closeGo.GetComponent<Button>().onClick.AddListener(() => Destroy(go));
         }
 
         /// <summary>

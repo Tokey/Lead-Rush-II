@@ -46,7 +46,10 @@ namespace LR2.Core
         public bool hasEndPoint;
         public float audibleRadius;
         public bool suppressed;
+        public bool aiming;
+        public bool indoors;
         public string weaponName;
+        public LR2.Weapons.WeaponAudioProfile audioProfile;
     }
 
     public struct NoiseEvent

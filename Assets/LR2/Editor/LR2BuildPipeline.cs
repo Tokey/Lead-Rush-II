@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace LR2.EditorTools
 {
-    /// <summary>One-click (or batch-mode) build of all LeadRush 2 content. Menu: LR2 > Build Everything.</summary>
+    /// <summary>One-click (or batch-mode) build of all Lead Rush II content. Menu: LR2 > Build Everything.</summary>
     public static class LR2BuildPipeline
     {
         private const string AutoBuildVersion = "v108"; // Claude: Kinemation driver + SWAT visual proxy, gear
@@ -124,7 +124,7 @@ namespace LR2.EditorTools
         public static bool BuildWindowsPlayer()
         {
             ConfigureBuildIdentity();
-            const string outExe = "H:/Unity Projects/Builds/Lead Rush 2/LeadRush 2.exe";
+            const string outExe = "H:/Unity Projects/Builds/Lead Rush II/Lead Rush II.exe";
             var scenes = Array.FindAll(EditorBuildSettings.scenes, s => s != null && s.enabled && File.Exists(s.path));
             var scenePaths = Array.ConvertAll(scenes, s => s.path);
             Directory.CreateDirectory(Path.GetDirectoryName(outExe));
@@ -159,7 +159,7 @@ namespace LR2.EditorTools
         [MenuItem("LR2/Configure Build Icon & Version", priority = 35)]
         public static void ConfigureBuildIdentity()
         {
-            PlayerSettings.bundleVersion = "11.22.26.1";
+            PlayerSettings.bundleVersion = "11.23.26.1";
             const string iconPath = "Assets/LR2/UI/Icons/LR2_AppIcon.png";
             Directory.CreateDirectory(Path.GetDirectoryName(iconPath));
             if (!File.Exists(iconPath))
@@ -254,6 +254,7 @@ namespace LR2.EditorTools
             ok &= Step("Audio", LR2ContentBuilder.BuildAudio);
             ok &= Step("Weapons", LR2ContentBuilder.BuildWeapons);
             ok &= Step("Soldiers", LR2ContentBuilder.BuildSoldiers);
+            ok &= Step("Military visual mirror", LR2MilitaryVisualBuilder.ApplyToSoldiers);
             AssetDatabase.SaveAssets();
             EditorUtility.ClearProgressBar();
             Debug.Log($"[LR2] Characters rebuilt: {(ok ? "SUCCESS" : "FAILED")}");
@@ -276,6 +277,7 @@ namespace LR2.EditorTools
             ok &= Step("Audio", LR2ContentBuilder.BuildAudio);
             ok &= Step("Weapons", LR2ContentBuilder.BuildWeapons);
             ok &= Step("Soldiers", LR2ContentBuilder.BuildSoldiers);
+            ok &= Step("Military visual mirror", LR2MilitaryVisualBuilder.ApplyToSoldiers);
             ok &= Step("Gameplay prefabs", LR2ContentBuilder.BuildGameplayPrefabs);
             ok &= Step("UI", LR2UIBuilder.Build);
             ok &= Step("Map: Saltworks", LR2MapBuilder.Build);
@@ -298,7 +300,7 @@ namespace LR2.EditorTools
         {
             try
             {
-                EditorUtility.DisplayProgressBar("LeadRush 2", name, 0.5f);
+                EditorUtility.DisplayProgressBar("Lead Rush II", name, 0.5f);
                 action();
                 Debug.Log($"[LR2] Step OK: {name}");
                 return true;

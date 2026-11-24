@@ -7,7 +7,7 @@ using UnityEngine;
 namespace LR2.EditorTools
 {
     /// <summary>
-    /// Procedural adaptive music composer for LeadRush 2 (B136o revamped).
+    /// Procedural adaptive music composer for Lead Rush II (B136o revamped).
     /// Generates Vorbis stereo WAVs under <c>Assets/LR2/Resources/LR2/Music</c>:
     /// - <c>Music_Menu.wav</c>: distinct dark military-industrial dossier theme
     /// - Per-map adaptive 3-stem loops (<c>Saltworks</c>, <c>Deadsector</c>, <c>Foundry</c>, <c>TestRange</c>):
@@ -91,14 +91,20 @@ namespace LR2.EditorTools
                 if (force || !File.Exists(xP)) { WriteCombatStem(xP, theme); anyWritten = true; }
             }
 
-            // Insane climax overdrive layer + match outcome stingers
+            // Insane climax overdrive layer + road-to-win/loss mid-match momentum layers + revamped match outcome stingers
             string overdrivePath = OutputDir + "/Music_Overdrive.wav";
+            string winMomPath = OutputDir + "/Music_Momentum_Winning.wav";
+            string loseMomPath = OutputDir + "/Music_Momentum_Losing.wav";
             string winPath = OutputDir + "/Music_MatchWin.wav";
             string losePath = OutputDir + "/Music_MatchLose.wav";
             allPaths.Add(overdrivePath);
+            allPaths.Add(winMomPath);
+            allPaths.Add(loseMomPath);
             allPaths.Add(winPath);
             allPaths.Add(losePath);
             if (force || !File.Exists(overdrivePath)) { WriteOverdriveStem(overdrivePath); anyWritten = true; }
+            if (force || !File.Exists(winMomPath)) { WriteMomentumStem(winMomPath, true); anyWritten = true; }
+            if (force || !File.Exists(loseMomPath)) { WriteMomentumStem(loseMomPath, false); anyWritten = true; }
             if (force || !File.Exists(winPath)) { WriteOutcomeStinger(winPath, true); anyWritten = true; }
             if (force || !File.Exists(losePath)) { WriteOutcomeStinger(losePath, false); anyWritten = true; }
 
@@ -498,56 +504,171 @@ namespace LR2.EditorTools
             WriteWav(path, L, R);
         }
 
-        /// <summary>9-second heroic victory fanfare (win=true) or somber minor defeat dirge (win=false).</summary>
+        /// <summary>
+        /// B141: Sample-locked 16s mid-match momentum stems matching LR2's guitar/brass/percussion palette.
+        /// Winning = upbeat D-major driving lift; Losing = somber D-minor brooding dread & pulse.
+        /// </summary>
+        private static void WriteMomentumStem(string path, bool winning)
+        {
+            float[] L = new float[TotalSamples];
+            float[] R = new float[TotalSamples];
+            var rng = new System.Random(winning ? 2026 : 4040);
+            float lpL = 0f, lpR = 0f, hatLp = 0f, padLpL = 0f, padLpR = 0f;
+
+            // D major triumphant progression (D -> G -> Bm/A -> A) vs D minor sinking dread (Dm -> Bb -> Gm -> A/Dm)
+            float[] winChords = { 50f, 55f, 59f, 57f, 50f, 55f, 57f, 62f };
+            float[] loseChords = { 50f, 46f, 43f, 45f, 50f, 46f, 43f, 38f };
+            float[] winArp = { 74f, 78f, 81f, 86f, 81f, 78f, 79f, 81f };
+            float[] loseArp = { 62f, 65f, 69f, 65f, 64f, 62f, 60f, 57f };
+
+            for (int i = 0; i < TotalSamples; i++)
+            {
+                float t = i / (float)SampleRate;
+                int bar = Mathf.Clamp((int)(t / 2f), 0, 7);
+                float barT = t - bar * 2f;
+                float noise = (float)(rng.NextDouble() * 2.0 - 1.0);
+                float edge = Mathf.Clamp01(barT / 0.02f) * Mathf.Clamp01((2f - barT) / 0.02f);
+
+                if (winning)
+                {
+                    // Upbeat heroic major lift: syncopated driving kick + bright major third + soaring octave motif
+                    int kStep = Mathf.Clamp((int)(barT / 0.25f), 0, 7);
+                    float kDt = barT - kStep * 0.25f;
+                    float kick = (kStep == 0 || kStep == 3 || kStep == 4 || kStep == 6)
+                        ? (float)Math.Tanh(Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(155f, 48f, Mathf.Clamp01(kDt * 20f)) * kDt) * 1.7f) * Mathf.Exp(-kDt * 15f) * 0.42f
+                        : 0f;
+                    int s16 = Mathf.Clamp((int)(barT / 0.125f), 0, 15);
+                    float sDt = barT - s16 * 0.125f;
+                    float hat = SoftLowpass(ref hatLp, noise * Mathf.Exp(-sDt * 48f) * 0.12f, 6800f);
+
+                    float rootHz = LoopLockedPhaseHz(MidiToHz(winChords[bar] - 12f));
+                    float majThirdHz = rootHz * 1.25992f;
+                    float fifthHz = rootHz * 1.4983f;
+                    float padL = (Saw(rootHz * t) * 0.38f + Saw(majThirdHz * 1.003f * t) * 0.28f + Saw(fifthHz * 0.997f * t) * 0.34f) * edge;
+                    float padR = (Saw(rootHz * t) * 0.38f + Saw(majThirdHz * 0.997f * t) * 0.28f + Saw(fifthHz * 1.003f * t) * 0.34f) * edge;
+
+                    float nHz = MidiToHz(winArp[(s16 + bar) % winArp.Length]);
+                    float aEnv = Mathf.Clamp01(sDt / 0.003f) * Mathf.Exp(-sDt * 7.5f);
+                    float lead = (float)Math.Tanh((Saw(nHz * sDt) + Saw(nHz * 1.5f * sDt) * 0.45f) * 1.4f) * aEnv * 0.28f;
+
+                    L[i] = kick + hat + SoftLowpass(ref padLpL, padL * 0.26f, 2600f) + SoftLowpass(ref lpL, lead, 3800f);
+                    R[i] = kick + hat + SoftLowpass(ref padLpR, padR * 0.26f, 2600f) + SoftLowpass(ref lpR, lead * 0.96f, 3800f);
+                }
+                else
+                {
+                    // Depressing minor warning layer: slow hollow heartbeat sub + minor-second tension + descending dark cello line
+                    int hStep = Mathf.Clamp((int)(barT / 0.5f), 0, 3);
+                    float hDt = barT - hStep * 0.5f;
+                    float thud = (hStep == 0 || hStep == 2)
+                        ? Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(64f, 34f, Mathf.Clamp01(hDt * 6f)) * hDt) * Mathf.Exp(-hDt * 5.8f) * 0.52f
+                        : 0f;
+
+                    float rootHz = LoopLockedPhaseHz(MidiToHz(loseChords[bar] - 12f));
+                    float minThirdHz = rootHz * 1.1892f;
+                    float dimFifthHz = rootHz * 1.4142f;
+                    float padL = (Saw(rootHz * t) * 0.42f + Saw(minThirdHz * 0.998f * t) * 0.34f + Saw(dimFifthHz * 1.002f * t) * 0.14f) * edge;
+                    float padR = (Saw(rootHz * t) * 0.42f + Saw(minThirdHz * 1.002f * t) * 0.34f + Saw(dimFifthHz * 0.998f * t) * 0.14f) * edge;
+
+                    int mStep = Mathf.Clamp((int)(barT / 0.5f), 0, 3);
+                    float mDt = barT - mStep * 0.5f;
+                    float mHz = MidiToHz(loseArp[(bar + mStep) % loseArp.Length]);
+                    float mEnv = Mathf.Clamp01(mDt / 0.04f) * Mathf.Exp(-mDt * 2.1f);
+                    float bow = (Saw(mHz * mDt) * 0.55f + Saw(mHz * 0.5f * mDt) * 0.45f) * mEnv * 0.24f;
+
+                    float filtCut = Mathf.Lerp(950f, 520f, bar / 7f);
+                    L[i] = thud + SoftLowpass(ref padLpL, padL * 0.30f, filtCut) + SoftLowpass(ref lpL, bow, 1100f);
+                    R[i] = thud + SoftLowpass(ref padLpR, padR * 0.30f, filtCut) + SoftLowpass(ref lpR, bow * 0.95f, 1100f);
+                }
+            }
+
+            if (winning) MixProgressiveGuitar(L, R, GuitarIntensity.OverdriveTension, 2f);
+            AddCircularStereoEcho(L, R, Mathf.RoundToInt((winning ? 0.1875f : 0.375f) * SampleRate), winning ? 0.18f : 0.24f);
+            FinalizeStem(L, R, targetRms: winning ? 0.23f : 0.19f, maxPeak: 0.88f);
+            WriteWav(path, L, R);
+        }
+
+        /// <summary>
+        /// B141: 12-second outcome stingers matching LR2's live soundtrack palette.
+        /// Win = upbeat, victorious D-major guitar anthem + drums + soaring fifth brass;
+        /// Lose = heavy, depressing D-minor slow lament with descending minor chord & fading muffled decay.
+        /// </summary>
         private static void WriteOutcomeStinger(string path, bool win)
         {
-            const float dur = 9.0f;
+            const float dur = 12.0f;
             int n = Mathf.RoundToInt(SampleRate * dur);
             float[] L = new float[n];
             float[] R = new float[n];
             var rng = new System.Random(win ? 777 : 666);
-            float lpL = 0f, lpR = 0f;
+            float lpL = 0f, lpR = 0f, hatLp = 0f;
 
-            // Heroic D major -> G -> A -> D resolution vs Sombre Dm -> Bb -> Gm -> Dm/A descent
+            // Heroic D-major anthem: D5 - F#5 - A5 - B5 - A5 - D6 - F#6 - D6
+            // Depressing D-minor descent: D4 - C4 - Bb3 - A3 - G3 - F3 - E3 - D3
             float[] motifMidi = win
-                ? new[] { 62f, 66f, 69f, 74f, 73f, 74f, 78f, 86f }
+                ? new[] { 62f, 66f, 69f, 71f, 69f, 74f, 78f, 86f }
                 : new[] { 62f, 60f, 58f, 57f, 55f, 53f, 52f, 50f };
             float[] bassRoots = win
-                ? new[] { 38f, 38f, 43f, 43f, 45f, 45f, 38f, 38f }
-                : new[] { 38f, 36f, 34f, 33f, 31f, 31f, 29f, 26f };
+                ? new[] { 38f, 42f, 45f, 47f, 43f, 45f, 50f, 38f }
+                : new[] { 38f, 36f, 34f, 33f, 31f, 29f, 28f, 26f };
 
+            float stepDur = dur / 8f;
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)SampleRate;
-                int seg = Mathf.Clamp((int)(t / (dur / 8f)), 0, 7);
-                float segT = t - seg * (dur / 8f);
-                float globalFade = Mathf.Clamp01(t / 0.04f) * Mathf.Clamp01((dur - t) / 1.4f);
+                int seg = Mathf.Clamp((int)(t / stepDur), 0, 7);
+                float segT = t - seg * stepDur;
+                float noise = (float)(rng.NextDouble() * 2.0 - 1.0);
+                float globalFade = Mathf.Clamp01(t / 0.03f) * Mathf.Clamp01((dur - t) / (win ? 1.8f : 2.8f));
 
                 float rootF = MidiToHz(bassRoots[seg]);
-                float bass = (Mathf.Sin(2f * Mathf.PI * rootF * t) * 0.45f + Saw(rootF * t) * 0.16f);
-
                 float mHz = MidiToHz(motifMidi[seg]);
-                float fifthHz = mHz * (win ? 1.5f : 1.1892f); // triumphant 5th vs brooding minor 3rd
-                float atk = Mathf.Clamp01(segT / 0.06f);
-                float brass = (float)Math.Tanh((Saw(mHz * t) * 0.48f + Saw(fifthHz * 1.003f * t) * 0.36f) * (win ? 1.7f : 1.3f)) * atk;
+                float thirdOrFifthHz = mHz * (win ? 1.5f : 1.1892f);
 
-                // Timpani booms on bars 0, 2, 4, 6
-                float timpani = 0f;
-                if (seg % 2 == 0 && segT < 0.7f)
+                if (win)
                 {
-                    float df = Mathf.Lerp(win ? 120f : 86f, 44f, Mathf.Clamp01(segT * 5f));
-                    float noise = (float)(rng.NextDouble() * 2.0 - 1.0) * Mathf.Exp(-segT * 28f) * 0.15f;
-                    timpani = (Mathf.Sin(2f * Mathf.PI * df * segT) * Mathf.Exp(-segT * 5.2f) * 0.55f + noise) * (win ? 1.0f : 0.75f);
-                }
+                    // Upbeat rock/EDM-tactical victory groove: punchy kick + crisp snare + driving chugged power chord
+                    float beatT = t % 0.375f; // 160 BPM celebratory lift
+                    int beatIdx = Mathf.FloorToInt(t / 0.375f);
+                    float kick = (beatIdx % 2 == 0 || beatIdx % 4 == 3)
+                        ? (float)Math.Tanh(Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(165f, 48f, Mathf.Clamp01(beatT * 20f)) * beatT) * 1.8f) * Mathf.Exp(-beatT * 15f) * 0.48f
+                        : 0f;
+                    float snare = (beatIdx % 2 == 1)
+                        ? (Mathf.Sin(2f * Mathf.PI * 190f * beatT) * 0.4f + noise * 0.6f) * Mathf.Exp(-beatT * 22f) * 0.35f
+                        : 0f;
+                    float hat = SoftLowpass(ref hatLp, noise * Mathf.Exp(-(t % 0.1875f) * 44f) * 0.14f, 7000f);
 
-                float cut = win ? 4400f : Mathf.Lerp(2100f, 650f, t / dur);
-                float rawL = (bass + brass * 0.42f + timpani) * globalFade;
-                float rawR = (bass + brass * 0.42f * 0.96f + timpani) * globalFade;
-                L[i] = SoftLowpass(ref lpL, rawL, cut);
-                R[i] = SoftLowpass(ref lpR, rawR, cut);
+                    // Crunchy power-chord guitar strums + soaring major brass lead
+                    float chug = (float)Math.Tanh((Saw(rootF * 2f * t) * 0.5f + Saw(rootF * 3f * t) * 0.4f + Saw(rootF * 4f * t) * 0.3f) * 2.4f)
+                                 * (0.45f + 0.55f * Mathf.Exp(-(t % 0.1875f) * 8f)) * 0.32f;
+                    float atk = Mathf.Clamp01(segT / 0.04f);
+                    float brass = (float)Math.Tanh((Saw(mHz * t) * 0.5f + Saw(thirdOrFifthHz * 1.003f * t) * 0.4f) * 1.75f) * atk * 0.42f;
+                    float rawL = (kick + snare + hat + chug + brass) * globalFade;
+                    float rawR = (kick + snare + hat + chug * 0.94f + brass * 0.97f) * globalFade;
+                    L[i] = SoftLowpass(ref lpL, rawL, 5200f);
+                    R[i] = SoftLowpass(ref lpR, rawR, 5200f);
+                }
+                else
+                {
+                    // Depressing heavy defeat lament: slow muffled tolling sub + weeping detuned minor cello + low-pass collapse
+                    float atk = Mathf.Clamp01(segT / 0.18f);
+                    float fadeSeg = Mathf.Exp(-segT * 0.65f);
+                    float bass = (Mathf.Sin(2f * Mathf.PI * rootF * t) * 0.62f + Saw(rootF * t) * 0.22f);
+                    float vibrato = 1f + 0.0055f * Mathf.Sin(2f * Mathf.PI * 4.5f * t);
+                    float celloL = (Saw(mHz * vibrato * t) * 0.52f + Saw(thirdOrFifthHz * 0.996f * t) * 0.44f + Saw(mHz * 0.5f * t) * 0.28f) * atk * fadeSeg;
+                    float celloR = (Saw(mHz * vibrato * 0.998f * t) * 0.52f + Saw(thirdOrFifthHz * 1.004f * t) * 0.44f + Saw(mHz * 0.5f * t) * 0.28f) * atk * fadeSeg;
+                    // Distant hollow toll on bars 0, 2, 4, 6
+                    float toll = (seg % 2 == 0 && segT < 1.1f)
+                        ? (Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(72f, 36f, Mathf.Clamp01(segT * 4f)) * segT) * Mathf.Exp(-segT * 3.8f) * 0.45f)
+                        : 0f;
+                    float cut = Mathf.Lerp(1450f, 340f, t / dur);
+                    float rawL = (bass * 0.42f + celloL * 0.38f + toll) * globalFade;
+                    float rawR = (bass * 0.42f + celloR * 0.38f + toll) * globalFade;
+                    L[i] = SoftLowpass(ref lpL, rawL, cut);
+                    R[i] = SoftLowpass(ref lpR, rawR, cut);
+                }
             }
 
-            FinalizeStinger(L, R, win ? 0.20f : 0.14f, 0.85f);
+            AddCircularStereoEcho(L, R, Mathf.RoundToInt((win ? 0.1875f : 0.42f) * SampleRate), win ? 0.18f : 0.28f);
+            FinalizeStinger(L, R, win ? 0.24f : 0.145f, 0.88f);
             WriteWav(path, L, R);
         }
 

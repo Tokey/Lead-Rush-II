@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LR2.AI;
 using LR2.Combat;
 using UnityEngine;
 
@@ -9,6 +10,7 @@ namespace LR2.Game
     [Serializable]
     public class SkirmishBot
     {
+        public BotArchetype archetype = BotArchetype.HumanLike;
         [Tooltip("0 Recruit, 1 Regular, 2 Hardened, 3 Veteran, 4 Adaptive.")]
         public int difficulty = 1;
         public TeamId team = TeamId.Bravo;
@@ -16,23 +18,25 @@ namespace LR2.Game
 
     /// <summary>
     /// Skirmish lobby state (user 11-19: "just have play, then in that have all the settings ... 3 way, 4 way, so i can select
-    /// how many bots and which team they can be in ... a AI vs AI mode where i can test various difficulties of AI. like command
-    /// and conquer skirmish menu ... maybe max 20"). Saved in PlayerPrefs; MatchManager spawns from it while <see cref="Active"/>.
+    /// how many bots and which team they can be in ... maybe max 20"). Saved in PlayerPrefs; MatchManager spawns from it while <see cref="Active"/>.
     /// </summary>
     public static class SkirmishSetup
     {
         public const int MaxBots = 20;
         public static readonly string[] DifficultyNames = { "RECRUIT", "REGULAR", "HARDENED", "VETERAN", "ADAPTIVE" };
+        public static readonly string[] ArchetypeNames = { "HUMAN", "DUMB", "LLM", "FITTED" };
         public static readonly TeamId[] TeamChoices = { TeamId.None, TeamId.Alpha, TeamId.Bravo, TeamId.Charlie, TeamId.Delta };
         public static readonly GameModeType[] Modes =
             { GameModeType.TeamDeathmatch, GameModeType.FreeForAll, GameModeType.CaptureTheFlag, GameModeType.Duel };
         public static readonly string[] ModeNames = { "TEAM DEATHMATCH", "FREE FOR ALL", "CAPTURE THE FLAG", "1V1 DUEL" };
-        public static readonly string[] Presets = { "1V1", "2 TEAMS", "3-WAY", "4-WAY", "FFA", "AI VS AI" };
+        public static readonly string[] Presets = { "1V1", "2 TEAMS", "3-WAY", "4-WAY", "FFA" };
 
         /// <summary>True from the lobby's START until the menu loads again: MatchManager spawns from these slots.</summary>
         public static bool Active;
-        /// <summary>AI vs AI: no player soldier; a spectator camera follows the bots.</summary>
+        /// <summary>AI vs AI: no player soldier; a spectator camera follows the bots (used in Experiments / CLI bench).</summary>
         public static bool PlayerSpectates;
+        /// <summary>B153 Blind Turing Test mode: suppresses archetype & difficulty tags on bot display names.</summary>
+        public static bool BlindMode;
         public static TeamId PlayerTeam = TeamId.Alpha;
         public static GameModeType Mode = GameModeType.TeamDeathmatch;
         public static readonly List<SkirmishBot> Bots = new List<SkirmishBot>();
@@ -83,12 +87,18 @@ namespace LR2.Game
                     var s = JsonUtility.FromJson<Saved>(json);
                     if (s != null)
                     {
-                        PlayerSpectates = s.spectate;
+                        PlayerSpectates = s.spectate && LR2.World.MediaDirector.IsBenchRun;
                         PlayerTeam = s.playerTeam == TeamId.None ? TeamId.None : TeamId.Alpha; // B116: your team is always Alpha
                         Mode = s.mode;
                         if (s.bots != null)
                             foreach (var b in s.bots)
-                                if (Bots.Count < MaxBots && b != null) Bots.Add(new SkirmishBot { difficulty = Mathf.Clamp(b.difficulty, 0, 4), team = b.team });
+                                if (Bots.Count < MaxBots && b != null)
+                                    Bots.Add(new SkirmishBot
+                                    {
+                                        archetype = (BotArchetype)Mathf.Clamp((int)b.archetype, 0, 3),
+                                        difficulty = Mathf.Clamp(b.difficulty, 0, 4),
+                                        team = b.team
+                                    });
                     }
                 }
                 catch (Exception) { Bots.Clear(); }

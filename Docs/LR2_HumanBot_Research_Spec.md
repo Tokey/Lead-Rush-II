@@ -1,4 +1,4 @@
-# LeadRush 2 — Human-Like Bot Biomechanics, Adaptive AI & Physics Systems Specification
+# Lead Rush II — Human-Like Bot Biomechanics, Adaptive AI & Physics Systems Specification
 
 *Engineering & Academic Reference Prepared for Claude Artifact Generation*
 

@@ -957,7 +957,7 @@ MonoBehaviour:
   reloadPlayRate: 0.85
   reloadSpeedMultiplier: 1.5
   tacticalReload: 1
-  tacticalEndAfterMagIn: 0.03
+  tacticalEndAfterMagIn: 0.075
   chamberedRoundBonus: 1
   cameraReloadAnimation: {fileID: 0}
   grenadeClip: {fileID: 11400000, guid: 9f809575cb33274409176e3b6e84b708, type: 2}

@@ -81,7 +81,7 @@ namespace LR2.EditorTools
                         break;
                     case "build-player":
                         bool pOk = LR2BuildPipeline.BuildWindowsPlayer();
-                        Result("build-player " + (pOk ? "SUCCESS -> H:/Unity Projects/Builds/Lead Rush 2/LeadRush 2.exe" : "FAILED"));
+                        Result("build-player " + (pOk ? "SUCCESS -> H:/Unity Projects/Builds/Lead Rush II/Lead Rush II.exe" : "FAILED"));
                         break;
                     case "play":
                         string scene = parts.Length > 1 ? parts[1] : LR2MapBuilder.ScenePath;

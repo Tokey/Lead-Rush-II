@@ -238,8 +238,8 @@ namespace LR2.EditorTools
                     name = FPSANames.Curve_MaskAttachHand,
                     curve = new AnimationCurve(
                         new Keyframe(0f, 1f),
-                        new Keyframe(0.65f, 1f),
-                        new Keyframe(0.84f, 0f),
+                        new Keyframe(0.50f, 1f),
+                        new Keyframe(0.68f, 0f),
                         new Keyframe(1f, 0f))
                 }
             };
@@ -268,6 +268,8 @@ namespace LR2.EditorTools
                     if (gp != null) gp.objectReferenceValue = grenadeAsset;
                     var rate = so.FindProperty("grenadeThrowRate");
                     if (rate != null) rate.floatValue = 1.35f;
+                    var tacEnd = so.FindProperty("tacticalEndAfterMagIn");
+                    if (tacEnd != null) tacEnd.floatValue = 0.075f;
                     so.ApplyModifiedPropertiesWithoutUndo();
                     EditorUtility.SetDirty(gun);
                     PrefabUtility.SaveAsPrefabAsset(contents, path);

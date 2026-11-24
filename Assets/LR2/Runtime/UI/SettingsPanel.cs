@@ -56,6 +56,14 @@ namespace LR2.UI
         public Button colorBlindPrev, colorBlindNext;
         public TMP_Text colorBlindValue;
         public Toggle laserSight;
+        [Header("LLM Integration (B151)")]
+        public Button llmModePrev, llmModeNext;
+        public TMP_Text llmModeValue;
+        public Button llmTeamsPrev, llmTeamsNext;
+        public TMP_Text llmTeamsValue;
+        public Button llmIntervalPrev, llmIntervalNext;
+        public TMP_Text llmIntervalValue;
+        public TMP_Text llmKeyStatus;
 
         [Header("Tabs & Keybinds (B44)")]
         public GameObject[] tabPanels;
@@ -91,6 +99,9 @@ namespace LR2.UI
         private static readonly string[] UpscalerLabels = { "NATIVE", "STP", "TAAU", "FSR 1.0", "DLSS", "FSR 2" };
         private static readonly string[] ColorBlindLabels = { "STANDARD", "COLOR-BLIND SAFE" };
         private static readonly string[] DifficultyLabels = { "RECRUIT", "REGULAR", "HARDENED", "VETERAN", "ADAPTIVE" };
+        private static readonly string[] LlmModeLabels = { "OFF (RULES)", "COMMANDER (MACRO)", "TACTICAL MICRO", "AVATAR PILOT" };
+        private static readonly string[] LlmTeamLabels = { "NONE", "ALPHA TEAM", "BRAVO TEAM", "BOTH TEAMS" };
+        private static readonly string[] LlmIntervalLabels = { "5s (FAST)", "8s (TACTICAL)", "12s (MACRO)", "18s (LIGHT)" };
         private bool _loading;
         private int _activeTab;
         private UnityEngine.InputSystem.InputActionRebindingExtensions.RebindingOperation _activeRebind;
@@ -141,6 +152,7 @@ namespace LR2.UI
                 rayTracing.isOn = supported && LR2Settings.RayTracing;
             }
             UpdateUpscalerNote();
+            UpdateLlmKeyNote();
             UpdateLabels();
             RefreshKeybindLabels();
             _loading = false;
@@ -150,6 +162,14 @@ namespace LR2.UI
         {
             if (upscalerStatusNote != null)
                 upscalerStatusNote.text = UpscalerBackend.GetCapabilitiesNote();
+        }
+
+        private void UpdateLlmKeyNote()
+        {
+            if (llmKeyStatus == null) return;
+            llmKeyStatus.text = LR2.AI.LLM.GroqClient.HasKey
+                ? "GROQ API: KEY READY (" + LR2.AI.LLM.GroqClient.KeySource + ")"
+                : "GROQ API: NO KEY (save groq_api_key.txt in AppData/LocalLow/DefaultCompany/Lead Rush II)";
         }
 
         private void Awake()
@@ -195,6 +215,12 @@ namespace LR2.UI
                 () => DifficultyLabels.Length, i => LR2Settings.BotDifficulty = i);
             HookStep(botTeamModePrev, botTeamModeNext, () => Mathf.Clamp(LR2Settings.BotTeamMode, 0, LR2Session.BotTeamModeLabels.Length - 1),
                 () => LR2Session.BotTeamModeLabels.Length, i => LR2Settings.BotTeamMode = i);
+            HookStep(llmModePrev, llmModeNext, () => Mathf.Clamp(LR2Settings.LlmMode, 0, LlmModeLabels.Length - 1),
+                () => LlmModeLabels.Length, i => LR2Settings.LlmMode = i);
+            HookStep(llmTeamsPrev, llmTeamsNext, () => Mathf.Clamp(LR2Settings.LlmTeams, 0, LlmTeamLabels.Length - 1),
+                () => LlmTeamLabels.Length, i => LR2Settings.LlmTeams = i);
+            HookStep(llmIntervalPrev, llmIntervalNext, () => Mathf.Clamp(LR2Settings.LlmIntervalIndex, 0, LlmIntervalLabels.Length - 1),
+                () => LlmIntervalLabels.Length, i => LR2Settings.LlmIntervalIndex = i);
             if (resetDefaultsButton != null) resetDefaultsButton.onClick.AddListener(ResetDefaults);
             if (resetBindingsButton != null) resetBindingsButton.onClick.AddListener(ResetKeybinds);
             if (tabButtons != null)
@@ -351,6 +377,12 @@ namespace LR2.UI
                 botDifficultyValue.text = DifficultyLabels[Mathf.Clamp(LR2Settings.BotDifficulty, 0, DifficultyLabels.Length - 1)];
             if (botTeamModeValue != null)
                 botTeamModeValue.text = LR2Session.BotTeamModeLabels[Mathf.Clamp(LR2Settings.BotTeamMode, 0, LR2Session.BotTeamModeLabels.Length - 1)];
+            if (llmModeValue != null)
+                llmModeValue.text = LlmModeLabels[Mathf.Clamp(LR2Settings.LlmMode, 0, LlmModeLabels.Length - 1)];
+            if (llmTeamsValue != null)
+                llmTeamsValue.text = LlmTeamLabels[Mathf.Clamp(LR2Settings.LlmTeams, 0, LlmTeamLabels.Length - 1)];
+            if (llmIntervalValue != null)
+                llmIntervalValue.text = LlmIntervalLabels[Mathf.Clamp(LR2Settings.LlmIntervalIndex, 0, LlmIntervalLabels.Length - 1)];
         }
 
         public void ResetDefaults()

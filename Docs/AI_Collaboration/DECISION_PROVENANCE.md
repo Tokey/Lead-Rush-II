@@ -1,6 +1,6 @@
-# Who decided what? Human and AI decisions in LeadRush 2
+# Who decided what? Human and AI decisions in Lead Rush II
 
-LeadRush 2 is a first-person shooter built in Unity HDRP in five days, November 16 to 20, 2026. One developer directed four AI coding
+Lead Rush II is a first-person shooter built in Unity HDRP in five days, November 16 to 20, 2026. One developer directed four AI coding
 agents through prompts and play-testing. The agents were Claude Code (`claude-opus-5-5`), Antigravity "Gemini" (`argon` and
 `gemini-4-hydrogen` variants), GitHub Copilot (`gpt-5.6-luna`) and Codex (`gpt-6`). The agents wrote, tested and documented the game.
 
@@ -17,8 +17,9 @@ It then evaluates the project with the methods that published studies of human-A
   <img src="figures/prov_growth.gif" alt="Animated chart: 270 features appear one by one in five rows, one row per origin, in the order they shipped from Nov 16 to Nov 20" width="900">
 </p>
 
-> **At a glance**
+> **At a glance (original `11-16` to `11-20` case-study corpus: `270` features, `268` prompts, `87` bugs; updated ledgers through `11.24.26.1`: `287` features, `319` developer prompts / `329` archive entries, `106` bugs)**
 >
+> Original `11-16..11-20` baseline summarized below (`provenance.py` figures now reflect all `287` features / `319` prompts / `106` bugs):
 > - **270** atomic features and fixes. The developer wrote **268** prompts (254 verbatim) and logged **87** bugs. Claude Code prompted itself **152** times.
 > - **31 %** came straight from a prompt. **30 %** were designed by an AI from the developer's goal. **13 %** were AI ideas nobody asked for.
 >   **21 %** began as the developer's bug report and **5 %** as an AI test or review finding.
@@ -455,14 +456,14 @@ flowchart LR
 All four were the AI's own mechanisms. None were prompt-specified features. For a researcher, this is the cost side of "improvement
 over the request". When the AI chooses the mechanism, the developer only finds the problems by playing.
 
-### 3.9 The LLM squad commander: your constraints, the AI's rules (not yet tested)
+### 3.9 The LLM squad commander: your constraints, the AI's rules (tested live in `11.23.26.1`)
 
 | | |
 |---|---|
 | **You wrote** | *"can you implement a system to control the commander thing. with LLM? i'll input groq api. using free tier only. build it first then we'd test how it is performing against out non llm bots."* (P271) |
 | **What you decided** | The provider (Groq), the budget (free tier only), the experiment (LLM teams against rule bots). |
 | **What the AI decided** | See the list below. |
-| **Outcome** | Open: waiting for the developer's API key. |
+| **Outcome** | **Verified (`11.23.26.1`):** Tested live across 8 × 75s 4v4 Saltworks matches (`M1–M8`) against Recruit, Regular, Hardened & Veteran rule bots; expanded into 3 integration depths (`Commander`, `TacticalMicro`, `AvatarPilot`). See [`LLM_BOT_STUDY.md`](LLM_BOT_STUDY.md) and [`llm-architecture.html`](../Bot/llm-architecture.html). |
 
 What Claude decided:
 
@@ -479,7 +480,7 @@ What Claude decided:
 ## 4. Evaluation with published methods
 
 The developer asked how published research separates human and AI decisions, and for the same kinds of evaluation here. These are the
-closest studies, what they measured, and how each method was applied to LeadRush 2.
+closest studies, what they measured, and how each method was applied to Lead Rush II.
 
 | Study | What it measures | How | Applied here | Result here |
 |---|---|---|---|---|
@@ -493,7 +494,7 @@ closest studies, what they measured, and how each method was applied to LeadRush
 | Barke, James & Polikarpova, Grounded Copilot (OOPSLA 2023) | Acceleration (you know what you want) vs exploration (you don't) | Grounded theory, 20 programmers | Exact vs goal prompts | 37 % exact (acceleration-like), 60 % goal (exploration-like) |
 | Mozannar et al., CUPS (CHI 2024) | Time spent in each programmer state with an AI assistant | 21 programmers labelled their own screen recordings (3,000+ labels) | The developer labels a blind sample of features | Sheet ready; agreement pending |
 | Lee, Liang & Yang, CoAuthor (CHI 2022) | Who wrote which text, keystroke by keystroke, in 1,445 sessions | Full interaction logging and replay | Provenance chain: prompt → board row → task → commit → feature | 77 % of features traced to a specific prompt |
-| Rezwana & Maher, COFI (ACM TOCHI 2023) | Interaction design of co-creative systems: collaboration style, communication style, creative process, creative product | Framework applied to 92 systems | LeadRush 2 described in those terms | Turn-taking by prompts; parallel agents in lanes; mixed initiative in 18 % of features |
+| Rezwana & Maher, COFI (ACM TOCHI 2023) | Interaction design of co-creative systems: collaboration style, communication style, creative process, creative product | Framework applied to 92 systems | Lead Rush II described in those terms | Turn-taking by prompts; parallel agents in lanes; mixed initiative in 18 % of features |
 | Yannakakis, Liapis & Alexopoulos, mixed-initiative co-creativity (FDG 2014) | Whether the computer fosters the human's creativity, not just produces content | Evaluation of a game-design tool (Sentient Sketchbook) | Fate of AI-initiated work | 89 % of finished AI-initiated items kept |
 | Becker et al. (METR), RCT on AI and developer speed (2025) | Whether AI tools make experienced developers faster | Randomised trial, 16 developers, 246 tasks: 19 % slower with AI, while they believed 20 % faster | A caution, not a method | No productivity claim is made here |
 
@@ -550,7 +551,7 @@ The two are not directly comparable:
 
 He, Houde and Weisz found that people credit AI less than a human for the same contribution. They also found that the *type* of
 contribution matters most to credit, ahead of amount and initiative. IBM's AI Attribution Toolkit turns this into three questions.
-Here are the answers for LeadRush 2, from the data:
+Here are the answers for Lead Rush II, from the data:
 
 1. **How much of the work did the AI do?**
    - The agents did all the implementation, testing and documentation in the ledgers: 207 tasks.
@@ -563,7 +564,7 @@ Here are the answers for LeadRush 2, from the data:
    - The developer, by playing every build.
    - The agents, by cross-review: 45 bugs were caught at review or by the push check.
 
-> *Short form:* LeadRush 2 was directed by a human developer who set 82 % of the goals. AI agents (Claude Code `claude-opus-5-5`, Gemini
+> *Short form:* Lead Rush II was directed by a human developer who set 82 % of the goals. AI agents (Claude Code `claude-opus-5-5`, Gemini
 > `argon`/`gemini-4-hydrogen`, Copilot `gpt-5.6-luna`, Codex `gpt-6`) designed 69 % of the features, initiated 18 % and implemented all of them.
 > The developer reviewed the work by play-testing; the agents cross-reviewed each other.
 
@@ -705,7 +706,7 @@ Related pages:
 - [QA_PROCESS.md](QA_PROCESS.md): how the agents test the game.
 - [PROMPTS.md](PROMPTS.md): every prompt.
 
-**Cite as:** *LeadRush 2 decision-provenance dataset (2026). Who decided what: human and AI decisions in a five-day multi-agent game
+**Cite as:** *Lead Rush II decision-provenance dataset (2026). Who decided what: human and AI decisions in a five-day multi-agent game
 build. https://github.com/Tokey/Lead-Rush-2/tree/main/Docs/AI_Collaboration*
 
 ---

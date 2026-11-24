@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-Quality of AI work per agent and model on LeadRush 2.
+Quality of AI work per agent and model on Lead Rush II.
 
-Reads ../data/tasks.csv and ../data/bugs.csv (see ../data/README.md for the columns) and writes, to ../figures/:
+Reads ../data/tasks.csv, ../data/bugs.csv, and ../data/token_estimates.csv (see ../data/README.md for the columns) and writes, to ../figures/:
   - contribution_score_{light,dark}.png   contribution score with peer-rated task-difficulty weighting
   - escaped_per_10_tasks_{light,dark}.png   bugs found after delivery, per 10 tasks
   - review_catches_per_10_tasks_{light,dark}.png   bugs another agent caught at review, per 10 tasks
   - tasks_delivered_{light,dark}.png   completed task count per agent and model
-  - summary.md   the same numbers as a table (embedded in ../README.md)
+  - token_usage_ranking_by_model_{light,dark}.png   ranked total tokens (estimated coding + exact Groq API logs)
+  - token_efficiency_per_task_by_model_{light,dark}.png   tokens per completed task / LLM decision
+  - token_share_by_agent_and_phase_{light,dark}.png   token share by development phase & runtime tier
+  - summary.md / token_summary.md   the same numbers as tables (embedded in ../README.md)
 
 Run:  python Docs/AI_Collaboration/analysis/analyze.py      (needs matplotlib: pip install matplotlib)
 
@@ -309,6 +312,149 @@ def main():
     with open(os.path.join(FIG, "tasks_log.md"), "w", encoding="utf-8") as f:
         f.write(task_log_markdown(tasks))
     print(table)
+    token_path = os.path.join(DATA, "token_estimates.csv")
+    if os.path.exists(token_path):
+        tok_rows = read("token_estimates.csv")
+        token_charts(tok_rows)
+
+
+def token_charts(tok_rows):
+    if not tok_rows:
+        return
+    parsed = []
+    for r in tok_rows:
+        in_tok = int(r["input_tokens"])
+        out_tok = int(r["output_tokens"])
+        tot = int(r["total_tokens"])
+        units = max(1, int(r["work_units"]))
+        src = r["source_type"].strip()
+        label_src = "exact API" if src == "exact_api_log" else "est."
+        parsed.append(dict(
+            label=f"{r['agent']} · {r['model']}  ({label_src}, n={units})",
+            agent=r["agent"].strip(),
+            model=r["model"].strip(),
+            phase=r["phase"].strip(),
+            source_type=src,
+            in_tok=in_tok,
+            out_tok=out_tok,
+            tot=tot,
+            per_unit=tot / float(units),
+            units=units,
+            basis=r.get("basis", "").strip(),
+        ))
+
+    # 1. token_usage_ranking_by_model_{light,dark}.png (total tokens M, input vs output stacked)
+    by_tot = sorted(parsed, key=lambda x: x["tot"])
+    names1 = [x["label"] for x in by_tot]
+    ins1 = [x["in_tok"] / 1e6 for x in by_tot]
+    outs1 = [x["out_tok"] / 1e6 for x in by_tot]
+    tots1 = [x["tot"] / 1e6 for x in by_tot]
+    vmax1 = max(tots1 + [1e-6])
+    for theme, c in THEMES.items():
+        c_out = "#eb6834" if theme == "light" else "#ff7d3b"
+        fig, ax = plt.subplots(figsize=(10.4, 0.52 * len(by_tot) + 2.4), dpi=150)
+        fig.patch.set_facecolor(c["surface"])
+        ax.set_facecolor(c["surface"])
+        ax.barh(names1, ins1, height=0.55, color=c["bar"], label="Input / context tokens (M)")
+        ax.barh(names1, outs1, left=ins1, height=0.55, color=c_out, label="Output / reasoning tokens (M)")
+        for i, x in enumerate(by_tot):
+            t_str = f"{x['tot']/1e6:.2f}M" if x["tot"] >= 100_000 else f"{x['tot']/1e3:.1f}k"
+            ax.text(tots1[i] + vmax1 * 0.015, i, t_str, va="center", ha="left", color=c["ink"], fontsize=8.5)
+        ax.set_xlim(0, vmax1 * 1.22)
+        ax.xaxis.grid(True, color=c["grid"], linewidth=0.8)
+        ax.set_axisbelow(True)
+        for s in ("top", "right", "left"):
+            ax.spines[s].set_visible(False)
+        ax.spines["bottom"].set_color(c["grid"])
+        ax.tick_params(colors=c["ink2"], labelsize=8.5, length=0)
+        for lbl in ax.get_yticklabels():
+            lbl.set_color(c["ink"])
+        ax.set_xlabel("Total tokens in millions (M)", color=c["ink2"], fontsize=9)
+        ax.set_title("Token Usage Ranking by Model — Estimated Coding + Exact Groq API", loc="left", color=c["ink"], fontsize=12, fontweight="bold", pad=28)
+        ax.text(0, 1.02, "Coding models estimated from task/review/transcript/quota records; Groq runtime bots exact from llm_*.jsonl", transform=ax.transAxes, color=c["ink2"], fontsize=8.2, va="bottom")
+        ax.legend(loc="lower right", frameon=True, facecolor=c["surface"], edgecolor=c["grid"], labelcolor=c["ink"], fontsize=8)
+        fig.tight_layout()
+        fig.savefig(os.path.join(FIG, f"token_usage_ranking_by_model_{theme}.png"), facecolor=c["surface"], bbox_inches="tight", pad_inches=0.25)
+        plt.close(fig)
+
+    # 2. token_efficiency_per_task_by_model_{light,dark}.png
+    by_eff = sorted(parsed, key=lambda x: x["per_unit"])
+    names2 = [x["label"] for x in by_eff]
+    vals2 = [x["per_unit"] / 1e3 for x in by_eff]
+    vmax2 = max(vals2 + [1e-6])
+    for theme, c in THEMES.items():
+        cols = [("#1baf7a" if theme == "light" else "#199e70") if x["source_type"] == "exact_api_log" else c["bar"] for x in by_eff]
+        fig, ax = plt.subplots(figsize=(10.4, 0.52 * len(by_eff) + 2.4), dpi=150)
+        fig.patch.set_facecolor(c["surface"])
+        ax.set_facecolor(c["surface"])
+        ax.barh(names2, vals2, height=0.55, color=cols)
+        for i, v in enumerate(vals2):
+            ax.text(v + vmax2 * 0.015, i, f"{v:.1f}k" if v < 10 else f"{v:,.0f}k", va="center", ha="left", color=c["ink"], fontsize=8.5)
+        ax.set_xlim(0, vmax2 * 1.22)
+        ax.xaxis.grid(True, color=c["grid"], linewidth=0.8)
+        ax.set_axisbelow(True)
+        for s in ("top", "right", "left"):
+            ax.spines[s].set_visible(False)
+        ax.spines["bottom"].set_color(c["grid"])
+        ax.tick_params(colors=c["ink2"], labelsize=8.5, length=0)
+        for lbl in ax.get_yticklabels():
+            lbl.set_color(c["ink"])
+        ax.set_xlabel("Average thousands of tokens (k) per counted task / API decision", color=c["ink2"], fontsize=9)
+        ax.set_title("Token Cost per Delivered Unit by Model (lower = lighter per unit)", loc="left", color=c["ink"], fontsize=12, fontweight="bold", pad=28)
+        ax.text(0, 1.02, "Blue = estimated coding tokens per task/review; Green = exact Groq API tokens per live decision call", transform=ax.transAxes, color=c["ink2"], fontsize=8.2, va="bottom")
+        fig.tight_layout()
+        fig.savefig(os.path.join(FIG, f"token_efficiency_per_task_by_model_{theme}.png"), facecolor=c["surface"], bbox_inches="tight", pad_inches=0.25)
+        plt.close(fig)
+
+    # 3. token_share_by_agent_and_phase_{light,dark}.png
+    phase_map = OrderedDict()
+    for x in parsed:
+        p = x["phase"]
+        phase_map[p] = phase_map.get(p, 0) + x["tot"]
+    p_items = sorted(phase_map.items(), key=lambda kv: kv[1])
+    p_names = [k for k, _ in p_items]
+    p_vals = [v / 1e6 for _, v in p_items]
+    p_tot = sum(v for _, v in p_items) or 1
+    vmax3 = max(p_vals + [1e-6])
+    for theme, c in THEMES.items():
+        fig, ax = plt.subplots(figsize=(9.8, 0.65 * len(p_items) + 2.3), dpi=150)
+        fig.patch.set_facecolor(c["surface"])
+        ax.set_facecolor(c["surface"])
+        ax.barh(p_names, p_vals, height=0.52, color=c["bar"])
+        for i, v in enumerate(p_vals):
+            pct = 100.0 * p_items[i][1] / p_tot
+            lbl_v = f"{v:.2f}M ({pct:.1f}%)" if p_items[i][1] >= 100_000 else f"{p_items[i][1]/1e3:.1f}k ({pct:.2f}%)"
+            ax.text(v + vmax3 * 0.015, i, lbl_v, va="center", ha="left", color=c["ink"], fontsize=8.5)
+        ax.set_xlim(0, vmax3 * 1.28)
+        ax.xaxis.grid(True, color=c["grid"], linewidth=0.8)
+        ax.set_axisbelow(True)
+        for s in ("top", "right", "left"):
+            ax.spines[s].set_visible(False)
+        ax.spines["bottom"].set_color(c["grid"])
+        ax.tick_params(colors=c["ink2"], labelsize=8.5, length=0)
+        for lbl in ax.get_yticklabels():
+            lbl.set_color(c["ink"])
+        ax.set_xlabel("Combined Tokens in Millions (M)", color=c["ink2"], fontsize=9)
+        ax.set_title("Token Share by Development Phase & Runtime Match Execution", loc="left", color=c["ink"], fontsize=12, fontweight="bold", pad=28)
+        ax.text(0, 1.02, "Shows massive token contrast between agentic repo coding vs live Groq combat inference", transform=ax.transAxes, color=c["ink2"], fontsize=8.2, va="bottom")
+        fig.tight_layout()
+        fig.savefig(os.path.join(FIG, f"token_share_by_agent_and_phase_{theme}.png"), facecolor=c["surface"], bbox_inches="tight", pad_inches=0.25)
+        plt.close(fig)
+
+    # token_summary.md
+    tlines = [
+        "| Agent / Runtime | Model | Source | Phase | Work units | Input tokens | Output tokens | Total tokens | Tokens / unit | Basis |",
+        "|---|---|---|---|---:|---:|---:|---:|---:|---|",
+    ]
+    for x in sorted(parsed, key=lambda r: -r["tot"]):
+        badge = "Exact API log" if x["source_type"] == "exact_api_log" else "Estimated"
+        tlines.append(
+            f"| {x['agent']} | `{x['model']}` | {badge} | {x['phase']} | {x['units']} | "
+            f"{x['in_tok']:,} | {x['out_tok']:,} | **{x['tot']:,}** | {x['per_unit']:,.0f} | {x['basis']} |"
+        )
+    with open(os.path.join(FIG, "token_summary.md"), "w", encoding="utf-8") as f:
+        f.write("<!-- generated by analysis/analyze.py from data/token_estimates.csv; do not edit by hand -->\n" + "\n".join(tlines) + "\n")
+    print("\n".join(tlines))
 
 
 if __name__ == "__main__":

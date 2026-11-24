@@ -457,3 +457,110 @@ P277,2026-11-20,12:21,Claude,verbatim,49,D,G,"look at some research papers that 
 
 also update the whole github."
 P278,2026-11-20,12:27,Claude,verbatim,31,I,E,maybe also do a atomic list of featurre table somewhere and put who did what was that an improvement what came directly from prompt what came from QA debug etc etc....
+P279,2026-11-22,14:06,Gemini,verbatim,253,L,G,"<USER_REQUEST>
+The tracers are quite invisible now, make them way more visible. 
+
+and can you finish the tasks claude wasnt able to? 
+
+Specially main menu is missing soldiers
+
+:::::
+
+
+maybe some of them are already on the board, but take help: 
+
+
+https://assetstore.unity.com/packages/tools/animation/fps-animation-framework-238641?srsltid=AYCX9vIFsSLh4nD6zzoTePnRA9wbvGBx5aWkqFJdUc97cODqVlkfoCvh#content
+
+So the OG kinemation animations and the avatar doesnt have any issues holding gun or nor during any animation. i think the current rig doesnt have that, (fingers dont move). wehave tried fixing that, but never worked. 
+
+so for now, can we swtich back to OG kinemation model? And maybe even use default gun, and their default IK values for ADS and different kinds of ads. For the animation lenghts you have shortened, keep them short, but, maybe, i'd like to enable all kination features, like different ads and stuff. and perfect hand pos with perfect animations. 
+
+The unity default dummy may look bad, but then our next task would be to find a dummy that can replicate its behavior and doesnt look bad. 
+
+But first, lets do default kination with all the features, and then change the dummy. 
+
+I'm assuming reverting back to og will fix anim issues? You can change colors for diff teams as of now. But look for an asset that could mimic it. 
+
+Artifact has details of how IK works, so that would help to set things up if anything breaks. 
+
+And again, use the default weapons, just with different texture maybe? so the lates mk18 etc. that comes with kinemation. 
+ask me qeustions if needed."
+P280,2026-11-22,14:06,Gemini,verbatim,3,P,-,unity is closed
+P281,2026-11-22,14:10,Gemini,verbatim,7,P,-,work with codex. i turned it on.
+P282,2026-11-22,14:10,Gemini,verbatim,3,P,-,use the board.
+P283,2026-11-22,14:24,Gemini,verbatim,9,F,E,Q and E are reveresed. that needs fixing too/
+P284,2026-11-22,14:26,Gemini,verbatim,32,D,G,"and your biggest task, can you find me a model, that would be a drop in replacement for the robot model? a humanoir rugged soldier faceless would per perfect , likfe bf6"
+P285,2026-11-22,14:27,Gemini,verbatim,45,D,G,"if its not drop in the do not replace. and even if you do make sure its very easily revertable. 
+
+Then do the whole github, and push, change all readme and stuff. if any artifact stuff needs changing ,leave notes for claude in the board"
+P286,2026-11-22,14:27,Gemini,verbatim,11,P,-,also double check each others code before calling it a day.
+P287,2026-11-22,14:30,Gemini,verbatim,3,F,G,fix ui overlap
+P288,2026-11-22,14:30,Gemini,verbatim,12,F,G,"zoomed in part looks horrible, why is that a square for ak12?"
+P289,2026-11-22,14:31,Gemini,verbatim,5,F,G,a lot of bugs here.
+P290,2026-11-22,14:32,Gemini,verbatim,44,D,G,"and the bullet modular sounds may have been changed too. maybe work on that too? claude may not have been able to finish it. 
+
+the reload anim should end a bit early for most guns, robot is rotating the gun, early, which should happen."
+P291,2026-11-22,14:34,Gemini,verbatim,62,F,G,"for the ones that are ready for review, review claudes code. dont have any task left in the board. 
+
+also thoroughly check the game with QA for animation bugs and such, because after dying a lot of bugs are happening, weapon going up and all, those were fixed in an earlier build with the oder humanoid mode, maybe look for those changes."
+P292,2026-11-22,14:35,Gemini,verbatim,23,I,E,"the blood droplets in the gun should be on top so its more visible, currently its under the barrel. change that. and test."
+P293,2026-11-22,14:38,Gemini,verbatim,89,I,G,"revamp the music a bit? Maybe sighlly different music for different levels, and diff for menu too. 
+
+make the music more intense. but make it progressive. so it starts super mild, and gets insane at the end. 
+
+also when the match is ending, add winning and lsoing musinc sound too, dpending on whats happening. generate the tunes if you cant find any good. 
+
+Also the reload sfx may have empty in the beginning, they seem a bit dleayed. not perfect. make sure they match up perfectly with the animations."
+P294,2026-11-22,14:40,Gemini,verbatim,18,I,G,"when pushing, change all the relevant screenshots and gifs. do this at the end. 
+
+update the board accordingly."
+P295,2026-11-22,14:40,Gemini,verbatim,3,P,-,unity is closed.
+P296,2026-11-22,14:46,Gemini,verbatim,17,I,G,"the grenade throw anim is doing an emote ,, fix that, aslo update controls inb the settings."
+P297,2026-11-22,14:48,Gemini,verbatim,25,P,-,"if you are out of tasks, do claudes tasks. if it has a lot in the board. becasue claud is down for a week ."
+P298,2026-11-22,14:54,Gemini,verbatim,4,P,-,"testing, opening unity myself."
+P299,2026-11-22,14:55,Gemini,verbatim,11,F,G,unable. compilation error. u do the tests i'll do them later.
+P300,2026-11-22,14:57,Gemini,verbatim,9,F,G,when the compilation errors are fixed let me know.
+P301,2026-11-22,15:03,Gemini,verbatim,41,F,G,the audio needs work. no death sound. only a grunt? this wasnt like this in the previous build. check and repait. done testing closed unity. revamp the loading screen too. overlapping texts and stuff. in cam be something minimalistic and classy.
+P302,2026-11-22,15:05,Gemini,verbatim,14,F,G,the pain voice sounds horrible btw. i dont like it . it sounds fake.
+P303,2026-11-22,15:06,Gemini,verbatim,10,D,G,aslo there should be some sfx when health is replenished.
+P304,2026-11-22,15:09,Gemini,verbatim,12,D,E,"and armor break sfx (for both me and target, with different sfx)"
+P305,2026-11-22,15:14,Gemini,verbatim,6,F,G,"the ""Killcam"" text font looks odd"
+P306,2026-11-23,17:06,Gemini,verbatim,260,F,E,"claude is down for the week. is there any free military model (can have face make it wear a ghost mask later) that can be used as a drop it replacement for the unity default model? because the unity default looks awful .
+
+Also, can we have volumentirc clouds and an actual sky with moving reacting clouds? when i look up whats wrong with the sky? check SS
+The reload anim now cuts off a bit too early. The speed is okay but the animation needs to play a few more fframes, the mag didnt even go in fully. (needs just a tiny tweak)
+
+The throw of the grenade is not synced with when the granade object is seen to be thrown. also, use a much larger explosion with huge boom sound pls. 
+
+Most importantly, currenly the rig animations are near perfect. make sure it stays that way after the model swap. Let me know if thats impossible. I think the previous model did not have bones in thei fingers thats why it was weird. 
+
+the win sound is lame. Make it sound like the music, just more upbeat, and for losing, make it depressing. And start playing some of it when its getting closer to the win (mid match) so they player is able to tell by the music at the end of the match, that they are road to win. when indoors, the raindrops outside are not seen. any way to fix that?
+
+The same weapons for enemy and playerrs sound different? duribng replay, work on that too."
+P307,2026-11-23,17:07,Gemini,verbatim,6,P,-,unity is closed as of now
+P308,2026-11-23,17:11,Gemini,verbatim,14,F,G,"in saltworks, theres a lot of pros that are flying above the ground. fix."
+P309,2026-11-23,17:16,Gemini,verbatim,21,I,G,"make sure to update all github stuff, screenshots text and all. then do a build and a push at the end"
+P310,2026-11-23,17:23,Gemini,verbatim,17,I,G,"update the subpages too. promt page, who buit what, coordination etc etc. on github, at the end."
+P311,2026-11-23,17:46,Gemini,verbatim,4,F,G,what is this lighting?
+P312,2026-11-23,17:47,Gemini,verbatim,31,F,G,"also, let me know why was the first models anims and hands so messed up but this one looks fine? what changed? build me an artifact to understand at the end."
+P313,2026-11-23,17:52,Gemini,verbatim,40,F,G,"during replay, the animations of the enemies hand is very loose. the gun follwos a different anim and the hand follows a different one,. make sure that both are doing exactly the same thing as the player. player seems fine."
+P314,2026-11-23,17:52,Gemini,verbatim,5,D,G,fix the menu lighting too.
+P315,2026-11-23,17:52,Gemini,verbatim,17,I,E,also i see no clouds on the sky. i want proper volumetric clouds. with layers and stuff.
+P316,2026-11-23,18:13,Gemini,verbatim,21,F,G,"the silenced mk18 sounds too tiny, add some bullet fire sfx there too, so it sounds like a proper gun too"
+P317,2026-11-23,18:13,Gemini,verbatim,10,D,G,"and the granade should have fire, just a huge explosion"
+P318,2026-11-23,18:17,Gemini,verbatim,15,F,G,i hear the game. any bg stuff runnong?> or did u forget to close it?
+P319,2026-11-23,18:19,Gemini,verbatim,13,P,-,finish all reveiw and all leftover board item stuff. u have the lead.
+P320,2026-11-23,18:25,Gemini,verbatim,53,L,E,"where should i put the groq key? after this you should put LLM bots vs our different level bots, and see how they perform against each other. Do a comprehensive study of their behavior, playstyle and give me a doc on how things can be improved so thay play and shoot like humans."
+P321,2026-11-23,18:26,Gemini,verbatim,14,I,E,"Also rename everything to Lead Rush II, instead of Lead Rush 2 ... everywhere."
+P322,2026-11-23,18:28,Gemini,verbatim,47,L,G,"api key added. Add a comprehensive doc with animations, charts table and whatevers needed and explain how the LLM bot is working. And then in the same page add the research findings too. 
+
+Also teach us how the LLM bot was implemented somewhere in the githib too."
+P323,2026-11-23,18:34,Gemini,verbatim,47,L,E,"also, on the how ai arre building this research page, can you add a few plots with raniking on token usage too? for each model? 
+If you dont have exsact data from each model, do an estimation based on their work, or history if you have access,"
+P324,2026-11-23,18:37,Gemini,verbatim,74,L,E,"also find ways to make the LLM be more integrated, give me settings for both, so commander level is the easiest, and direct control of the avatar is the trickiest (due to per tick prompts),, but try to get it more involved somehow. plan a way look at other researchers what they did, and also have all of this in the GH page too. Make an artifact (animated) if that will explain it better"
+P325,2026-11-24,10:10,Gemini,verbatim,223,D,O,"I need a new menu system. If you have anything left from yesterday, finish it, and then in the skirmish, there should be two tabs, skirmish and experiments. in the experiments section, i should be able to design, experimental sessions. For example, matches with me vs 1 reg, vet,, llm bot, and see how they perform in those scenarios. Lets say i want to designa an 8 match session. 4 wiht normal bol 4 with llm bots. or any other sort of customization. Make it super customizatble. And move AI VS AI to the experminetal section too. also i need you to log comprehensive, aiming movement and behavior data from the player (me) maybe as csv files, it can be tick or summary logs or both. save them end of the round (with a saving screen - so cant see stutter) then later that data needs to be mined, analyzed and equations fitt thorugh, and the non llm bot need to be redesigned, to follow movements like me, aiming like me, missing like me, stategy like me, with timers and behaviors like me and those timesr variying for different difficulty. ask me questions if needed. Also do a thorugh research on how others have done this research and make the data logging as comprehensive as possible. i want heatmaps of the movmenet of the enemies to mimic the player too. heatmap of aaiming, pull dow, seek, flick, etc etc.... also figure out ways evaluate how a bots behavior can be comapred to a human, like a bot behaving 80% like human vs not. I also need a dumb bot later, that will not behave like human at all, like simple bot, robotic movements, no flicks and stuff, just very simple, but its K/D accuracy should match out current bot. Make this kind of bot before doing the exp too, so that i could test it. So our current close to human bot, dumb bot and LLM bot. Ultimate goal of this project is to make a bot that is indistiguishable from human players, and we are doing a data driven approach of this. go. Put all these in the board then start working."
+P326,2026-11-24,10:45,Gemini,verbatim,22,I,G,"also, the LLM squad artifact makes less sense etc, thing adad starfe, what does those men? they all need an animation of their own too."
+P327,2026-11-24,11:00,Gemini,verbatim,25,I,G,"also llm result matchups, i need way more than just kd acc stuff, i need their movement, behavior patterns, aiming, shooting miss style heatmaps and all. in the artifact."
+P328,2026-11-24,11:20,Gemini,verbatim,21,P,E,"update entire github remo, all readmes all files that we read to understand the project at the end and push and build."
+P329,2026-11-24,11:25,Gemini,verbatim,16,D,E,"H:\Unity Projects\GitHub Repos\InvasionFramerate\n\nfor data logging, you can get inspiration from this project too, like the folder stucture and all."

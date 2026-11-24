@@ -23,7 +23,7 @@ namespace LR2.World
     /// driver eye socket, first-person head hidden, body aligned to the lens with the hands re-solved onto the gun, the real
     /// recorded recoil plus the live camera shake, the live ADS FOV, then the victim's real ragdoll death and hitmarkers.
     /// </summary>
-    [DefaultExecutionOrder(300)]
+    [DefaultExecutionOrder(600)]
     public class KillcamDirector : MonoBehaviour
     {
         public static KillcamDirector Instance { get; private set; }
@@ -52,6 +52,7 @@ namespace LR2.World
         public GameObject DebugKillerPuppet => _killerPuppet;
         public GameObject DebugKillerGunPuppet => _killerGunPuppet;
         public GameObject DebugVictimPuppet => _victimPuppet;
+        public float DebugKillerHandError { get; private set; }
 
         private struct Snapshot
         {
@@ -76,6 +77,10 @@ namespace LR2.World
             public Vector3 direction;
             public Vector3 endPoint;
             public bool hasEnd;
+            public bool suppressed;
+            public bool aiming;
+            public bool indoors;
+            public LR2.Weapons.WeaponAudioProfile audioProfile;
             public bool played;
         }
 
@@ -107,6 +112,9 @@ namespace LR2.World
             public bool hasWeapon;
             public Vector3 weaponPos;
             public Quaternion weaponRot;
+            public bool hasHandLocks;
+            public Vector3 lHandRelPos, rHandRelPos;
+            public Quaternion lHandRelRot, rHandRelRot;
         }
 
         private class PoseTrack
@@ -164,6 +172,9 @@ namespace LR2.World
         private LR2.Weapons.WeaponDefinition _killerGunDef;
         private float _killerBodyBack;
         private Transform[] _kArm; // puppet L upper/lower/hand, R upper/lower/hand
+        private bool _replayHasHandLocks;
+        private Vector3 _replayLHandPos, _replayRHandPos;
+        private Quaternion _replayLHandRot, _replayRHandRot;
 
         // B111 headshot bullet cam, v2 (user 11-19: "the slomo pan can have more dynamism ... make it slomo a bit more ... take it
         // from the respawn time if needed ... cinematic like in the sniper movies"). Four beats, 2.5 s, letterboxed:
@@ -254,8 +265,20 @@ namespace LR2.World
         private void OnShotFired(ShotEvent e)
         {
             if (_playing || e.shooter == null) return;
-            _shotLog.Add(new RecordedShot { time = Time.time, shooter = e.shooter, origin = e.origin, direction = e.direction,
-                                            endPoint = e.endPoint, hasEnd = e.hasEndPoint, played = false });
+            _shotLog.Add(new RecordedShot
+            {
+                time = Time.time,
+                shooter = e.shooter,
+                origin = e.origin,
+                direction = e.direction,
+                endPoint = e.endPoint,
+                hasEnd = e.hasEndPoint,
+                suppressed = e.suppressed,
+                aiming = e.aiming,
+                indoors = e.indoors,
+                audioProfile = e.audioProfile,
+                played = false
+            });
             float cutoff = Time.time - 6f;
             while (_shotLog.Count > 0 && _shotLog[0].time < cutoff) _shotLog.RemoveAt(0);
         }
@@ -279,10 +302,11 @@ namespace LR2.World
                     _histories[sc] = list;
                 }
                 var proxy = sc.GetComponent<RetargetProxy>();
+                var gMirror = sc.GetComponent<GenericBoneMirror>();
                 bool hasLiveCam = sc.ViewCamera != null && sc.ViewCamera.isActiveAndEnabled;
                 // The camera transform is a child of the driver's Head bone for every soldier (inactive on bots, but it still
                 // follows the head): it is the exact eye socket the live player looks through and Kinemation aims the sights at.
-                Vector3 visEye = proxy != null ? proxy.VisualEyePosition : (sc.ViewTransform != null ? sc.ViewTransform.position : c.HeadPosition);
+                Vector3 visEye = proxy != null ? proxy.VisualEyePosition : (gMirror != null ? gMirror.VisualEyePosition : (sc.ViewTransform != null ? sc.ViewTransform.position : c.HeadPosition));
                 Vector3 eye = sc.ViewCamera != null ? sc.ViewCamera.transform.position : visEye;
                 Quaternion eyeRot = hasLiveCam
                     ? sc.ViewCamera.transform.rotation
@@ -393,10 +417,21 @@ namespace LR2.World
             var gun = sc.ActiveFirearm;
             Transform gunTf = sc.IsDead ? (sc.DroppedWeapon != null ? sc.DroppedWeapon.transform : null) : (gun != null ? gun.transform : null);
             smp.hasWeapon = gunTf != null;
+            smp.hasHandLocks = false;
             if (gunTf != null)
             {
                 smp.weaponPos = gunTf.position;
                 smp.weaponRot = gunTf.rotation;
+                var gm = sc.GetComponent<GenericBoneMirror>();
+                if (!sc.IsDead && gm != null && gm.VisualLeftHand != null && gm.VisualRightHand != null)
+                {
+                    Quaternion invG = Quaternion.Inverse(gunTf.rotation);
+                    smp.hasHandLocks = true;
+                    smp.lHandRelPos = gunTf.InverseTransformPoint(gm.VisualLeftHand.position);
+                    smp.lHandRelRot = invG * gm.VisualLeftHand.rotation;
+                    smp.rHandRelPos = gunTf.InverseTransformPoint(gm.VisualRightHand.position);
+                    smp.rHandRelRot = invG * gm.VisualRightHand.rotation;
+                }
             }
         }
 
@@ -546,13 +581,16 @@ namespace LR2.World
             Quaternion recordedYawRot = Quaternion.Euler(0f, kSnap.yaw, 0f);
             if (_puppets)
             {
-                ApplyPose(_killerPuppet, _killerPuppetBones, _killerGunPuppet, _killerPoseReplay, sampleTime);
-                ApplyPose(_victimPuppet, _victimPuppetBones, _victimGunPuppet, _victimPoseReplay, sampleTime);
+                ApplyPose(_killerPuppet, _killerPuppetBones, _killerGunPuppet, _killerPoseReplay, sampleTime,
+                    out _replayHasHandLocks, out _replayLHandPos, out _replayLHandRot, out _replayRHandPos, out _replayRHandRot);
+                ApplyPose(_victimPuppet, _victimPuppetBones, _victimGunPuppet, _victimPoseReplay, sampleTime,
+                    out _, out _, out _, out _, out _);
                 // The victim's real ragdoll death is in the recording; the procedural collapse is only a fallback.
                 bool victimDeathRecorded = _victimPoseReplay.Count > 0 && _victimPoseReplay[_victimPoseReplay.Count - 1].time > _killTime + 0.15f;
                 if (sampleTime >= _killTime && !victimDeathRecorded)
                     ApplyVictimCollapse(_victimPuppet, _victimGunPuppet, Mathf.Clamp01((sampleTime - _killTime) / Mathf.Max(0.25f, postKillWindow * 0.72f)), _victimDeathDir);
                 if (!kSnap.localPlayer) AlignKillerToLens(kSnap);
+                LockKillerHandsToWeapon();
 
                 // Lens: the recorded driver eye socket, stabilised aim (it already holds the real per-shot view kick and the
                 // killer's own pull-down), plus the live Kinemation camera shake on each replayed shot.
@@ -873,8 +911,14 @@ namespace LR2.World
                         if (_puppetMuzzleFlashes[m] != null) _puppetMuzzleFlashes[m].Play();
                 }
                 var gun = _killer != null ? _killer.ActiveFirearm : null;
-                if (gun != null && gun.Definition != null && gun.Definition.audio != null)
-                    LR2Audio.PlayAt(gun.Definition.audio.firePlayer, muzzle, 0.85f);
+                var profile = s.audioProfile != null ? s.audioProfile : (gun != null && gun.Definition != null ? gun.Definition.audio : null);
+                if (profile != null)
+                {
+                    bool firstShot = i == 0 || (s.time - _replayShots[i - 1].time > 0.35f);
+                    LR2.Weapons.LR2Firearm.PlayWeaponShotAudio(
+                        profile, muzzle, firstPerson: true, suppressed: s.suppressed, aiming: s.aiming || aimBlend > 0.5f,
+                        indoors: s.indoors, firstShot: firstShot, overheat: 0f, shotCounter: i, triggerHeld: false);
+                }
             }
         }
 
@@ -933,11 +977,35 @@ namespace LR2.World
             Vector3 fwd = Quaternion.Euler(0f, k.yaw, 0f) * Vector3.forward;
             Vector3 shift = k.eyePos - k.visEyePos - fwd * _killerBodyBack;
             if (shift.sqrMagnitude < 1e-8f || shift.sqrMagnitude > 0.25f * 0.25f) return; // nothing to do / teleport guard
-            Vector3 lp = _kArm[2].position, rp = _kArm[5].position;
-            Quaternion lr = _kArm[2].rotation, rr = _kArm[5].rotation;
             _killerPuppet.transform.position += shift;
+        }
+
+        private void LockKillerHandsToWeapon()
+        {
+            if (_killerPuppet == null || _kArm == null) return;
+            Vector3 lp = _replayHasHandLocks ? _replayLHandPos : _kArm[2].position;
+            Quaternion lr = _replayHasHandLocks ? _replayLHandRot : _kArm[2].rotation;
+            Vector3 rp = _replayHasHandLocks ? _replayRHandPos : _kArm[5].position;
+            Quaternion rr = _replayHasHandLocks ? _replayRHandRot : _kArm[5].rotation;
             RetargetProxy.Solve(_kArm[0], _kArm[1], _kArm[2], lp, lr, 1f);
             RetargetProxy.Solve(_kArm[3], _kArm[4], _kArm[5], rp, rr, 1f);
+            DebugKillerHandError = Mathf.Max(Vector3.Distance(_kArm[2].position, lp), Vector3.Distance(_kArm[5].position, rp));
+        }
+
+        private static Transform[] MapMirrorArmBones(GenericBoneMirror gm, Transform liveRoot, Transform puppetRoot)
+        {
+            if (gm == null || liveRoot == null || puppetRoot == null) return null;
+            var bones = new[] { gm.VisualLeftUpperArm, gm.VisualLeftLowerArm, gm.VisualLeftHand,
+                                gm.VisualRightUpperArm, gm.VisualRightLowerArm, gm.VisualRightHand };
+            var map = new Transform[bones.Length];
+            for (int i = 0; i < bones.Length; i++)
+            {
+                if (bones[i] == null) return null;
+                string path = RelativePath(liveRoot, bones[i]);
+                map[i] = path == null ? null : (path.Length == 0 ? puppetRoot : puppetRoot.Find(path));
+                if (map[i] == null) return null;
+            }
+            return map;
         }
 
         private static Transform[] MapArmBones(Animator liveVisual, Transform liveRoot, Transform puppetRoot)
@@ -990,8 +1058,13 @@ namespace LR2.World
             }
         }
 
-        private static void ApplyPose(GameObject puppet, Transform[] bones, GameObject gunPuppet, List<PoseSample> list, float time)
+        private static void ApplyPose(
+            GameObject puppet, Transform[] bones, GameObject gunPuppet, List<PoseSample> list, float time,
+            out bool hasHands, out Vector3 lPos, out Quaternion lRot, out Vector3 rPos, out Quaternion rRot)
         {
+            hasHands = false;
+            lPos = rPos = Vector3.zero;
+            lRot = rRot = Quaternion.identity;
             if (puppet == null || bones == null || list.Count == 0) return;
             PoseSample a = list[0], b = list[0];
             float t = 0f;
@@ -1015,7 +1088,21 @@ namespace LR2.World
                 bone.localRotation = Quaternion.Slerp(a.localRot[i], b.localRot[i], t);
             }
             if (gunPuppet != null && a.hasWeapon)
+            {
                 gunPuppet.transform.SetPositionAndRotation(Vector3.Lerp(a.weaponPos, b.weaponPos, t), Quaternion.Slerp(a.weaponRot, b.weaponRot, t));
+                if (a.hasHandLocks && b.hasHandLocks)
+                {
+                    hasHands = true;
+                    Vector3 lRel = Vector3.Lerp(a.lHandRelPos, b.lHandRelPos, t);
+                    Quaternion lQ = Quaternion.Slerp(a.lHandRelRot, b.lHandRelRot, t);
+                    Vector3 rRel = Vector3.Lerp(a.rHandRelPos, b.rHandRelPos, t);
+                    Quaternion rQ = Quaternion.Slerp(a.rHandRelRot, b.rHandRelRot, t);
+                    lPos = gunPuppet.transform.TransformPoint(lRel);
+                    lRot = gunPuppet.transform.rotation * lQ;
+                    rPos = gunPuppet.transform.TransformPoint(rRel);
+                    rRot = gunPuppet.transform.rotation * rQ;
+                }
+            }
         }
 
         /// <summary>Render-only copy (no colliders, physics, scripts, animators) of a soldier's SWAT body or weapon; preserves MuzzleFlash if requested.</summary>
@@ -1112,8 +1199,11 @@ namespace LR2.World
             _killer.SetHeadHidden(false);
             _victimPuppet = MakePuppet(vRoot.gameObject, "KillcamPuppet_Victim", false);
             var kProxy = _killer.GetComponent<RetargetProxy>();
-            _kArm = kProxy != null ? MapArmBones(kProxy.Visual, kRoot, _killerPuppet.transform) : null;
-            _killerBodyBack = kProxy != null ? kProxy.FirstPersonBodyBack : 0.02f;
+            var kMirror = _killer.GetComponent<GenericBoneMirror>();
+            _kArm = kProxy != null
+                ? MapArmBones(kProxy.Visual, kRoot, _killerPuppet.transform)
+                : (kMirror != null ? MapMirrorArmBones(kMirror, kRoot, _killerPuppet.transform) : null);
+            _killerBodyBack = kProxy != null ? kProxy.FirstPersonBodyBack : (kMirror != null ? kMirror.FirstPersonBodyBack : 0.045f);
             _killerPuppetBones = PuppetBones(_killer, _killerPuppet);
             _victimPuppetBones = PuppetBones(_victim, _victimPuppet);
             var kGun = _killer.ActiveFirearm;

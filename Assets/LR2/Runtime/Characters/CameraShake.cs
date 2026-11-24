@@ -1,4 +1,4 @@
-// LeadRush 2 - camera shake for the local player's view (B29, user request 2026-11-17).
+// Lead Rush II - camera shake for the local player's view (B29, user request 2026-11-17).
 //
 // Two layers, both tunable in the Inspector of the auto-created "LR2_CameraShake" object:
 //  1. Trauma: a 0..1 value that sources add to and that decays over time. The shake amount is trauma^2, driven by smooth Perlin noise

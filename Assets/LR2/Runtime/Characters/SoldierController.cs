@@ -52,9 +52,9 @@ namespace LR2.Characters
         [Tooltip("Frag grenades per life.")]
         [SerializeField, Range(0, 5)] private int grenadesPerLife = 2;
         [SerializeField] private GameObject grenadePrefab;
-        [Tooltip("Fraction of the throw animation at which the grenade leaves the hand.")]
-        [SerializeField, Range(0.1f, 0.9f)] private float grenadeReleaseAt = 0.42f;
-        [SerializeField] private float grenadeThrowSpeed = 17f;
+        [Tooltip("Fraction of the throw animation at which the grenade leaves the hand (0.335 matches C_Grenade_Toss forward whip).")]
+        [SerializeField, Range(0.1f, 0.9f)] private float grenadeReleaseAt = 0.335f;
+        [SerializeField] private float grenadeThrowSpeed = 18.5f;
 
         [Header("Death")]
         [SerializeField] private float deathCamDistance = 3.4f;
@@ -110,6 +110,12 @@ namespace LR2.Characters
         public IReadOnlyList<LR2Item> Items => _items;
         public int ActiveSlot => _activeIndex;
         public float ScopeSensitivity => UserInput != null && _sensIndex >= 0 ? Mathf.Max(0.05f, UserInput.GetValue<float>(_sensIndex)) : 1f;
+        // B155 raw look / recoil split for zero-stutter experiment telemetry
+        public Vector2 LastRawLookDelta { get; private set; }
+        public Vector2 LastRecoilKickDelta { get; private set; }
+        public Vector2 LastMoveInput { get; private set; }
+        public float LastLeanInput { get; private set; }
+        public bool LastFireInput { get; private set; }
 
         /// <summary>False while sprinting or during the sprint-out / swap window.</summary>
         public bool CanShootNow => !IsDead && !IsSprinting && Time.time >= _sprintOutUntil && !_switching && !_throwing && !_editingAttachments;
@@ -156,6 +162,7 @@ namespace LR2.Characters
         private bool _throwing, _grenadeReleased;
         private float _throwStart, _throwEnd, _throwRelease;
         private int _grenadesLeft;
+        private GameObject _heldGrenade;
         private int _inspectLayer = -2;
 
         // death cam / weapon drop
@@ -225,6 +232,7 @@ namespace LR2.Characters
                 Health.Died -= OnDied;
             }
             LR2Settings.Changed -= OnSettingsChanged;
+            ClearHeldGrenade();
             if (_droppedWeapon != null) Destroy(_droppedWeapon);
             if (_runtimeAimingMotion != null) Destroy(_runtimeAimingMotion);
             foreach (var m in _ownMotions.Values) if (m != null) Destroy(m);
@@ -480,6 +488,9 @@ namespace LR2.Characters
             AimOrigin = IsLocalPlayer && ViewCamera != null && ViewCamera.isActiveAndEnabled ? ViewCamera.transform.position : EyeTransform.position;
             if (Combatant != null) Combatant.ViewDirection = AimDirection;
 
+            LastMoveInput = _input.move;
+            LastLeanInput = _input.lean;
+            LastFireInput = _input.fire;
             InteractTriggeredFrame = _input.interact;
             _input.ResetOneShots();
         }
@@ -499,13 +510,15 @@ namespace LR2.Characters
                 deltaYaw = _input.look.x;
                 deltaPitch = _input.look.y;
             }
+            float rawYaw = deltaYaw, rawPitch = deltaPitch;
 
             // Kinemation recoil pattern (camera climb).
+            float recYaw = 0f, recPitch = 0f;
             if (RecoilPattern != null)
             {
                 Vector2 recoil = RecoilPattern.GetRecoilDelta();
-                deltaYaw += recoil.x;
-                deltaPitch += recoil.y;
+                recYaw += recoil.x;
+                recPitch += recoil.y;
             }
 
             // Flinch (aim punch) spring and per-shot view kick that recovers.
@@ -514,8 +527,12 @@ namespace LR2.Characters
             _kick = Vector2.Lerp(_kick, Vector2.zero, LR2Math.Damp(kickRecovery, dt));
             Vector2 kickDelta = kickTarget - _kickApplied;
             _kickApplied = kickTarget;
-            deltaYaw += kickDelta.x + _flinch.x * dt * flinchRecovery;
-            deltaPitch += kickDelta.y + _flinch.y * dt * flinchRecovery;
+            recYaw += kickDelta.x + _flinch.x * dt * flinchRecovery;
+            recPitch += kickDelta.y + _flinch.y * dt * flinchRecovery;
+            deltaYaw += recYaw;
+            deltaPitch += recPitch;
+            LastRawLookDelta = new Vector2(rawYaw, rawPitch);
+            LastRecoilKickDelta = new Vector2(recYaw, recPitch);
 
             _pitch = Mathf.Clamp(_pitch + deltaPitch, minPitch, maxPitch);
             _yawAccum += deltaYaw;
@@ -700,7 +717,38 @@ namespace LR2.Characters
             _grenadeReleased = false;
             _throwStart = Time.time;
             _throwEnd = _throwStart + dur;
-            _throwRelease = _throwStart + dur * Mathf.Clamp01(grenadeReleaseAt / 0.8f); // the duration is 80 % of the clip
+            _throwRelease = _throwStart + Mathf.Clamp(item.GrenadeReleaseDelay(grenadeReleaseAt), 0.12f, dur * 0.85f);
+            SpawnHeldGrenade();
+            var cs = LR2CommonSounds.Instance;
+            if (cs != null && IsLocalPlayer) LR2Audio.PlayAt(cs.weaponSwap, transform.position, 0.65f, 0f, true, 1.35f);
+        }
+
+        private void SpawnHeldGrenade()
+        {
+            ClearHeldGrenade();
+            if (grenadePrefab == null) return;
+            Transform hand = null;
+            var mirror = GetComponent<GenericBoneMirror>();
+            if (mirror != null && mirror.VisualLeftHand != null) hand = mirror.VisualLeftHand;
+            if (hand == null && Animator != null) hand = LR2Bones.Get(Animator, HumanBodyBones.LeftHand);
+            if (hand == null) return;
+
+            _heldGrenade = Instantiate(grenadePrefab, hand, false);
+            _heldGrenade.name = "HeldGrenadeVisual";
+            foreach (var g in _heldGrenade.GetComponentsInChildren<LR2Grenade>(true)) Destroy(g);
+            foreach (var rb in _heldGrenade.GetComponentsInChildren<Rigidbody>(true)) Destroy(rb);
+            foreach (var c in _heldGrenade.GetComponentsInChildren<Collider>(true)) Destroy(c);
+            _heldGrenade.transform.localPosition = new Vector3(0f, 0.06f, 0.025f);
+            _heldGrenade.transform.localRotation = Quaternion.Euler(15f, 0f, -20f);
+        }
+
+        private void ClearHeldGrenade()
+        {
+            if (_heldGrenade != null)
+            {
+                Destroy(_heldGrenade);
+                _heldGrenade = null;
+            }
         }
 
         private void UpdateGrenadeThrow()
@@ -711,21 +759,36 @@ namespace LR2.Characters
                 _grenadeReleased = true;
                 ReleaseGrenade();
             }
-            if (Time.time >= _throwEnd) _throwing = false;
+            if (Time.time >= _throwEnd)
+            {
+                _throwing = false;
+                ClearHeldGrenade();
+            }
         }
 
         private void ReleaseGrenade()
         {
-            if (_grenadesLeft <= 0) return;
+            if (_grenadesLeft <= 0) { ClearHeldGrenade(); return; }
             _grenadesLeft--;
             Vector3 eye = AimOrigin, dir = AimDirection;
             Vector3 spawn = eye + dir * 0.45f - transform.right * 0.16f - Vector3.up * 0.08f;
-            var hand = LR2Bones.Get(Animator, HumanBodyBones.LeftHand);
-            if (hand != null && (hand.position - eye).sqrMagnitude < 0.8f * 0.8f) spawn = hand.position;
+            if (_heldGrenade != null && (_heldGrenade.transform.position - eye).sqrMagnitude < 1.1f * 1.1f)
+                spawn = _heldGrenade.transform.position;
+            else
+            {
+                var mirror = GetComponent<GenericBoneMirror>();
+                Transform hand = (mirror != null && mirror.VisualLeftHand != null)
+                    ? mirror.VisualLeftHand
+                    : LR2Bones.Get(Animator, HumanBodyBones.LeftHand);
+                if (hand != null && (hand.position - eye).sqrMagnitude < 1.0f * 1.0f) spawn = hand.position;
+            }
+            ClearHeldGrenade();
             if (Physics.Linecast(eye, spawn, out var block, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore))
                 spawn = block.point - (spawn - eye).normalized * 0.12f;
             Vector3 velocity = (dir + Vector3.up * 0.12f).normalized * grenadeThrowSpeed + (Movement != null ? Movement.Velocity * 0.6f : Vector3.zero);
             LR2Grenade.Throw(grenadePrefab, Combatant, spawn, velocity);
+            var cs = LR2CommonSounds.Instance;
+            if (cs != null) LR2Audio.PlayAt(cs.mantle, spawn, 0.72f, 0f, false, 1.3f);
         }
 
         public bool RequestReload()
@@ -962,6 +1025,7 @@ namespace LR2.Characters
             }
             _editingAttachments = false;
             _throwing = false;
+            ClearHeldGrenade();
             if (_proxy != null) _proxy.ResetTransientState();
             // the body-curve gates start closed: a stale prone/sprint curve must not reach the new life's first frame
             _fullBodyGate = _proneGate = 0f;
@@ -975,6 +1039,7 @@ namespace LR2.Characters
             _deathPos = transform.position;
             _editingAttachments = false; // B136
             _throwing = false;
+            ClearHeldGrenade();
             if (_firePressed && ActiveItem != null) ActiveItem.OnFireReleased();
             _firePressed = false;
             if (ActiveItem != null) ActiveItem.CancelActions();

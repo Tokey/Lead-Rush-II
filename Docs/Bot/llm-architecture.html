@@ -1,0 +1,870 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead Rush II — LLM Architecture, 9 Tactical Maneuvers & 20 Hz Heatmap Lab</title>
+<style>
+:root {
+  --bg: #eef0e9; --panel: #fbfcf8; --raised: #dde2d7; --line: #b9c2b5; --grid: #e3e7de;
+  --ink: #141b17; --muted: #556159; --accent: #c4501b; --bot: #2a6cab; --good: #2c8540;
+  --bad: #c2352b; --warn: #946805; --purple: #6b46c1; --keybg: #ffffff; --keyink: #141b17;
+  --display: "Saira Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c100e; --panel: #141a17; --raised: #1e2722; --line: #303d36; --grid: #1b241f;
+    --ink: #e5ebe4; --muted: #95a39a; --accent: #ff8c3b; --bot: #6eaee6; --good: #5cc46a;
+    --bad: #ff6b60; --warn: #e2b54a; --purple: #b388ff; --keybg: #0f1412; --keyink: #e5ebe4;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c100e; --panel: #141a17; --raised: #1e2722; --line: #303d36; --grid: #1b241f;
+  --ink: #e5ebe4; --muted: #95a39a; --accent: #ff8c3b; --bot: #6eaee6; --good: #5cc46a;
+  --bad: #ff6b60; --warn: #e2b54a; --purple: #b388ff; --keybg: #0f1412; --keyink: #e5ebe4;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 26px 18px 72px; background: var(--bg); color: var(--ink); font: 14.5px/1.55 var(--body); }
+.wrap { max-width: 1220px; margin: 0 auto; display: grid; gap: 38px; }
+h1, h2, h3, h4 { font-family: var(--display); margin: 0; line-height: 1.08; letter-spacing: .015em; }
+h1 { font-size: clamp(32px, 5vw, 52px); }
+h2 { font-size: clamp(23px, 3vw, 31px); margin-top: 4px; }
+h3 { font-size: 19px; }
+.eyebrow { font: 600 11.5px/1 var(--mono); letter-spacing: .11em; text-transform: uppercase; color: var(--accent); }
+.hdr { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip { font: 500 11.5px/1 var(--mono); padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--panel); }
+.chip b { color: var(--ink); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 16px; }
+.lead { color: var(--muted); margin: 6px 0 14px; max-width: 82ch; }
+.grid2 { display: grid; grid-template-columns: 1.45fr 1fr; gap: 16px; align-items: start; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 14px; }
+.man-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+@media (max-width: 920px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+button {
+  font: 600 12.5px/1 var(--body); background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 6px; padding: 8px 12px; cursor: pointer; transition: .14s;
+}
+button:hover { border-color: var(--accent); }
+button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button.warn { border-color: var(--accent); color: var(--accent); }
+label.ctl { display: grid; gap: 4px; font-size: 12px; color: var(--muted); min-width: 170px; flex: 1; }
+label.ctl output { font-family: var(--mono); color: var(--ink); font-weight: 600; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+canvas { display: block; width: 100%; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+.card-tag { display: inline-block; font: 600 10.5px/1 var(--mono); padding: 4px 7px; border-radius: 4px; background: var(--raised); color: var(--ink); margin-bottom: 8px; text-transform: uppercase; }
+.key-row { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; }
+.keycap {
+  font: 600 11px/1 var(--mono); padding: 4px 7px; border-radius: 4px; border: 1px solid var(--line);
+  background: var(--keybg); color: var(--muted); transition: .08s;
+}
+.keycap.on { background: var(--accent); color: #111; border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 2px 6px rgba(255,140,59,.35); }
+.man-card { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 14px; display: grid; gap: 8px; }
+.man-hdr { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.man-sub { font: 500 11.5px/1.2 var(--mono); color: var(--bot); }
+.man-explain { font-size: 13px; color: var(--muted); margin: 0; }
+.man-why { font-size: 12.5px; background: var(--raised); padding: 8px 10px; border-radius: 6px; margin: 0; border-left: 3px solid var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { padding: 7px 9px; border-bottom: 1px solid var(--grid); text-align: left; }
+th { font: 600 11px/1.2 var(--mono); text-transform: uppercase; color: var(--muted); border-bottom-color: var(--line); }
+td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+tr.selected { background: var(--raised); }
+tr.clickrow { cursor: pointer; }
+tr.clickrow:hover { background: var(--grid); }
+.badge { display: inline-block; font: 600 11px/1 var(--mono); padding: 3px 7px; border-radius: 4px; border: 1px solid var(--line); }
+.win { color: var(--good); border-color: var(--good); }
+.loss { color: var(--bad); border-color: var(--bad); }
+.mono { font-family: var(--mono); font-size: 12px; }
+.bar-row { display: grid; grid-template-columns: 120px 1fr 56px; align-items: center; gap: 8px; font-size: 12.5px; margin: 5px 0; }
+.bar-track { height: 10px; background: var(--grid); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; }
+.tip-box { font-size: 12.5px; padding: 10px 12px; background: var(--raised); border-radius: 6px; border: 1px solid var(--line); color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hdr">
+    <div>
+      <div class="eyebrow">Lead Rush II · Build 11.24.26.1 · Plain-English Architecture, 9 Maneuver Animations &amp; 20 Hz Telemetry Lab</div>
+      <h1>How the LLM Bot Thinks, Moves, Peeks &amp; Misses</h1>
+      <div class="chips">
+        <span class="chip">Commander Record <b>5–1 vs Rule Bots (M1–M6)</b></span>
+        <span class="chip">HLI Human-Likeness <b>93.0% HumanLike · 65.1% LLM · 47.6% DumbBot</b></span>
+        <span class="chip">Measured 20 Hz Samples <b>32,280 ticks · 2,043 shots</b></span>
+        <span class="chip">Live Groq Model <b>openai/gpt-oss-20b</b></span>
+      </div>
+    </div>
+    <button id="themeBtn" type="button">Toggle Light / Dark</button>
+  </header>
+
+  <section>
+    <div class="eyebrow">00 · 30-Second Plain-English Guide</div>
+    <h2>No Jargon Version: Four Types of Bot Brain in Lead Rush II</h2>
+    <p class="lead">Every match in Lead Rush II pits human reflexes against one of four bot archetypes you can now mix freely in the new <b>COMBAT LOBBY (SKIRMISH | EXPERIMENTS)</b>:</p>
+    <div class="grid4">
+      <div class="panel">
+        <span class="card-tag" style="color:var(--bot)">1 · HumanLike [Rule AI]</span>
+        <h3>Fast 60 Hz Human Kinematics</h3>
+        <p style="font-size:13px;color:var(--muted);margin:8px 0 0;">Runs 100% locally in C# with zero internet calls. Reacts slower out of the corner of its eye, whips fast mouse flicks (Fitts's Law), compensates recoil slightly late, and weaves <b>ADAD</b> left-right in firefights.</p>
+      </div>
+      <div class="panel">
+        <span class="card-tag" style="color:var(--bad)">2 · DumbBot [Control]</span>
+        <h3>Matched K/D, Zero Human Habits</h3>
+        <p style="font-size:13px;color:var(--muted);margin:8px 0 0;">Built specifically as a Turing-test benchmark. Matches HumanLike K/D (<b>0.96 vs 1.04</b> Veteran) using rigid constant-speed aiming, stepped accuracy cones, zero crouching, zero sprinting, and zero jiggle peeks.</p>
+      </div>
+      <div class="panel">
+        <span class="card-tag" style="color:var(--purple)">3 · LLM Enhanced [Groq]</span>
+        <h3>Two-Brain Coach + Reflex Loop</h3>
+        <p style="font-size:13px;color:var(--muted);margin:8px 0 0;"><b>System 2</b> (Groq cloud LLM) acts as tactical coach every ~8–10 seconds using fair fog-of-war intel (no wallhacks). <b>System 1</b> (60 Hz C# muscle code) still aims and pulls the trigger every frame so gunplay never lags.</p>
+      </div>
+      <div class="panel">
+        <span class="card-tag" style="color:var(--good)">4 · HumanFitted [Your Data]</span>
+        <h3>Equation-Fitted Clone</h3>
+        <p style="font-size:13px;color:var(--muted);margin:8px 0 0;">Reads <code>Data/Profiles/human_behavior_fit.json</code> fitted by <code>Tools/analyze_experiment_session.py</code> from your own gameplay CSVs—matching your reaction curve, flick speed, pull-down gain, and crouch/strafe cadence.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">01 · Interactive Dual-System Simulator</div>
+    <h2>How System 2 (Cloud Coach) &amp; System 1 (60 Hz Reflex) Stay Synced</h2>
+    <p class="lead">Why not ask an LLM what key to press 60 times a second? A cloud request takes ~730–900 ms. Waiting for Groq each frame would freeze every soldier mid-gunfight. Instead, Lead Rush II offers <b>3 integration depths</b>:</p>
+    <div class="controls">
+      <button type="button" class="mode-btn" data-mode="0" aria-pressed="false">0 · Off (Pure Local C#)</button>
+      <button type="button" class="mode-btn" data-mode="1" aria-pressed="true">1 · Commander [Macro]</button>
+      <button type="button" class="mode-btn" data-mode="2" aria-pressed="false">2 · Tactical Micro</button>
+      <button type="button" class="mode-btn" data-mode="3" aria-pressed="false">3 · Avatar Pilot [Chunks]</button>
+      <button type="button" id="interruptBtn" class="warn">Trigger Ally Down / Contact Interrupt</button>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <canvas id="pipeCanvas" width="760" height="390"></canvas>
+        <div class="controls" style="margin:12px 0 0;">
+          <label class="ctl">Cloud Round-Trip Latency: <output id="rttOut">730 ms</output>
+            <input id="rttSlider" type="range" min="220" max="1300" value="730" step="10">
+          </label>
+          <label class="ctl">Coach Update Interval: <output id="cadOut">10.0 s</output>
+            <input id="cadSlider" type="range" min="3.5" max="15.0" value="10.0" step="0.5">
+          </label>
+        </div>
+      </div>
+      <div class="panel">
+        <h3 id="modeTitle" style="font-size:23px;margin-bottom:6px;">Mode 1 · Commander [Macro]</h3>
+        <p id="modeDesc" style="font-size:13.5px;color:var(--muted);margin-bottom:10px;"></p>
+        <dl class="kv" id="modeKv"></dl>
+        <div style="margin-top:12px;padding:10px;background:var(--raised);border-radius:6px;">
+          <div class="eyebrow" style="margin-bottom:4px;">Exact JSON Exchanged</div>
+          <pre id="modeJson" class="mono" style="margin:0;white-space:pre-wrap;font-size:11.5px;line-height:1.4;"></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">02 · Live 60 FPS Visual Glossary — 9 Individual Animations</div>
+    <h2>What Do All Those Bot Maneuvers &amp; LLM Terms Mean?</h2>
+    <p class="lead">Instead of guessing what <i>ADAD Strafe</i>, <i>Jiggle Peek</i>, or <i>Wide Swing</i> mean, watch each maneuver play live below with virtual keyboard/mouse inputs lighting up in real time (blue = friendly bot, gray = wall/cover, amber = gaze/crosshair cone, red = enemy).</p>
+    <div class="controls">
+      <button type="button" id="manPlayBtn" aria-pressed="true">Pause All</button>
+      <button type="button" class="spd-btn" data-spd="0.5" aria-pressed="false">0.5× Slow-Mo (Study Keys)</button>
+      <button type="button" class="spd-btn" data-spd="1.0" aria-pressed="true">1.0× Live Speed</button>
+    </div>
+    <div class="man-grid" id="maneuverGrid"></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">03 · Measured 20 Hz Matchup Heatmaps &amp; Behavioral Fingerprints (C1–C3 + M1–M8)</div>
+    <h2>Way Beyond K/D: Movement, Behavior Patterns, Aiming &amp; Miss-Style Heatmaps</h2>
+    <p class="lead">Using the new <b>zero-stutter 20 Hz telemetry pipeline</b> (<code>avg frame 11.00–11.76 ms</code> across ~6,600 frames per match in <code>Lead Rush II.exe</code>), we logged 32,280 ticks across calibrated <b>HumanLike</b>, live Groq <b>LlmEnhanced</b> (<code>openai/gpt-oss-20b</code>), and K/D-matched <b>DumbRobotic</b> control bots on Saltworks:</p>
+
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="controls" style="justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <h3 style="margin-bottom:2px;">A. Top-Down Saltworks Movement Occupancy Heatmaps (Active Playable Arena)</h3>
+          <span style="font-size:12.5px;color:var(--muted);">Zoomed to actual combat footprint (X ∈ [-28.5m, +29.3m], Z ∈ [-22.1m, +20.8m]) — brighter amber/gold = higher time spent. Notice LLM Commander shifts squad paths into flanking pockets &amp; holds.</span>
+        </div>
+      </div>
+      <div class="grid3" id="moveHeatmapRow"></div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="controls" style="justify-content:space-between;">
+        <div>
+          <h3 style="margin-bottom:2px;">B. Crosshair Aiming &amp; Shooting Miss-Style Heatmaps (±12° Around Enemy Chest)</h3>
+          <span style="font-size:12.5px;color:var(--muted);">Center crosshair `(0°, 0°)` = dead center chest. Toggle between all aiming ticks and <b>Missed Shots Only</b> to expose why DumbBot fails Turing tests even at identical K/D!</span>
+        </div>
+        <div class="controls" style="margin:0;">
+          <button type="button" class="aim-btn" data-kind="aimGrid13" aria-pressed="true">All Visible Aiming Ticks</button>
+          <button type="button" class="aim-btn" data-kind="shotMissGrid13" aria-pressed="false">Shooting Miss-Style Only</button>
+        </div>
+      </div>
+      <div class="grid3" id="aimHeatmapRow" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="panel">
+        <h3 style="margin-bottom:6px;">C. Recoil Pull-Down Lag &amp; Per-Shot Hit Probability (Shots 1–10)</h3>
+        <canvas id="recoilCanvas" width="680" height="295"></canvas>
+        <div class="tip-box" style="margin-top:10px;">
+          <b>What this plot reveals:</b> DumbRobotic snaps straight down <b>+0.47°–+0.49°</b> immediately on shot 2–3 with zero neuromuscular delay. HumanLike &amp; LlmEnhanced exhibit realistic <b>~95 ms visuomotor reaction lag</b> on shots 1–3 before ramping compensatory pull-down through shots 4–9.
+        </div>
+      </div>
+      <div class="panel">
+        <h3 style="margin-bottom:6px;">D. Behavior Patterns, Stances &amp; Goal Mix</h3>
+        <div id="behaviorCompare"></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px;">
+      <h3 style="margin-bottom:10px;">E. Composite Human-Likeness Index (HLI) &amp; 5-Fold C2ST Classifier Scorecard</h3>
+      <div class="grid3" id="hliCards"></div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel" style="overflow-x:auto;">
+        <h3 style="margin-bottom:8px;">F. Live Groq 8-Matchup Series (M1–M8, 4v4 Saltworks · 35,440 Exact Tokens)</h3>
+        <div class="controls" style="margin:6px 0 10px;">
+          <button type="button" class="filt-btn" data-filter="all" aria-pressed="true">All 8 Runs</button>
+          <button type="button" class="filt-btn" data-filter="tiers" aria-pressed="false">Commander vs Tiers (M1–M6)</button>
+          <button type="button" class="filt-btn" data-filter="modes" aria-pressed="false">Mode Depth Ablation (M3, M7, M8)</button>
+        </div>
+        <table id="benchTable">
+          <thead>
+            <tr>
+              <th>Match</th><th>Mode</th><th class="num">Alpha (LLM)</th><th class="num">Bravo (Rules)</th>
+              <th class="num">Alpha K:D</th><th class="num">OK / Calls</th><th class="num">Tokens</th><th class="num">Lat (ms)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <canvas id="chartCanvas" width="460" height="320"></canvas>
+        <div id="matchDetail" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">04 · Data-Driven Humanization &amp; Experiment Workflow</div>
+    <h2>Closing the Loop With Your Own Experiment Telemetry</h2>
+    <div class="grid2">
+      <div class="panel">
+        <canvas id="duelCanvas" width="760" height="330"></canvas>
+        <div class="controls" style="margin:10px 0 0;">
+          <button type="button" id="simNowBtn" aria-pressed="true">Current System (8–10s Imperative + Rule AI)</button>
+          <button type="button" id="simNextBtn" aria-pressed="false">Next Roadmap (PORTAL BT + HumanFitted Profile)</button>
+        </div>
+      </div>
+      <div style="display:grid;gap:12px;">
+        <div class="panel">
+          <h3>1. Design Your Session in <code>COMBAT LOBBY → EXPERIMENTS</code></h3>
+          <p style="font-size:13px;color:var(--muted);margin:6px 0 0;">Pick the <b>8-MATCH: 4 HUMAN vs 4 LLM</b> or <b>6-MATCH 1V1 BLIND TURING</b> preset, mix <code>HUMAN</code>, <code>DUMB</code>, <code>LLM</code>, and <code>FITTED</code> bots per slot, toggle <b>BLIND ON</b>, and rate each match on the post-game Turing scale.</p>
+        </div>
+        <div class="panel">
+          <h3>2. Zero-Stutter Export to <code>Data/Logs/&lt;sessionId&gt;_&lt;runId&gt;/</code></h3>
+          <p style="font-size:13px;color:var(--muted);margin:6px 0 0;">All ticks (20/30/60 Hz), flicks, recoil bursts, events, and hardware/frame-delivery audits buffer in pre-allocated structs and flush on a background thread behind the obsidian <b>SAVING EXPERIMENT TELEMETRY</b> screen.</p>
+        </div>
+        <div class="panel">
+          <h3>3. Mine &amp; Clone Your Playstyle Into <code>HumanFitted</code></h3>
+          <p style="font-size:13px;color:var(--muted);margin:6px 0 0;">Run <code>python Tools/analyze_experiment_session.py --session Data/Logs/&lt;id&gt;_&lt;runId&gt;</code>, then copy <code>human_behavior_fit.json</code> to <code>Data/Profiles/human_behavior_fit.json</code> so the game's <b>FITTED</b> bots adopt your exact Fitts curve, Beta speed skew, strafe Hz, and recoil pull-down.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const HEATMAPS = {
+  reference: "HumanLike",
+  bounds: {minX:-28.5, maxX:29.3, minZ:-22.1, maxZ:20.8},
+  groups: {
+    HumanLike: {
+      colorVar: "--bot", hex: "#2a6cab", darkHex: "#6eaee6",
+      hli: {hli:93.0, move:97.7, aim:81.1, recoil:97.8, timing:90.0, c2st:100.0, auc:0.402, swd_move:0.0065, swd_aim:0.0842},
+      metrics: {n_actors:12, ticks:16140, flicks:356, kills:66, deaths:65, kd:1.02, shots:1275, hits:314, acc:24.63, hs_pct:13.38, ads_duty:44.6, crouch_duty:1.7, strafe_flips_per_actor:26.6, avg_speed:2.15, goals:{Patrol:2597,Engage:8729,Investigate:760,Retreat:2622,Hunt:1149,TakeCover:246,Flank:37}},
+      behavior: {sprintPct:8.6, coverNearPct:69.8, missBiasYaw:-0.44, missBiasPitch:0.70, missSpreadDeg:3.89},
+      moveGrid14: [[0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0.011,0,0,0.128,0.105,0.162,0.206,0.055,0,0],[0,0,0,0,0.016,0,0.06,0.098,0.168,0.182,0.416,0.095,0.183,0],[0,0,0,0,0.003,0,0.016,0.055,0.003,0.064,0.358,0.014,0.43,0],[0,0,0,0,0,0,0,0.045,0.014,0.257,0.942,0.473,0.3,0],[0,0,0,0.037,0.047,0.031,0.038,0.067,0.173,0.253,0.288,0,0.335,0],[0,0,0,0.017,0.004,0.078,0.161,0.101,0.663,0.464,0.953,1.0,0.928,0],[0,0,0,0,0,0.146,0.312,0.342,0.952,0.435,0.276,0.906,0.482,0],[0,0,0,0,0,0.155,0,0.04,0.274,0.318,0.178,0,0.453,0],[0,0,0,0,0,0,0.026,0.08,0.104,0.114,0.217,0.134,0.24,0],[0,0,0,0,0,0,0.001,0.223,0,0.126,0.186,0.121,0.139,0],[0,0,0,0,0,0,0,0.084,0,0.016,0.155,0.075,0,0],[0,0,0,0,0,0,0,0.043,0,0,0.028,0.084,0,0],[0,0,0,0,0,0,0.078,0.014,0,0,0,0,0,0]],
+      aimGrid13: [[0.029,0,0,0,0,0,0,0,0,0,0,0,0],[0.003,0,0,0,0,0,0,0,0,0,0,0,0],[0.002,0,0,0,0,0,0,0,0,0,0,0,0.002],[0.016,0,0.003,0.001,0,0,0,0.001,0.001,0,0,0,0.021],[0.049,0,0.002,0.003,0,0,0,0.006,0.005,0.001,0.002,0,0.037],[0.052,0.002,0.005,0.007,0.017,0.029,0.039,0.025,0.018,0.02,0.007,0.019,0.057],[0.212,0.038,0.058,0.048,0.109,0.376,1.0,0.263,0.074,0.058,0.028,0.023,0.252],[0.187,0.023,0.038,0.037,0.089,0.33,0.739,0.194,0.036,0.024,0.015,0.01,0.222],[0.043,0.009,0.01,0.013,0.024,0.046,0.064,0.031,0.02,0.008,0.006,0.008,0.055],[0.034,0.004,0.003,0.004,0.005,0.009,0.005,0.007,0.006,0.004,0,0.003,0.035],[0.022,0,0.001,0,0.001,0.002,0.001,0,0.001,0.002,0.001,0.004,0.016],[0.019,0,0,0,0,0.001,0.002,0.001,0.001,0.002,0,0,0.009],[0.045,0,0.001,0,0,0.003,0.004,0,0.001,0,0,0,0.107]],
+      shotMissGrid13: [[0.005,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0.005,0,0,0,0.005,0,0,0,0,0],[0.005,0,0,0.005,0.005,0.005,0.005,0,0.005,0,0,0,0],[0.032,0,0,0,0.018,0.023,0.037,0.027,0,0,0.009,0,0.009],[0.087,0.018,0.018,0.023,0.064,0.406,1.0,0.279,0.055,0.059,0.009,0.009,0.032],[0.023,0.009,0.014,0.009,0.055,0.274,0.74,0.142,0.041,0.027,0.018,0.009,0.018],[0,0,0.009,0.005,0.032,0.018,0.059,0.009,0.009,0,0,0,0.005],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0]],
+      recoilCurve10: [0.0,0.141,0.038,0.144,0.293,0.274,0.214,0.217,0.286,0.156],
+      burstHitCurve10: [27.6,35.9,37.3,36.5,41.0,39.5,34.9,34.0,40.5,37.7]
+    },
+    LlmEnhanced: {
+      colorVar: "--purple", hex: "#6b46c1", darkHex: "#b388ff",
+      hli: {hli:65.1, move:68.3, aim:35.6, recoil:89.2, timing:76.9, c2st:70.6, auc:0.647, swd_move:0.1175, swd_aim:0.8545},
+      metrics: {n_actors:4, ticks:5420, flicks:98, kills:21, deaths:16, kd:1.31, shots:493, hits:95, acc:19.27, hs_pct:15.79, ads_duty:41.1, crouch_duty:1.8, strafe_flips_per_actor:19.5, avg_speed:1.49, goals:{Patrol:422,HoldPosition:1323,Engage:2325,Retreat:770,TakeCover:85,Hunt:123,Investigate:325,MoveTo:39,Flank:8}},
+      behavior: {sprintPct:6.0, coverNearPct:73.0, missBiasYaw:0.23, missBiasPitch:1.01, missSpreadDeg:3.78},
+      moveGrid14: [[0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0.602,0.027,0.051,0.03,0.016,0.088,0.036,0,0,0,0,0],[0,0.011,0.024,0,0.017,0,0.398,0.099,0,0,0,0,0,0],[0,0.017,0.036,0.114,0.366,0,0,0,0,0,0,0,0,0],[0,0.099,0.06,0.153,0.08,0,0,0,0,0,0,0,0,0],[0.076,0.222,0.38,1.0,0.558,0.065,0.031,0.023,0,0,0,0,0,0],[0,0.044,0.147,0.041,0.136,0.087,0.022,0.012,0,0,0,0,0,0],[0,0.084,0.088,0.053,0.018,0,0,0,0,0,0,0,0,0],[0,0.025,0.014,0.019,0,0,0,0,0,0,0,0,0,0],[0,0.022,0.013,0,0,0,0,0,0,0,0,0,0,0],[0,0.011,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0]],
+      aimGrid13: [[0.149,0,0,0,0,0,0,0,0,0,0,0,0],[0.042,0.003,0,0.003,0.005,0,0,0,0,0,0,0,0],[0.136,0,0,0,0,0.005,0,0,0,0,0,0,0],[0.084,0.003,0,0,0,0.003,0,0,0,0,0,0,0],[0.045,0.003,0.005,0.005,0.005,0.005,0,0,0,0,0,0,0.024],[0.065,0.005,0.005,0.01,0.031,0.039,0.008,0.021,0,0,0.003,0.003,0.063],[0.209,0.037,0.063,0.052,0.149,0.44,1.0,0.277,0.102,0.073,0.042,0.037,0.254],[0.267,0.01,0.016,0.021,0.065,0.283,0.877,0.223,0.094,0.047,0.024,0.008,0.223],[0.073,0,0,0,0,0.045,0.068,0.018,0.005,0.008,0.01,0,0.034],[0.05,0,0,0,0,0,0,0,0,0,0,0,0.008],[0.003,0,0,0,0,0,0,0,0,0,0,0,0.008],[0.034,0,0,0,0,0,0,0,0,0,0,0,0],[0.084,0,0,0,0,0,0,0,0,0,0,0,0]],
+      shotMissGrid13: [[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0.01,0,0,0,0],[0,0,0.01,0,0,0,0,0,0,0.01,0.01,0,0],[0,0,0.01,0,0,0.01,0,0.031,0.021,0,0,0,0],[0.042,0.01,0.01,0.021,0.125,0.396,0.708,0.26,0.083,0.01,0,0,0.052],[0,0,0.01,0,0.083,0.323,1.0,0.271,0.031,0.021,0.01,0,0.062],[0,0,0,0,0,0.083,0.062,0.021,0,0,0,0,0.073],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0]],
+      recoilCurve10: [0.0,0.027,-0.007,0.124,0.222,0.243,0.196,0.185,0.26,0.091],
+      burstHitCurve10: [16.7,24.1,29.0,25.5,20.9,28.6,22.2,23.8,22.2,34.0]
+    },
+    DumbRobotic: {
+      colorVar: "--bad", hex: "#c2352b", darkHex: "#ff6b60",
+      hli: {hli:47.6, move:68.5, aim:36.6, recoil:55.9, timing:41.6, c2st:40.6, auc:0.797, swd_move:0.106, swd_aim:0.2883},
+      metrics: {n_actors:8, ticks:10720, flicks:270, kills:44, deaths:50, kd:0.88, shots:1005, hits:219, acc:21.79, hs_pct:5.02, ads_duty:21.2, crouch_duty:0.0, strafe_flips_per_actor:13.6, avg_speed:2.57, goals:{Patrol:1796,Hunt:3658,Engage:5266}},
+      behavior: {sprintPct:0.0, coverNearPct:61.1, missBiasYaw:0.01, missBiasPitch:0.33, missSpreadDeg:1.87},
+      moveGrid14: [[0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0.062,0.052,0.054,0,0,0,0,0,0,0],[0,0,0,0,0.069,0,0.019,0.09,0.009,0,0,0,0,0],[0,0.123,0.052,0.196,0.239,0.123,0.09,0.054,0.052,0.045,0,0,0,0],[0,0.12,0.084,0.391,0,0,0,0,0,0,0,0,0,0],[0.009,0.256,0.587,0.841,0.482,0.512,0.318,0.215,0.138,0.011,0,0,0,0],[0,0.159,0.837,1.0,0.884,0.402,0.381,0.159,0.213,0.039,0,0,0,0],[0.019,0.563,0.72,0.17,0.525,0.531,0.391,0.396,0.183,0.045,0,0,0,0],[0,0.144,0.449,0.735,0.486,0.247,0,0,0.135,0.011,0,0,0,0],[0,0.338,0.581,0.144,0.084,0.155,0.148,0.206,0.14,0,0,0,0,0],[0,0.308,0.004,0.056,0,0,0,0.037,0,0,0,0,0,0],[0,0,0,0,0,0,0,0.037,0,0,0,0,0,0],[0,0,0,0,0,0,0,0.058,0,0,0,0,0,0],[0,0,0,0,0,0,0.056,0.017,0,0,0,0,0,0]],
+      aimGrid13: [[0.145,0.002,0.002,0.002,0,0,0.013,0,0.004,0.007,0.005,0.004,0.097],[0.013,0,0,0,0,0,0.002,0,0,0,0,0,0.016],[0.011,0,0,0,0,0,0.002,0,0,0,0.002,0,0.018],[0.031,0.002,0,0,0.002,0.002,0.002,0.004,0.002,0.007,0,0,0.027],[0.042,0.005,0,0,0,0,0.004,0,0.005,0,0.002,0,0.037],[0.062,0.009,0.002,0.007,0,0.212,0.454,0.315,0.009,0,0.004,0.004,0.066],[0.141,0.009,0.011,0.015,0.022,0.65,1.0,0.555,0.005,0.013,0.013,0.013,0.121],[0.084,0.004,0.007,0.004,0.015,0.223,0.848,0.401,0.002,0.005,0.007,0.002,0.046],[0.081,0.002,0.002,0,0,0.048,0.075,0.018,0.002,0.004,0,0.002,0.024],[0.049,0.005,0,0,0.004,0.007,0.029,0.007,0,0.004,0,0.002,0.02],[0.013,0,0.004,0.002,0,0.002,0.007,0,0.004,0.004,0,0,0.002],[0.009,0,0,0,0,0,0.011,0.005,0.005,0,0,0,0],[0.038,0,0.002,0,0,0,0,0,0,0,0,0,0]],
+      shotMissGrid13: [[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0.258,0.583,0.392,0,0,0,0,0],[0,0,0,0,0.008,0.967,0.658,0.658,0,0,0,0,0],[0,0,0,0,0,0.292,1.0,0.717,0,0,0,0,0],[0,0,0,0,0,0.058,0.108,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0]],
+      recoilCurve10: [0.0,0.471,0.489,0.29,0.438,0.274,0.385,0.429,0.111,0.174],
+      burstHitCurve10: [37.6,40.4,41.0,39.8,25.6,25.4,25.9,26.5,31.0,25.5]
+    }
+  }
+};
+
+const MATCHES = [
+  { id:"m1", group:"tiers", label:"M1 · Cmd Mixed TDM", mode:"Commander", ak:22, ad:20, bk:20, bd:22, akd:1.10, bkd:0.91, aacc:22.25, bacc:24.64, dec:9, ok:4, fail:5, r429:0, ord:10, rej:2, intr:0, micro:0, util:0, ptok:2300, ctok:2122, ms:905, note:"Alpha (Mixed w/ LLM) beat Bravo Mixed rules 22-20; 5 HTTP 400 JSON/CoT errors, 2 stale-enemy 'attack' rejections." },
+  { id:"m2", group:"tiers", label:"M2 · Cmd Reg vs Recruit", mode:"Commander", ak:20, ad:11, bk:11, bd:20, akd:1.82, bkd:0.55, aacc:25.27, bacc:21.43, dec:9, ok:7, fail:2, r429:0, ord:16, rej:4, intr:0, micro:0, util:0, ptok:4057, ctok:3936, ms:967, note:"Regular + LLM overwhelmed Recruit rules 20-11 (1.82 vs 0.55 K:D); highest JSON completion rate (7/9 OK, 7,993 tokens)." },
+  { id:"m3", group:"both",  label:"M3 · Cmd Reg vs Regular", mode:"Commander", ak:16, ad:15, bk:14, bd:16, akd:1.07, bkd:0.88, aacc:16.93, bacc:17.12, dec:9, ok:4, fail:5, r429:0, ord:13, rej:0, intr:0, micro:0, util:0, ptok:2326, ctok:2128, ms:945, note:"Equal Regular mirror: LLM Alpha won 16-15 with 0 order rejections and balanced hold/flank/attack/retreat directives." },
+  { id:"m4", group:"tiers", label:"M4 · Cmd Reg vs Hardened", mode:"Commander", ak:18, ad:16, bk:16, bd:18, akd:1.13, bkd:0.89, aacc:19.38, bacc:19.85, dec:9, ok:6, fail:3, r429:0, ord:15, rej:0, intr:0, micro:0, util:0, ptok:3555, ctok:3156, ms:823, note:"Standout macro upset: Regular bots w/ LLM Commander beat Hardened rule bots 18-16 via coordinated mid flanks (0 rejections)." },
+  { id:"m5", group:"tiers", label:"M5 · Cmd Reg vs Veteran", mode:"Commander", ak:15, ad:18, bk:18, bd:15, akd:0.83, bkd:1.20, aacc:15.89, bacc:19.64, dec:9, ok:4, fail:5, r429:0, ord:12, rej:1, intr:0, micro:0, util:0, ptok:2272, ctok:1829, ms:830, note:"Regular+LLM punched up 2 full tiers vs Veteran rules and stayed competitive (15-18), limited by Veteran gunskill (19.6% vs 15.9% hit)." },
+  { id:"m6", group:"tiers", label:"M6 · Cmd Mixed CTF", mode:"Commander", ak:35, ad:17, bk:26, bd:20, akd:2.06, bkd:1.30, aacc:21.55, bacc:22.60, dec:9, ok:4, fail:5, r429:0, ord:10, rej:0, intr:0, micro:0, util:0, ptok:2235, ctok:2431, ms:928, note:"Largest margin of study (35-26 score, 2.06 vs 1.30 K:D): LLM prioritized flagZone rotation + defender support ('Support A3, defend flag zone')." },
+  { id:"m7", group:"modes", label:"M7 · Micro Reg vs Regular", mode:"TacticalMicro", ak:14, ad:21, bk:21, bd:14, akd:0.67, bkd:1.50, aacc:13.29, bacc:23.66, dec:20, ok:2, fail:18, r429:6, ord:5, rej:0, intr:19, micro:0, util:1, ptok:1287, ctok:459, ms:710, note:"19 reactive interrupts triggered 20 requests -> 6 HTTP 429 rate-limit hits (8k TPM) + 12 HTTP 400 CoT/JSON errors; micro fell back to rules." },
+  { id:"m8", group:"modes", label:"M8 · Pilot Reg vs Regular", mode:"AvatarPilot", ak:19, ad:18, bk:18, bd:19, akd:1.06, bkd:0.95, aacc:19.29, bacc:17.93, dec:18, ok:1, fail:17, r429:8, ord:1, rej:0, intr:11, micro:1, util:0, ptok:647, ctok:700, ms:940, note:"llama-3.1-8b-instant returned 404 on account -> fallback gpt-oss-20b hit 700 completion token cap + 8 HTTP 429s; 1 chunked order issued, won 19-18." }
+];
+
+const MODES = [
+  { title:"Mode 0 · Off (Pure C# Rules)", desc:"All decision-making runs locally inside Unity at 4 Hz (TacticalBotBrain) and 60 Hz (BotController). Zero API calls, zero HTTP jitter.",
+    kv:{"API Cadence":"0 calls/match","Controlled Fields":"None (local C# rules)","Reactive Interrupts":"Local 60 Hz only","Groq Token Cost":"0 tokens"},
+    json:"// Pure local TacticalBotBrain.Think()\nPatrol -> Spot(eccentricity) -> Cover / Engage / CTF Zone" },
+  { title:"Mode 1 · Commander [Macro]", desc:"Lowest token budget & best live win rate (5W-1L M1–M6 + 21-16 C3). Groq sees fair-play fog-of-war intel every 8–12s and gives high-level waypoints.",
+    kv:{"C3 Live Bench":"21-16 (1.31 K/D vs Rules)","C3 Groq Latency":"730 ms avg (3/8 OK)","Token Burn (M1-M6)":"4,101 - 7,993 / 75s","Sweet Spot":"Waypoints, flanks, flag defence"},
+    json:'{"plan":"Flank E2 with A1, attack with A3, retreat A4",\n "orders":[{"bot":"A1","order":"flank","x":12,"z":-10,"target":"E2"}]}' },
+  { title:"Mode 2 · Tactical Micro", desc:"Adds stance (stand/crouch/prone), peek style (hold/jiggle/wideswing), burst cadence (tap/burst/fullauto), grenades/reloads, and >=3.2s interrupts.",
+    kv:{"Measured M7 Calls":"20 calls (19 interrupts)","Free-Tier Bottleneck":"8k TPM bursts (6x 429)","Utility Used":"frag / stance=crouch / jiggle","Needs":"Non-reasoning fast JSON model"},
+    json:'{"plan":"Pin E1 & frag cover",\n "orders":[{"bot":"A1","order":"attack","target":"E1",\n   "stance":"crouch","peek":"jiggle","burst":"burst","utility":"frag"}]}' },
+  { title:"Mode 3 · Avatar Pilot [Action Chunks]", desc:"Replaces impractical per-tick prompting with asynchronous 2–4 step motor scripts replayed at 60 Hz by TryGetActiveMicroStep().",
+    kv:{"Control Rate":"Async 5.5s -> 60 Hz chunks","Action Primitives":"sprint_to, strafe_fire, crouch_peek...","Measured M8 Tokens":"1,347 (1 OK · capped 700 tok)","Key Insight":"Needs non-CoT instruct endpoint"},
+    json:'{"orders":[{"bot":"A4","order":"attack","target":"E1","peek":"wideswing",\n "actions":[{"cmd":"sprint_to","x":8,"z":-4,"dur":1.8},\n            {"cmd":"crouch_peek","dir":1,"dur":1.6,"ads":true}]}]}' }
+];
+
+const MANEUVERS = [
+  { id:"adad", name:"ADAD Strafe", code:"BotController.UpdateCombatInputs",
+    what:"Rapidly alternating A (left) and D (right) while shooting at an enemy instead of standing still.",
+    why:"Human players dodge incoming headshots by weaving side-to-side. Because opponents track lateral speed ~125 ms late, rapid reversals force their bullets to miss behind you. DumbBot rarely reverses; HumanLike swaps ~1.5 Hz.",
+    keys:["A","D","RMB","LMB"] },
+  { id:"jiggle", name:"Jiggle Peek", code:"BotPeekStyle.Jiggle",
+    what:"Tapping side-step out from cover for just 0.25–0.45 s and snapping back behind the wall before stopping.",
+    why:"Collects enemy position info or baits an enemy sniper/rifleman into wasting shots while barely exposing your hitbox for long enough to die.",
+    keys:["A","D","Shift"] },
+  { id:"crouch", name:"Crouch Peek", code:"BotStanceOrder.Crouch",
+    what:"Pressing Crouch right as you step around a corner into an enemy's held sightline.",
+    why:"Enemy players pre-aim at standing head height (~1.65 m). Dropping into a crouch (~1.1 m) makes their first reflex shots fly harmlessly over your helmet while also steadying recoil.",
+    keys:["Ctrl","A","RMB","LMB"] },
+  { id:"wide", name:"Wide Swing", code:"BotPeekStyle.WideSwing",
+    what:"Sprinting or fast-strafing 2–3 meters wide past the edge of cover instead of hugging the wall tight.",
+    why:"Breaks an anchored defender's tight corner pre-aim, forcing them to perform a large panicked mouse flick while you swing across their screen with full lateral momentum.",
+    keys:["Shift","D","RMB","LMB"] },
+  { id:"hold", name:"Hold Angle", code:"BotOrder.HoldPosition / HoldAngle",
+    what:"Standing or crouching quietly behind cover with your sights already pre-aimed at an upcoming choke doorway.",
+    why:"Eliminates flick travel distance: when the enemy walks into your stationary crosshair, you only need a short reaction click (no wide mouse sweep). Strong on CTF defence.",
+    keys:["RMB","Ctrl","LMB"] },
+  { id:"flank", name:"Flank / Rotate", code:"BotOrder.Flank / TryPickFlank",
+    what:"Leaving the main stalemate lane to sprint along a wide 90° side route around the enemy's back or side.",
+    why:"Instead of losing a 50/50 frontal peek battle, attacking from an unguarded side angle multiplies survival odds while pinning the enemy in a two-way crossfire.",
+    keys:["W","Shift","Q/E"] },
+  { id:"suppress", name:"Suppress / Pre-Fire", code:"_flickPreFire + BotBurstStyle.FullAuto",
+    what:"Firing rounds just before or at the edge of cover where an enemy ducked away or is about to re-peek.",
+    why:"Keeps injured enemies pinned behind cover (preventing health regeneration) and occasionally catches an eager opponent walking right back into your bullet stream.",
+    keys:["RMB","LMB","A"] },
+  { id:"fallback", name:"Fall Back & Safe Reload", code:"BotGoal.TakeCover + FallBackReload",
+    what:"Breaking line-of-sight behind solid cover immediately when your magazine runs low or armor breaks before pressing R.",
+    why:"Veteran bots push anyone caught reloading in the open (`TargetIsVulnerable`). Pulling behind a crate turns a 1.8 s helpless vulnerability window into zero risk.",
+    keys:["S","Ctrl","R"] },
+  { id:"frag", name:"Frag Flush", code:"BotUtilityAction.ThrowFrag",
+    what:"Banking a timed frag grenade around cover at an anchored enemy's last-known hiding pocket.",
+    why:"Forces campers to sprint out of strong head-glitches into your waiting crosshair, or eliminates them outright without exposing yourself to their rifles.",
+    keys:["G","RMB","LMB"] }
+];
+
+let activeMode = 1, activeFilter = "all", selectedMatch = MATCHES[5], aimKind = "aimGrid13";
+let rttMs = 730, cadSec = 10.0, interruptPulse = 0, manPlaying = true, manSpeed = 1.0, simT = 0, roadUpgrade = false;
+
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function isDark(){ const r = document.documentElement; return r.getAttribute("data-theme")==="dark" || (!r.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches); }
+
+document.getElementById("themeBtn").onclick = () => {
+  document.documentElement.setAttribute("data-theme", isDark() ? "light" : "dark");
+  renderAllStaticCharts();
+};
+
+function renderModeInfo(){
+  const m = MODES[activeMode];
+  document.getElementById("modeTitle").textContent = m.title;
+  document.getElementById("modeDesc").textContent = m.desc;
+  document.getElementById("modeJson").textContent = m.json;
+  document.getElementById("modeKv").innerHTML = Object.entries(m.kv).map(([k,v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+}
+document.querySelectorAll(".mode-btn").forEach(btn => btn.onclick = () => {
+  activeMode = +btn.dataset.mode;
+  document.querySelectorAll(".mode-btn").forEach(b => b.setAttribute("aria-pressed", b === btn));
+  cadSec = activeMode===3 ? 5.0 : activeMode===2 ? 6.5 : 10.0;
+  document.getElementById("cadSlider").value = cadSec;
+  document.getElementById("cadOut").textContent = cadSec.toFixed(1)+" s";
+  renderModeInfo();
+});
+document.getElementById("rttSlider").oninput = e => { rttMs = +e.target.value; document.getElementById("rttOut").textContent = rttMs + " ms"; };
+document.getElementById("cadSlider").oninput = e => { cadSec = +e.target.value; document.getElementById("cadOut").textContent = cadSec.toFixed(1) + " s"; };
+document.getElementById("interruptBtn").onclick = () => { interruptPulse = 1.0; };
+document.getElementById("simNowBtn").onclick = () => { roadUpgrade = false; simNowBtn.setAttribute("aria-pressed", true); simNextBtn.setAttribute("aria-pressed", false); };
+document.getElementById("simNextBtn").onclick = () => { roadUpgrade = true; simNowBtn.setAttribute("aria-pressed", false); simNextBtn.setAttribute("aria-pressed", true); };
+document.getElementById("manPlayBtn").onclick = () => { manPlaying = !manPlaying; manPlayBtn.textContent = manPlaying ? "Pause All" : "Resume All"; manPlayBtn.setAttribute("aria-pressed", manPlaying); };
+document.querySelectorAll(".spd-btn").forEach(b => b.onclick = () => {
+  manSpeed = +b.dataset.spd;
+  document.querySelectorAll(".spd-btn").forEach(x => x.setAttribute("aria-pressed", x === b));
+});
+document.querySelectorAll(".aim-btn").forEach(b => b.onclick = () => {
+  aimKind = b.dataset.kind;
+  document.querySelectorAll(".aim-btn").forEach(x => x.setAttribute("aria-pressed", x === b));
+  renderAimHeatmaps();
+});
+document.querySelectorAll(".filt-btn").forEach(b => b.onclick = () => {
+  activeFilter = b.dataset.filter;
+  document.querySelectorAll(".filt-btn").forEach(x => x.setAttribute("aria-pressed", x === b));
+  renderTable();
+});
+
+// Build 9 Tactical Maneuver Cards
+const mGrid = document.getElementById("maneuverGrid");
+mGrid.innerHTML = MANEUVERS.map(m => `
+  <div class="man-card">
+    <div class="man-hdr"><h3>${m.name}</h3><span class="man-sub">${m.code}</span></div>
+    <canvas id="mc_${m.id}" width="320" height="190"></canvas>
+    <div class="key-row" id="mk_${m.id}">${m.keys.map(k => `<span class="keycap" data-k="${k}">[${k}]</span>`).join("")}</div>
+    <p class="man-explain"><b>What it is:</b> ${m.what}</p>
+    <p class="man-why"><b>Why do it:</b> ${m.why}</p>
+  </div>`).join("");
+
+function setKey(id, k, on){
+  const el = document.querySelector(`#mk_${id} [data-k="${k}"]`);
+  if(el) el.classList.toggle("on", !!on);
+}
+
+function drawManeuverFrame(m, t){
+  const cv = document.getElementById("mc_" + m.id); if(!cv) return;
+  const ctx = cv.getContext("2d"), W = cv.width, H = cv.height;
+  ctx.fillStyle = css("--panel"); ctx.fillRect(0,0,W,H);
+  // faint grid
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  for(let x=0; x<W; x+=32){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y=0; y<H; y+=32){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  const cyc = (t % 3.2) / 3.2; // 0..1 loop
+  let bx=90, by=120, ex=250, ey=75, aim=0, fire=false, crouch=false, keys={};
+
+  // Cover walls
+  ctx.fillStyle = css("--raised"); ctx.strokeStyle = css("--line"); ctx.lineWidth = 1.5;
+  if(m.id === "adad"){
+    ctx.fillRect(150, 22, 16, 146); ctx.strokeRect(150, 22, 16, 146); // thin lane gap top/bot or open lane
+    ctx.clearRect(150, 56, 16, 86);
+    bx = 78; by = 96 + Math.sin(t * 9.0) * 28;
+    ex = 250; ey = 96 + Math.sin(t * 2.2) * 18;
+    aim = Math.atan2(ey - by, ex - bx); fire = (t % 0.45) < 0.25;
+    keys = { A: Math.cos(t * 9.0) < 0, D: Math.cos(t * 9.0) >= 0, RMB: true, LMB: fire };
+  } else if(m.id === "jiggle"){
+    ctx.fillRect(118, 44, 24, 118); ctx.strokeRect(118, 44, 24, 118);
+    const out = Math.max(0, Math.sin(t * 5.2));
+    bx = 96; by = 78 - out * 46;
+    ex = 256; ey = 46;
+    aim = Math.atan2(ey - by, ex - bx);
+    keys = { A: Math.cos(t * 5.2) > 0, D: Math.cos(t * 5.2) <= 0, Shift: out > 0.3 };
+  } else if(m.id === "crouch"){
+    ctx.fillRect(118, 60, 22, 110); ctx.strokeRect(118, 60, 22, 110);
+    const u = cyc < 0.45 ? cyc/0.45 : (cyc < 0.75 ? 1 : (1-cyc)/0.25);
+    crouch = cyc > 0.28 && cyc < 0.84;
+    bx = 98 + u * 54; by = 48; ex = 252; ey = 56;
+    aim = Math.atan2(ey - by, ex - bx); fire = cyc > 0.35 && cyc < 0.75;
+    keys = { Ctrl: crouch, A: cyc < 0.45, RMB: true, LMB: fire };
+  } else if(m.id === "wide"){
+    ctx.fillRect(118, 60, 22, 110); ctx.strokeRect(118, 60, 22, 110);
+    const u = Math.min(1, cyc * 1.4);
+    bx = 82 + u * 80; by = 130 - u * 96; ex = 256; ey = 72;
+    aim = Math.atan2(ey - by, ex - bx); fire = u > 0.55;
+    keys = { Shift: u < 0.55, D: u < 0.85, RMB: u > 0.4, LMB: fire };
+  } else if(m.id === "hold"){
+    ctx.fillRect(116, 48, 20, 112); ctx.strokeRect(116, 48, 20, 112);
+    bx = 88; by = 44; crouch = true;
+    const cross = Math.max(0, (cyc - 0.35) / 0.65);
+    ex = 250; ey = 135 - cross * 102;
+    aim = Math.atan2(42 - by, 240 - bx); fire = cyc > 0.72 && cyc < 0.90;
+    keys = { Ctrl: true, RMB: true, LMB: fire };
+  } else if(m.id === "flank"){
+    ctx.fillRect(136, 62, 52, 68); ctx.strokeRect(136, 62, 52, 68);
+    // wingman holds left, flanker arcs top
+    ctx.fillStyle = css("--bot"); ctx.globalAlpha = 0.5;
+    ctx.beginPath(); ctx.arc(62, 102, 8, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1;
+    const th = cyc * Math.PI * 0.95;
+    bx = 160 - Math.cos(th)*92; by = 96 - Math.sin(th)*74;
+    ex = 256; ey = 100; aim = Math.atan2(ey - by, ex - bx); fire = cyc > 0.8;
+    keys = { W: true, Shift: cyc < 0.75, "Q/E": cyc > 0.6 };
+  } else if(m.id === "suppress"){
+    ctx.fillRect(174, 52, 24, 92); ctx.strokeRect(174, 52, 24, 92);
+    bx = 76; by = 94 + Math.sin(t * 3.0) * 14;
+    ex = 232; ey = 96 + Math.sin(t * 2.2) * 26;
+    aim = 0; fire = (t % 0.7) < 0.48;
+    // bullet stream onto cover edge
+    ctx.strokeStyle = css("--accent"); ctx.setLineDash([5,4]); ctx.lineWidth = 2;
+    if(fire){ ctx.beginPath(); ctx.moveTo(bx+12, by); ctx.lineTo(174, 90 + Math.sin(t*14)*6); ctx.stroke(); }
+    ctx.setLineDash([]);
+    keys = { RMB: true, LMB: fire, A: Math.cos(t*3) < 0 };
+  } else if(m.id === "fallback"){
+    ctx.fillRect(118, 44, 24, 118); ctx.strokeRect(118, 44, 24, 118);
+    const back = cyc < 0.45 ? cyc/0.45 : 1;
+    bx = 136 - back * 58; by = 36 + back * 72; crouch = cyc > 0.48;
+    ex = 258; ey = 52; aim = Math.atan2(ey - by, ex - bx);
+    keys = { S: cyc < 0.45, Ctrl: crouch, R: cyc > 0.50 };
+  } else if(m.id === "frag"){
+    ctx.fillRect(166, 52, 24, 94); ctx.strokeRect(166, 52, 24, 94);
+    bx = 68; by = 128; ex = 232 + Math.max(0, cyc - 0.68)*120; ey = 96;
+    aim = -0.25;
+    // frag trajectory
+    if(cyc > 0.15 && cyc < 0.72){
+      const fu = (cyc - 0.15) / 0.57;
+      const gx = 76 + fu * 155, gy = 126 - Math.sin(fu * Math.PI) * 58 - fu * 30;
+      ctx.fillStyle = css("--good"); ctx.beginPath(); ctx.arc(gx, gy, 5, 0, Math.PI*2); ctx.fill();
+    }
+    if(cyc >= 0.72 && cyc < 0.88){
+      ctx.strokeStyle = css("--accent"); ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(228, 96, (cyc - 0.72) * 180, 0, Math.PI*2); ctx.stroke();
+    }
+    keys = { G: cyc < 0.25, RMB: cyc > 0.55, LMB: cyc > 0.72 };
+  }
+
+  m.keys.forEach(k => setKey(m.id, k, keys[k]));
+
+  // Vision cone
+  ctx.fillStyle = isDark() ? "rgba(255,140,59,0.16)" : "rgba(196,80,27,0.12)";
+  ctx.beginPath(); ctx.moveTo(bx, by); ctx.arc(bx, by, 145, aim - 0.28, aim + 0.28); ctx.closePath(); ctx.fill();
+  if(fire && m.id !== "suppress"){
+    ctx.strokeStyle = css("--warn"); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(aim)*190, by + Math.sin(aim)*190); ctx.stroke();
+  }
+  // Friendly bot & enemy
+  ctx.fillStyle = css("--bot"); ctx.beginPath(); ctx.arc(bx, by, crouch ? 8 : 11, 0, Math.PI*2); ctx.fill();
+  if(crouch){ ctx.strokeStyle="#fff"; ctx.lineWidth=1.5; ctx.stroke(); }
+  ctx.fillStyle = css("--bad"); ctx.beginPath(); ctx.arc(ex, ey, 11, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = css("--muted"); ctx.font = "10px 'IBM Plex Mono', monospace";
+  ctx.fillText("YOU/BOT", bx-18, by-14); ctx.fillText("ENEMY", ex-14, ey-14);
+}
+
+// Heatmap renderer (Canvas matrix)
+function heatColor(v){
+  if(v <= 0.001) return isDark() ? "#0d120f" : "#f4f5ef";
+  const u = Math.min(1, Math.pow(v, 0.55));
+  if(u < 0.35){
+    const k = u / 0.35;
+    return `rgb(${Math.round(45+k*95)},${Math.round(18+k*15)},${Math.round(68+k*55)})`;
+  } else if(u < 0.72){
+    const k = (u - 0.35) / 0.37;
+    return `rgb(${Math.round(140+k*95)},${Math.round(33+k*85)},${Math.round(123-k*90)})`;
+  }
+  const k = (u - 0.72) / 0.28;
+  return `rgb(${Math.round(235+k*20)},${Math.round(118+k*125)},${Math.round(33+k*120)})`;
+}
+
+function renderMoveHeatmaps(){
+  const row = document.getElementById("moveHeatmapRow");
+  const list = Object.entries(HEATMAPS.groups);
+  row.innerHTML = list.map(([name, g]) => `
+    <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--raised);">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+        <b style="font-family:var(--display);font-size:18px;color:var(${g.colorVar})">${name}</b>
+        <span class="mono">Move HLI <b>${g.hli.move}%</b> · SWD ${g.hli.swd_move.toFixed(3)}</span>
+      </div>
+      <canvas id="hm_move_${name}" width="280" height="220"></canvas>
+      <div class="mono" style="margin-top:6px;color:var(--muted);display:flex;justify-content:space-between;">
+        <span>Speed ${g.metrics.avg_speed} m/s</span><span>Flips/Bot ${g.metrics.strafe_flips_per_actor}</span><span>Cover ${g.behavior.coverNearPct}%</span>
+      </div>
+    </div>`).join("");
+  list.forEach(([name, g]) => {
+    const cv = document.getElementById("hm_move_"+name), ctx = cv.getContext("2d");
+    const grid = g.moveGrid14, rows = grid.length, cols = grid[0].length;
+    const padL=10, padT=8, cw=(cv.width-20)/cols, ch=(cv.height-28)/rows;
+    ctx.fillStyle = css("--panel"); ctx.fillRect(0,0,cv.width,cv.height);
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        ctx.fillStyle = heatColor(grid[rows-1-r][c]);
+        ctx.fillRect(padL+c*cw, padT+r*ch, cw+0.5, ch+0.5);
+      }
+    }
+    ctx.fillStyle = css("--muted"); ctx.font="10px 'IBM Plex Mono', monospace";
+    ctx.fillText("West Harbour (-28m)      Saltworks Map X      East Alleys (+29m)", 10, cv.height-6);
+  });
+}
+
+function renderAimHeatmaps(){
+  const row = document.getElementById("aimHeatmapRow");
+  const list = Object.entries(HEATMAPS.groups);
+  row.innerHTML = list.map(([name, g]) => `
+    <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--raised);">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+        <b style="font-family:var(--display);font-size:18px;color:var(${g.colorVar})">${name}</b>
+        <span class="mono">Miss Spread <b>${g.behavior.missSpreadDeg.toFixed(2)}°</b> · HS <b>${g.metrics.hs_pct.toFixed(1)}%</b></span>
+      </div>
+      <canvas id="hm_aim_${name}" width="260" height="230"></canvas>
+      <div class="mono" style="margin-top:6px;color:var(--muted);display:flex;justify-content:space-between;">
+        <span>Yaw Bias ${g.behavior.missBiasYaw>=0?"+":""}${g.behavior.missBiasYaw.toFixed(2)}°</span>
+        <span>Pitch Bias ${g.behavior.missBiasPitch>=0?"+":""}${g.behavior.missBiasPitch.toFixed(2)}°</span>
+      </div>
+    </div>`).join("");
+  list.forEach(([name, g]) => {
+    const cv = document.getElementById("hm_aim_"+name), ctx = cv.getContext("2d");
+    const grid = g[aimKind], rows = grid.length, cols = grid[0].length;
+    const s = Math.min(cv.width-24, cv.height-28), ox=(cv.width-s)/2, oy=8, cw=s/cols, ch=s/rows;
+    ctx.fillStyle = css("--panel"); ctx.fillRect(0,0,cv.width,cv.height);
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        ctx.fillStyle = heatColor(grid[rows-1-r][c]);
+        ctx.fillRect(ox+c*cw, oy+r*ch, cw+0.5, ch+0.5);
+      }
+    }
+    ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(ox+s/2, oy); ctx.lineTo(ox+s/2, oy+s); ctx.moveTo(ox, oy+s/2); ctx.lineTo(ox+s, oy+s/2); ctx.stroke();
+    ctx.fillStyle = css("--muted"); ctx.font="10px 'IBM Plex Mono', monospace";
+    ctx.fillText("-12° Yaw           Target (0°,0°)           +12° Yaw", ox-4, cv.height-6);
+  });
+}
+
+function renderRecoilChart(){
+  const cv = document.getElementById("recoilCanvas"), ctx = cv.getContext("2d");
+  const W=cv.width, H=cv.height;
+  ctx.fillStyle = css("--panel"); ctx.fillRect(0,0,W,H);
+  const panels = [
+    { x:48, y:34, w:270, h:220, title:"Pull-Down (+deg/shot)", key:"recoilCurve10", maxv:0.55 },
+    { x:388, y:34, w:270, h:220, title:"Burst Shot Hit Prob (%)", key:"burstHitCurve10", maxv:50 }
+  ];
+  panels.forEach(p => {
+    ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+    for(let g=0;g<=4;g++){
+      const yy = p.y + p.h - (g/4)*p.h;
+      ctx.beginPath(); ctx.moveTo(p.x, yy); ctx.lineTo(p.x+p.w, yy); ctx.stroke();
+      ctx.fillStyle = css("--muted"); ctx.font="10px 'IBM Plex Mono', monospace";
+      ctx.fillText((p.maxv*g/4).toFixed(p.maxv<2?2:0), p.x-36, yy+3);
+    }
+    ctx.fillStyle = css("--ink"); ctx.font="600 13px 'Saira Condensed', sans-serif";
+    ctx.fillText(p.title, p.x, 20);
+    Object.entries(HEATMAPS.groups).forEach(([name, g]) => {
+      const arr = g[p.key];
+      ctx.strokeStyle = css(g.colorVar); ctx.lineWidth = 2.4; ctx.beginPath();
+      arr.forEach((v, idx) => {
+        const px = p.x + (idx / 9) * p.w;
+        const py = p.y + p.h - Math.min(1, Math.max(0, v)/p.maxv)*p.h;
+        if(idx === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+      arr.forEach((v, idx) => {
+        const px = p.x + (idx / 9) * p.w;
+        const py = p.y + p.h - Math.min(1, Math.max(0, v)/p.maxv)*p.h;
+        ctx.fillStyle = css(g.colorVar); ctx.beginPath(); ctx.arc(px, py, 3.2, 0, Math.PI*2); ctx.fill();
+      });
+    });
+    ctx.fillStyle = css("--muted"); ctx.font="10px 'IBM Plex Mono', monospace";
+    ctx.fillText("Shot 1 -> Shot 10 in Burst", p.x + 55, p.y + p.h + 22);
+  });
+  // Legend
+  let lx = 48;
+  Object.entries(HEATMAPS.groups).forEach(([name, g]) => {
+    ctx.fillStyle = css(g.colorVar); ctx.fillRect(lx, H-14, 12, 8);
+    ctx.fillStyle = css("--ink"); ctx.font="11px 'IBM Plex Mono', monospace";
+    ctx.fillText(name, lx+16, H-6);
+    lx += 130;
+  });
+}
+
+function renderBehaviorCompare(){
+  const box = document.getElementById("behaviorCompare");
+  const rows = [
+    ["ADS Duty (%)", g => g.metrics.ads_duty, 60],
+    ["Strafe Flips / Bot", g => g.metrics.strafe_flips_per_actor, 35],
+    ["Sprint Duty (%)", g => g.behavior.sprintPct, 15],
+    ["Crouch Duty (%)", g => g.metrics.crouch_duty, 6],
+    ["Headshot % of Hits", g => g.metrics.hs_pct, 25],
+    ["Miss Scatter (°)", g => g.behavior.missSpreadDeg, 5]
+  ];
+  let html = "";
+  rows.forEach(([label, fn, maxv]) => {
+    html += `<div style="margin-bottom:9px;"><div style="font-size:12px;font-weight:600;margin-bottom:3px;">${label}</div>`;
+    Object.entries(HEATMAPS.groups).forEach(([name, g]) => {
+      const val = fn(g);
+      const w = Math.min(100, (val/maxv)*100);
+      html += `<div class="bar-row"><span class="mono" style="color:var(${g.colorVar})">${name}</span><div class="bar-track"><div class="bar-fill" style="width:${w}%;background:var(${g.colorVar})"></div></div><span class="mono num">${val.toFixed(1)}</span></div>`;
+    });
+    html += `</div>`;
+  });
+  // Goal breakdown summary
+  html += `<div class="tip-box"><b>Tactical Goal Mix (% of 20 Hz ticks):</b><br>`;
+  Object.entries(HEATMAPS.groups).forEach(([name, g]) => {
+    const tot = Object.values(g.metrics.goals).reduce((a,b)=>a+b, 0) || 1;
+    const top = Object.entries(g.metrics.goals).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([k,v])=>`${k} ${Math.round(100*v/tot)}%`).join(" · ");
+    html += `<div class="mono" style="margin-top:3px;"><b style="color:var(${g.colorVar})">${name}:</b> ${top}</div>`;
+  });
+  html += `</div>`;
+  box.innerHTML = html;
+}
+
+function renderHliCards(){
+  const box = document.getElementById("hliCards");
+  box.innerHTML = Object.entries(HEATMAPS.groups).map(([name, g]) => {
+    const h = g.hli, m = g.metrics;
+    const passTuring = h.hli >= 50;
+    return `<div style="border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--raised);">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <h3 style="color:var(${g.colorVar})">${name}</h3>
+        <span class="badge ${passTuring?"win":"loss"}">${passTuring?"PASSES 50% TURING BAR":"FAILS 50% TURING BAR"}</span>
+      </div>
+      <div style="font-family:var(--display);font-size:38px;font-weight:700;margin:4px 0;">${h.hli.toFixed(1)}% <span style="font-size:13px;color:var(--muted);font-family:var(--mono);">HLI · K/D ${m.kd.toFixed(2)} · Acc ${m.acc.toFixed(1)}%</span></div>
+      <dl class="kv">
+        <dt>Spatial Move EMD</dt><dd>${h.move.toFixed(1)}%</dd>
+        <dt>Aim &amp; Fitts Flick</dt><dd>${h.aim.toFixed(1)}%</dd>
+        <dt>Recoil Pull-Down</dt><dd>${h.recoil.toFixed(1)}%</dd>
+        <dt>Timing &amp; Posture</dt><dd>${h.timing.toFixed(1)}%</dd>
+        <dt>C2ST Classifier (AUC)</dt><dd>${h.c2st.toFixed(1)}% (${h.auc.toFixed(3)})</dd>
+      </dl>
+    </div>`;
+  }).join("");
+}
+
+function renderTable(){
+  const tb = document.querySelector("#benchTable tbody");
+  const rows = MATCHES.filter(m => activeFilter === "all" || m.group === "both" || m.group === activeFilter);
+  tb.innerHTML = rows.map(m => {
+    const win = m.ak >= m.bk;
+    return `<tr class="clickrow ${selectedMatch.id === m.id ? "selected" : ""}" data-id="${m.id}">
+      <td><b>${m.label}</b></td><td><span class="mono">${m.mode}</span></td>
+      <td class="num"><span class="badge ${win?"win":"loss"}">${m.ak}</span></td>
+      <td class="num">${m.bk}</td><td class="num"><b>${m.akd.toFixed(2)}</b></td>
+      <td class="num">${m.ok}/${m.dec}</td><td class="num">${(m.ptok+m.ctok).toLocaleString()}</td>
+      <td class="num">${m.ms}</td></tr>`;
+  }).join("");
+  tb.querySelectorAll("tr").forEach(tr => tr.onclick = () => { selectedMatch = MATCHES.find(x => x.id === tr.dataset.id); renderTable(); drawMiniChart(); });
+}
+
+function drawMiniChart(){
+  const cv = document.getElementById("chartCanvas"), ctx = cv.getContext("2d");
+  const W=cv.width, H=cv.height, m=selectedMatch;
+  ctx.fillStyle = css("--panel"); ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = css("--ink"); ctx.font="700 17px 'Saira Condensed', sans-serif";
+  ctx.fillText(m.label + " — Call & Combat Breakdown", 16, 26);
+  const metrics = [
+    ["Alpha K:D", m.akd, 2.2, css("--bot"), m.akd.toFixed(2)],
+    ["Bravo K:D", m.bkd, 2.2, css("--accent"), m.bkd.toFixed(2)],
+    ["JSON OK %", 100*m.ok/m.dec, 100, css("--good"), Math.round(100*m.ok/m.dec)+"%"],
+    ["Orders Issued", m.ord, 18, css("--purple"), String(m.ord)],
+    ["Failed / 429", m.fail, 20, css("--bad"), `${m.fail} (${m.r429}×429)`]
+  ];
+  metrics.forEach(([lbl, val, maxv, col, txt], i) => {
+    const y = 52 + i * 50;
+    ctx.fillStyle = css("--muted"); ctx.font="12px 'IBM Plex Sans', sans-serif"; ctx.fillText(lbl, 16, y+14);
+    ctx.fillStyle = css("--grid"); ctx.fillRect(126, y, 240, 20);
+    ctx.fillStyle = col; ctx.fillRect(126, y, Math.max(4, Math.min(240, (val/maxv)*240)), 20);
+    ctx.fillStyle = css("--ink"); ctx.font="500 12px 'IBM Plex Mono', monospace"; ctx.fillText(txt, 374, y+14);
+  });
+  document.getElementById("matchDetail").innerHTML = `<b>Observed Finding:</b> ${m.note} <br><span class="mono">Accuracy: Alpha ${m.aacc}% vs Bravo ${m.bacc}% · Tokens: ${m.ptok.toLocaleString()}+${m.ctok.toLocaleString()}</span>`;
+}
+
+function renderAllStaticCharts(){ renderMoveHeatmaps(); renderAimHeatmaps(); renderRecoilChart(); renderBehaviorCompare(); renderHliCards(); drawMiniChart(); }
+
+let lastTs = performance.now();
+function tick(ts){
+  const dt = Math.min(0.05, (ts - lastTs) * 0.001); lastTs = ts;
+  if(manPlaying) simT += dt * manSpeed;
+  const now = ts * 0.001;
+  interruptPulse = Math.max(0, interruptPulse - 0.018);
+
+  // Pipeline canvas
+  const pc = document.getElementById("pipeCanvas"), pctx = pc.getContext("2d");
+  pctx.fillStyle = css("--panel"); pctx.fillRect(0,0,pc.width,pc.height);
+  const cycle = activeMode === 0 ? 0 : (now % cadSec) / cadSec;
+  const rttFrac = Math.min(0.45, (rttMs / 1000) / cadSec);
+  const s2Active = activeMode > 0 && (cycle < rttFrac || interruptPulse > 0.2);
+
+  pctx.fillStyle = css("--raised"); pctx.strokeStyle = activeMode === 0 ? css("--line") : (s2Active ? css("--accent") : css("--bot"));
+  pctx.lineWidth = s2Active ? 2.5 : 1.5;
+  pctx.beginPath(); pctx.roundRect(22, 26, 250, 230, 8); pctx.fill(); pctx.stroke();
+  pctx.fillStyle = activeMode === 0 ? css("--muted") : css("--bot");
+  pctx.font="700 18px 'Saira Condensed', sans-serif"; pctx.fillText("SYSTEM 2 · GROQ CLOUD", 38, 52);
+  pctx.fillStyle = css("--muted"); pctx.font="12px 'IBM Plex Mono', monospace";
+  pctx.fillText(activeMode === 0 ? "DISABLED (Mode 0)" : `Wait ${cadSec.toFixed(1)}s · RTT ${rttMs}ms`, 38, 72);
+  ["BuildState() fog-of-war JSON", "LLM Inference & Structured Decode", "Parse Order / Stance / Chunks", activeMode >= 2 ? "Interrupt Watch (>=3.2s)" : "Fixed Polling Timer"].forEach((st, i) => {
+    const on = activeMode > 0 && (i < 3 || activeMode >= 2);
+    pctx.fillStyle = on ? css("--panel") : css("--grid"); pctx.strokeStyle = css("--line"); pctx.lineWidth=1;
+    pctx.beginPath(); pctx.roundRect(36, 90 + i*38, 222, 30, 5); pctx.fill(); pctx.stroke();
+    pctx.fillStyle = on ? css("--ink") : css("--muted"); pctx.font="11.5px 'IBM Plex Sans', sans-serif"; pctx.fillText(st, 46, 109 + i*38);
+  });
+
+  pctx.fillStyle = css("--raised"); pctx.strokeStyle = css("--good"); pctx.lineWidth=2;
+  pctx.beginPath(); pctx.roundRect(488, 26, 250, 230, 8); pctx.fill(); pctx.stroke();
+  pctx.fillStyle = css("--good"); pctx.font="700 18px 'Saira Condensed', sans-serif"; pctx.fillText("SYSTEM 1 · UNITY 60 HZ", 504, 52);
+  pctx.fillStyle = css("--muted"); pctx.font="12px 'IBM Plex Mono', monospace"; pctx.fillText("Always Live (16.6 ms frames)", 504, 72);
+  ["TacticalBotBrain.Think() (4 Hz)", activeMode === 3 ? "TryGetActiveMicroStep() Chunks" : "ADAD Strafe, Peeks & Cover", "Human Aim: Fitts + 125ms Lead", "Emergency Override & Save"].forEach((st, i) => {
+    pctx.fillStyle = css("--panel"); pctx.strokeStyle = i===1 && activeMode===3 ? css("--purple") : css("--line");
+    pctx.beginPath(); pctx.roundRect(502, 90 + i*38, 222, 30, 5); pctx.fill(); pctx.stroke();
+    pctx.fillStyle = css("--ink"); pctx.font="11.5px 'IBM Plex Sans', sans-serif"; pctx.fillText(st, 512, 109 + i*38);
+  });
+
+  pctx.strokeStyle = css("--line"); pctx.lineWidth=2.5;
+  pctx.beginPath(); pctx.moveTo(276, 105); pctx.lineTo(484, 105); pctx.moveTo(484, 175); pctx.lineTo(276, 175); pctx.stroke();
+  if(activeMode > 0){
+    const u = Math.min(1, cycle / Math.max(0.08, rttFrac));
+    if(cycle < rttFrac){ pctx.fillStyle = activeMode===3?css("--purple"):css("--bot"); pctx.beginPath(); pctx.arc(282 + u*196, 105, 7, 0, Math.PI*2); pctx.fill(); }
+    pctx.fillStyle = interruptPulse > 0.05 ? css("--bad") : css("--good");
+    pctx.beginPath(); pctx.arc(478 - cycle*196, 175, interruptPulse > 0.05 ? 8 : 5.5, 0, Math.PI*2); pctx.fill();
+  }
+  pctx.fillStyle = css("--muted"); pctx.font="11px 'IBM Plex Mono', monospace";
+  pctx.fillText("BotDirective JSON", 322, 94); pctx.fillText("Blackboard State", 324, 193);
+
+  pctx.fillStyle = css("--grid"); pctx.fillRect(22, 276, 716, 92);
+  pctx.fillStyle = css("--ink"); pctx.font="600 12px 'IBM Plex Mono', monospace"; pctx.fillText("LIVE 60 HZ EXECUTION WINDOW (10 SECONDS ROLLING)", 34, 298);
+  for(let k=0;k<6;k++){
+    const x0=34+k*116, w=108;
+    const label = activeMode===0?"Rules Engage":activeMode===3?(k%2===0?"Chunk: sprint_to":"Chunk: crouch_peek"):activeMode===2?"Micro: jiggle+burst":"Macro: Flank Route";
+    const col = activeMode===3?css("--purple"):(activeMode===2?css("--warn"):css("--bot"));
+    pctx.fillStyle = col; pctx.globalAlpha = ((Math.floor(now*2)%6)===k) ? 0.92 : 0.42;
+    pctx.fillRect(x0, 312, w, 36); pctx.globalAlpha = 1;
+    pctx.fillStyle="#fff"; pctx.font="11px 'IBM Plex Mono', monospace"; pctx.fillText(label, x0+6, 334);
+  }
+
+  // Render all 9 individual tactical maneuver animations
+  MANEUVERS.forEach(m => drawManeuverFrame(m, simT));
+
+  // Duel comparison canvas
+  const dc = document.getElementById("duelCanvas"), dctx = dc.getContext("2d");
+  dctx.fillStyle = css("--panel"); dctx.fillRect(0,0,dc.width,dc.height);
+  dctx.strokeStyle = css("--line"); dctx.fillStyle = css("--raised");
+  dctx.fillRect(340, 95, 70, 145); dctx.strokeRect(340, 95, 70, 145);
+  dctx.fillStyle = css("--muted"); dctx.font="11px 'IBM Plex Mono', monospace"; dctx.fillText("COVER WALL", 343, 170);
+  const ph = (now * (roadUpgrade ? 0.9 : 0.6)) % (Math.PI*2);
+  const ax = roadUpgrade ? 245 + Math.sin(ph)*28 : 220, ay = roadUpgrade ? 120 + Math.cos(ph)*45 : 168 + Math.sin(ph*2)*35;
+  const w2x = roadUpgrade ? 270 : 170, w2y = roadUpgrade ? 245 : 140;
+  const ex = 515 + Math.cos(ph*0.8)*18, ey = 165 + Math.sin(ph*0.8)*45;
+  dctx.fillStyle = roadUpgrade ? "rgba(92,196,106,0.16)" : "rgba(255,125,59,0.14)";
+  dctx.beginPath(); dctx.moveTo(ax, ay);
+  const aimAng = roadUpgrade ? Math.atan2(ey-ay, ex-ax) : 0.3*Math.sin(now*2);
+  dctx.arc(ax, ay, 240, aimAng-0.25, aimAng+0.25); dctx.closePath(); dctx.fill();
+  dctx.fillStyle = css("--bot"); dctx.beginPath(); dctx.arc(ax, ay, 12, 0, Math.PI*2); dctx.fill();
+  dctx.beginPath(); dctx.arc(w2x, w2y, 11, 0, Math.PI*2); dctx.fill();
+  dctx.fillStyle = css("--bad"); dctx.beginPath(); dctx.arc(ex, ey, 12, 0, Math.PI*2); dctx.fill();
+  dctx.fillStyle = css("--ink"); dctx.font="600 13px 'IBM Plex Sans', sans-serif";
+  dctx.fillText(roadUpgrade ? "Upgraded: HumanFitted Profile + Synchronized Pincer (PORTAL BT)" : "Current: Commander Macro Order + Baseline HumanLike Aim", 22, 28);
+  dctx.fillStyle = css("--muted"); dctx.font="12px 'IBM Plex Mono', monospace";
+  dctx.fillText("A1 (Entry)", ax-24, ay-18); dctx.fillText(roadUpgrade?"A2 (Paired Trade)":"A2 (Solo)", w2x-28, w2y+26); dctx.fillText("E1", ex-6, ey-18);
+
+  requestAnimationFrame(tick);
+}
+
+renderModeInfo(); renderTable(); renderAllStaticCharts(); requestAnimationFrame(tick);
+</script>
+</body>
+</html>

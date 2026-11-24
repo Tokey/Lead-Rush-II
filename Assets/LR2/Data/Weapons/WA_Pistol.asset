@@ -93,7 +93,7 @@ MonoBehaviour:
   firePlayerSuppressed:
     clips:
     - {fileID: 8300000, guid: 683a5b7ce888d1c4d99e4d4d241ba1d6, type: 3}
-    volume: 0.78
+    volume: 1
     pitch: {x: 0.97, y: 1.03}
     spatialBlend: 0.15
     minDistance: 1.5
@@ -102,13 +102,8 @@ MonoBehaviour:
     priority: 128
   fireNpcSuppressed:
     clips:
-    - {fileID: 8300000, guid: 07079544dcebb1740833968780bef696, type: 3}
-    - {fileID: 8300000, guid: 339d7e336f3e7d542bdd4ec13cc5fd3b, type: 3}
-    - {fileID: 8300000, guid: 0bfc7bf2651d0ea4aad838f9652f9196, type: 3}
-    - {fileID: 8300000, guid: abf854ccb7d67bb4da50ed691628d9ab, type: 3}
-    - {fileID: 8300000, guid: 9544cfa1038df6d488f81ce540380899, type: 3}
-    - {fileID: 8300000, guid: 2e68fc4f6d095764cb8f879b0538c5ff, type: 3}
-    volume: 0.62
+    - {fileID: 8300000, guid: 683a5b7ce888d1c4d99e4d4d241ba1d6, type: 3}
+    volume: 0.86
     pitch: {x: 0.97, y: 1.03}
     spatialBlend: 1
     minDistance: 1.5
@@ -281,4 +276,4 @@ MonoBehaviour:
   magOutAt: 0.16
   magInAt: 0.46
   boltAt: 0.64
-  emptyReloadEndAt: 0.76
+  emptyReloadEndAt: 0.81

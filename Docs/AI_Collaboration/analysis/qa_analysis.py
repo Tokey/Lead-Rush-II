@@ -1,4 +1,4 @@
-"""QA comparative analysis for LeadRush 2 (how the agents test the game, and which methods find what).
+"""QA comparative analysis for Lead Rush II (how the agents test the game, and which methods find what).
 
 Reads the local QA artifacts (Logs/ is not in git, so this script turns them into committed data):
   Logs/LR2_PoseCheck*/report.txt   scripted first-person pose checks (FirstPersonPoseCheck via LR2SmokeTest.RunBatch -lr2PoseCheck)

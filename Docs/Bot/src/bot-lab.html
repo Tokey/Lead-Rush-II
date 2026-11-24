@@ -253,9 +253,9 @@ tr.sel-gun td { background: var(--panel-2); }
 
 <div class="wrap">
 <header>
-  <span class="eyebrow">LeadRush 2 · bot field manual · game modes · how it was built</span>
+  <span class="eyebrow">Lead Rush II · bot field manual · game modes · how it was built</span>
   <h1>LR2 Bot Lab</h1>
-  <p class="lede">How a LeadRush 2 bot notices you, decides what to do, moves, turns to you and pulls its shots; the game modes it plays; and how the AI agents that built it are scored. Every drill runs the same rules and numbers as the game's code, so you can watch human mistakes appear for the same reasons.</p>
+  <p class="lede">How a Lead Rush II bot notices you, decides what to do, moves, turns to you and pulls its shots; the game modes it plays; and how the AI agents that built it are scored. Every drill runs the same rules and numbers as the game's code, so you can watch human mistakes appear for the same reasons.</p>
   <div class="chips">
     <span class="chip">code <b>5791ce8</b> · build <b>11.18.26.5</b></span>
     <span class="chip">BotController · TacticalBotBrain · BotPerception · BotDifficulty · FlagZoneController</span>
@@ -455,7 +455,7 @@ tr.sel-gun td { background: var(--panel-2); }
     </section>
 <section id="nav" class="bb" aria-labelledby="h-nav">
       <div class="head"><span class="num">06 · MOVE</span><h2 id="h-nav">Two-layer pathfinding</h2><span class="src">TacticalBotBrain.cs chooses where · BotController.cs drives the NavMeshAgent</span>
-        <p>LeadRush 2 splits movement into <b>two cooperating layers</b>: <b>Layer 1 (<code>TacticalBotBrain</code>, ~4 Hz)</b> scores candidate <code>CoverPoint</code>, <code>TacticalPoint</code>, <code>FlagAnchor</code>, or leader-offset world coordinates; <b>Layer 2 (<code>BotController</code>, every frame)</b> drives a decoupled <code>NavMeshAgent</code> (<code>updatePosition = false</code>) with 0.6 s / 1 m repath hysteresis, slices corners ahead on <code>path.corners[1]</code>, blends combat ADAD strafing (<code>0.65·route + 0.85·right·dir</code>), completes OffMeshLinks, and triggers 1.1 s obstacle hops / 2.4 s <code>ResetPath()</code> stuck recovery.</p></div>
+        <p>Lead Rush II splits movement into <b>two cooperating layers</b>: <b>Layer 1 (<code>TacticalBotBrain</code>, ~4 Hz)</b> scores candidate <code>CoverPoint</code>, <code>TacticalPoint</code>, <code>FlagAnchor</code>, or leader-offset world coordinates; <b>Layer 2 (<code>BotController</code>, every frame)</b> drives a decoupled <code>NavMeshAgent</code> (<code>updatePosition = false</code>) with 0.6 s / 1 m repath hysteresis, slices corners ahead on <code>path.corners[1]</code>, blends combat ADAD strafing (<code>0.65·route + 0.85·right·dir</code>), completes OffMeshLinks, and triggers 1.1 s obstacle hops / 2.4 s <code>ResetPath()</code> stuck recovery.</p></div>
       <div class="instrument">
         <canvas id="cv-nav" aria-label="Interactive dual-layer pathfinding visualizer"></canvas>
         <div class="controls">
@@ -853,7 +853,7 @@ tr.sel-gun td { background: var(--panel-2); }
 
 <section id="ai-story" class="bb" aria-labelledby="h-ai-story">
       <div class="head"><span class="num">18 · BUILD</span><h2 id="h-ai-story">One developer, four AI agents, one board</h2><span class="src">AGENT_COORDINATION.md · protocol v3</span>
-        <p>Four AI coding tools have worked on LeadRush 2: <b>Claude Code</b> (<code>claude-opus-5-5</code>), <b>Antigravity "Gemini"</b> (<code>gemini-4-hydrogen</code>, then <code>hydrogen-high</code> and <code>neon-high</code>), <b>GitHub Copilot</b> (<code>gpt-5.6-luna</code>) and <b>OpenAI Codex</b> (<code>gpt-6</code>). They never talk directly. Everything goes through one Markdown board (<code>AGENT_COORDINATION.md</code>), one <code>UNITY</code> lock line, code-generated builders (<code>LR2BuildPipeline</code>) and a review by another agent before a row counts. Current liveness and ownership are recorded in AGENT_COORDINATION.md; historical handoffs and prompt sections are in PROMPTS.md.</p></div>
+        <p>Four AI coding tools have worked on Lead Rush II: <b>Claude Code</b> (<code>claude-opus-5-5</code>), <b>Antigravity "Gemini"</b> (<code>gemini-4-hydrogen</code>, then <code>hydrogen-high</code> and <code>neon-high</code>), <b>GitHub Copilot</b> (<code>gpt-5.6-luna</code>) and <b>OpenAI Codex</b> (<code>gpt-6</code>). They never talk directly. Everything goes through one Markdown board (<code>AGENT_COORDINATION.md</code>), one <code>UNITY</code> lock line, code-generated builders (<code>LR2BuildPipeline</code>) and a review by another agent before a row counts. Current liveness and ownership are recorded in AGENT_COORDINATION.md; historical handoffs and prompt sections are in PROMPTS.md.</p></div>
       <div class="instrument">
         <canvas id="cv-agents" aria-label="Animated workflow of the developer, Claude Code, Gemini, the board and the Unity lock; Copilot and Codex shown offline"></canvas>
         <div class="controls">
@@ -969,7 +969,7 @@ tr.sel-gun td { background: var(--panel-2); }
     </section>
 <section id="sources" aria-labelledby="h-sources">
   <div class="head"><span class="num">21 · WHERE THE NUMBERS COME FROM</span><h2 id="h-sources">Human data behind the model</h2>
-    <p>LeadRush 2 uses these as calibration targets. The constants are hand-tuned to match the published behaviour; they are not fitted to a dataset inside this project.</p></div>
+    <p>Lead Rush II uses these as calibration targets. The constants are hand-tuned to match the published behaviour; they are not fitted to a dataset inside this project.</p></div>
   <ul class="srcs panel">
     <li><b>Fitts (1954), J. Exp. Psychology 47(6)</b><span>Movement time grows with log2(distance / target width + 1): the flick duration and why heads take longer to hit.</span></li>
     <li><b>Meyer, Abrams, Kornblum, Wright and Smith (1988), Psychological Review 95(3)</b><span>A fast primary movement plus corrective submovements: the flick, the 110 to 165 ms pause, then the correction.</span></li>
@@ -983,7 +983,7 @@ tr.sel-gun td { background: var(--panel-2); }
   </ul>
   <footer>
     <span>Mirror on GitHub: <code>Docs/Bot/bot-lab.html</code> with animated GIFs in <code>Docs/Media/bot/</code> and the write-up in <code>Docs/LR2_Bot_Explainer.md</code>.</span>
-    <span>Built for the LeadRush 2 project by Claude Code (claude-opus-5-5) on 2026-11-18, merged the same day with the Bot Brain page by Antigravity Gemini (gemini-4-hydrogen); parts 2 and 3 and sections 02, 04, 05, 06, 09, 13 and 14 come from it.</span>
+    <span>Built for the Lead Rush II project by Claude Code (claude-opus-5-5) on 2026-11-18, merged the same day with the Bot Brain page by Antigravity Gemini (gemini-4-hydrogen); parts 2 and 3 and sections 02, 04, 05, 06, 09, 13 and 14 come from it.</span>
   </footer>
 </section>
 </div>

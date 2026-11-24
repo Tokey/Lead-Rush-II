@@ -199,6 +199,7 @@ namespace LR2.World
                 yield return AuditUpscalerBindingsAndDamageHud(player);
                 yield return AuditDeathAdsCloseWeaponAndB57B65(player);
                 yield return AuditB136RobotSystems(player);
+                yield return AuditB137ToB144Systems(player);
             }
 
             FinishReport(outDir, sceneName);
@@ -229,7 +230,7 @@ namespace LR2.World
             bool hostileVisible = false;
             if (hero != null)
             {
-                var swatVis = hero.transform.Find("SWAT_Visual");
+                var swatVis = hero.transform.Find("SWAT_Visual") ?? hero.transform.Find("MilitaryVisual");
                 isSwat = swatVis != null;
                 foreach (var smr in hero.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 {
@@ -1104,11 +1105,18 @@ namespace LR2.World
             Check(testBot != null && humanInputOk && adaptiveOk, "Bot.HumanMouseInputAndAdaptive",
                 $"bot={(testBot != null ? testBot.name : "none")} humanMouseLook={humanInputOk} adaptive={adaptiveOk}");
 
-            // 3. Verify HDRISky, RayTracingController, & realistic M_LR2_Glass (B30) readiness
-            bool hasHdriSky = false;
+            // 3. Verify PhysicallyBasedSky + VolumetricClouds (or HDRISky), RayTracingController, & realistic M_LR2_Glass readiness
+            bool hasSky = false;
+            bool hasClouds = false;
             foreach (var v in FindObjectsByType<Volume>())
-                if (v != null && v.sharedProfile != null && v.sharedProfile.Has<HDRISky>()) { hasHdriSky = true; break; }
-            Check(hasHdriSky, "Lighting.HDRISkyPresent", $"hdri={hasHdriSky} rayTracingCtrl={(LR2RayTracingController.Instance != null)}");
+            {
+                if (v != null && v.sharedProfile != null && (v.sharedProfile.Has<PhysicallyBasedSky>() || v.sharedProfile.Has<HDRISky>()))
+                    hasSky = true;
+                if (v != null && v.sharedProfile != null && v.sharedProfile.Has<VolumetricClouds>())
+                    hasClouds = true;
+            }
+            Check(hasSky, "Lighting.HDRISkyPresent",
+                $"sky={hasSky} clouds={hasClouds} rayTracingCtrl={(LR2RayTracingController.Instance != null)}");
 
             int glassCount = 0, glassRealistic = 0;
             foreach (var dp in FindObjectsByType<DestructibleProp>())
@@ -1624,6 +1632,220 @@ namespace LR2.World
             LR2Settings.ToggleAim = prevTa;
             Check(taRound && s1 == "<Keyboard>/1" && s2 == "<Keyboard>/2",
                 "Settings.ControlsAndKeybinds", $"toggleAimRoundtrip={taRound} Slot1={s1} Slot2={s2}");
+        }
+
+        private IEnumerator AuditB137ToB144Systems(SoldierController player)
+        {
+            if (player == null) yield break;
+
+            // 1. B137: Military visual mirror & 30-finger bone fidelity
+            var pMirror = player.GetComponent<GenericBoneMirror>();
+            GenericBoneMirror bMirror = null;
+            foreach (var c in Combatant.All)
+            {
+                if (c != null && c != player.Combatant && c.IsBot)
+                {
+                    bMirror = c.GetComponent<GenericBoneMirror>();
+                    if (bMirror != null) break;
+                }
+            }
+            bool robotHidden = true;
+            foreach (var smr in player.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (smr.GetComponentInParent<LR2Item>(true) != null) continue;
+                if (pMirror != null && pMirror.VisualRoot != null && smr.transform.IsChildOf(pMirror.VisualRoot.transform)) continue;
+                if (smr.enabled) { robotHidden = false; break; }
+            }
+            yield return null;
+            bool mirrorOk = pMirror != null && bMirror != null &&
+                            pMirror.MappedBoneCount >= 48 && pMirror.MappedFingerCount >= 28 &&
+                            bMirror.MappedBoneCount >= 48 && bMirror.MappedFingerCount >= 28 &&
+                            pMirror.VisualRoot != null && pMirror.VisualRoot.activeInHierarchy &&
+                            robotHidden && pMirror.HandErrorLeft < 0.03f && pMirror.HandErrorRight < 0.03f;
+            Check(mirrorOk, "MilitaryVisual.MirrorAndFingers",
+                pMirror != null
+                    ? $"pBones={pMirror.MappedBoneCount}/{pMirror.MappedFingerCount} bBones={(bMirror != null ? bMirror.MappedBoneCount : 0)}/{(bMirror != null ? bMirror.MappedFingerCount : 0)} robotHidden={robotHidden} handErrL={pMirror.HandErrorLeft:0.004} handErrR={pMirror.HandErrorRight:0.004}"
+                    : "GenericBoneMirror missing");
+
+            // B145: KillcamDirector runs after GenericBoneMirror (600 > 550) so replay records aligned gun + visual hands
+            bool kcOrderOk = false;
+            var kcAttr = typeof(KillcamDirector).GetCustomAttribute<DefaultExecutionOrder>();
+            var gmAttr = typeof(GenericBoneMirror).GetCustomAttribute<DefaultExecutionOrder>();
+            if (kcAttr != null && gmAttr != null) kcOrderOk = kcAttr.order > gmAttr.order;
+            Check(kcOrderOk && bMirror != null && bMirror.HandErrorLeft < 0.03f && bMirror.HandErrorRight < 0.03f, "Killcam.EnemyHandsLockedToGun",
+                $"kcOrder={(kcAttr != null ? kcAttr.order : 0)} gmOrder={(gmAttr != null ? gmAttr.order : 0)} botHandErrL={(bMirror != null ? bMirror.HandErrorLeft : -1f):0.004} R={(bMirror != null ? bMirror.HandErrorRight : -1f):0.004}");
+
+            // 2. B138: Volumetric clouds + PhysicallyBasedSky + zero HDRI pinch + upward sky capture
+            var skyMotion = FindAnyObjectByType<SkyCloudMotion>();
+            bool skyOk = skyMotion != null && skyMotion.HasVolumetricClouds && skyMotion.VolumetricCloudsEnabled &&
+                         !skyMotion.HasPinchedHdriDistortion && skyMotion.CurrentWindSpeed > 0f;
+            Check(skyOk, "Sky.VolumetricCloudsNoPinch",
+                skyMotion != null
+                    ? $"clouds={skyMotion.HasVolumetricClouds} enabled={skyMotion.VolumetricCloudsEnabled} pinch={skyMotion.HasPinchedHdriDistortion} wind={skyMotion.CurrentWindSpeed:0.0} density={skyMotion.CurrentCloudDensity:0.00}"
+                    : "SkyCloudMotion missing");
+            WeatherSystem.Instance?.ForceWeatherNow(WeatherKind.DuskClear);
+            if (player.ViewCamera != null)
+            {
+                Vector3 preSkyPos = player.transform.position;
+                float preSkyYaw = player.Yaw;
+                Vector3 skySpot = preSkyPos;
+                float skyYaw = preSkyYaw;
+                var skyCandidates = new List<Vector3> { preSkyPos };
+                foreach (var fa in FlagAnchor.All)
+                    if (fa != null) skyCandidates.Add(fa.transform.position);
+                foreach (var sp in FindObjectsByType<SpawnPoint>())
+                    if (sp != null) skyCandidates.Add(sp.transform.position);
+
+                bool foundOpenSky = false;
+                foreach (var cand in skyCandidates)
+                {
+                    if (cand.y > 2.2f || IsConfinedOrRoofed(cand)) continue;
+                    for (int k = 0; k < 8; k++)
+                    {
+                        float y = k * 45f;
+                        Vector3 dirUp = Quaternion.Euler(-28f, y, 0f) * Vector3.forward;
+                        Vector3 dirHoriz = Quaternion.Euler(0f, y, 0f) * Vector3.forward;
+                        if (!Physics.Raycast(cand + Vector3.up * 1.65f, dirUp, 45f, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore) &&
+                            !Physics.Raycast(cand + Vector3.up * 1.65f, dirHoriz, 12f, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore))
+                        {
+                            skySpot = cand;
+                            skyYaw = y;
+                            foundOpenSky = true;
+                            break;
+                        }
+                    }
+                    if (foundOpenSky) break;
+                }
+                if (player.Movement != null) player.Movement.Teleport(skySpot);
+                else player.transform.position = skySpot;
+                Physics.SyncTransforms();
+
+                _cmd = new SoldierInput { absoluteLook = true, aimYaw = skyYaw, aimPitch = -28f };
+                for (int f = 0; f < 22; f++) yield return null;
+                yield return new WaitForEndOfFrame();
+                Texture2D skyShot = null;
+                if (!Application.isBatchMode)
+                    skyShot = ScreenCapture.CaptureScreenshotAsTexture();
+                if (skyShot == null)
+                    skyShot = CaptureCamera(player.ViewCamera, 960, 540);
+                File.WriteAllBytes(Path.Combine(OutDir(), "LR2_Saltworks_sky.png"), skyShot.EncodeToPNG());
+                Destroy(skyShot);
+
+                if (player.Movement != null) player.Movement.Teleport(preSkyPos);
+                else player.transform.position = preSkyPos;
+                Physics.SyncTransforms();
+                _cmd = new SoldierInput { absoluteLook = true, aimYaw = preSkyYaw, aimPitch = 0f };
+                yield return null;
+            }
+
+            // 3. B142: Outdoor rain stays visible through openings when camera is indoors (no interior leakage)
+            var ws = WeatherSystem.Instance;
+            if (ws != null)
+            {
+                Vector3 savedPos = player.transform.position;
+                float savedYaw = player.Yaw;
+                if (player.Movement != null) player.Movement.Teleport(new Vector3(0f, 0.25f, 2f));
+                else player.transform.position = new Vector3(0f, 0.25f, 2f); // ControlHouse interior (roofed)
+                Physics.SyncTransforms();
+                ws.TriggerThunderRain(0.88f, 6f, false);
+                float wt = Time.time + 0.60f;
+                while (Time.time < wt) yield return null;
+                Camera activeCam = player.ViewCamera != null ? player.ViewCamera : Camera.main;
+                bool camIn = activeCam != null && LR2Audio.IsIndoors(activeCam.transform.position);
+                bool rainIndoorOk = ws.EffectiveRain > 0.1f && (ws.CameraIndoors || camIn) && ws.IsHighRainPlaying && !ws.IsNearRainPlaying;
+                Vector3 cp = activeCam != null ? activeCam.transform.position : Vector3.zero;
+                Check(rainIndoorOk, "Weather.RainVisibleFromIndoors",
+                    $"rain={ws.EffectiveRain:0.00} indoors={ws.CameraIndoors} cam=({cp.x:0.1},{cp.y:0.1},{cp.z:0.1}) highRain={ws.IsHighRainPlaying} nearRain={ws.IsNearRainPlaying}");
+                if (player.Movement != null) player.Movement.Teleport(savedPos);
+                else player.transform.position = savedPos;
+                Physics.SyncTransforms();
+                _cmd = new SoldierInput { absoluteLook = true, aimYaw = savedYaw, aimPitch = 0f };
+                yield return null;
+            }
+
+            // 4. B139: Tactical reload holds past magInAt before blending out
+            var gun = player.ActiveFirearm != null ? player.ActiveFirearm : (player.Items.Count > 0 ? player.Items[0] as LR2Firearm : null);
+            var tacField = typeof(LR2Firearm).GetField("tacticalEndAfterMagIn", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            float tacVal = gun != null && tacField != null ? (float)tacField.GetValue(gun) : 0f;
+            bool tacFieldOk = tacVal >= 0.06f;
+            bool stayedPastMag = false;
+            if (gun != null && gun.Definition != null && gun.Definition.audio != null)
+            {
+                _cmd = new SoldierInput { absoluteLook = true, aimYaw = player.Yaw, fire = true };
+                yield return new WaitForSeconds(0.16f);
+                _cmd = new SoldierInput { absoluteLook = true, aimYaw = player.Yaw, reload = true };
+                yield return new WaitForSeconds(0.05f);
+                _cmd = new SoldierInput { absoluteLook = true, aimYaw = player.Yaw };
+                float tStart = Time.time;
+                float expectedMagTime = 0.55f;
+                if (gun.Definition.audio.magInAt > 0.05f) expectedMagTime = gun.Definition.audio.magInAt;
+                while (Time.time - tStart < 1.8f && gun.IsReloading)
+                {
+                    if (Time.time - tStart >= expectedMagTime * 1.0f) stayedPastMag = true;
+                    yield return null;
+                }
+            }
+            Check(tacFieldOk && stayedPastMag, "Reload.MagSeatsBeforeBlendOut",
+                $"tacticalEndAfterMagIn={tacVal:0.000} stayedPastMag={stayedPastMag}");
+
+            // 5. B140: Grenade throw sync & mega explosion stats/clip
+            float relDelay = gun != null ? gun.GrenadeReleaseDelay(0.335f) : 0f;
+            var tmpGGo = new GameObject("QA_TmpGrenade");
+            var tmpG = tmpGGo.AddComponent<LR2Grenade>();
+            float maxRad = tmpG.MaxBlastRadius;
+            Destroy(tmpGGo);
+            var megaClip = LR2Grenade.GetMegaBoomClip();
+            var fxLib = LR2FxLibrary.Instance;
+            Check(relDelay >= 0.50f && relDelay <= 0.85f && maxRad >= 9.5f && megaClip != null
+                && LR2Grenade.AftermathFireDuration >= 3.5f && fxLib != null && fxLib.fire != null,
+                "Grenade.SyncedReleaseAndMegaBlast",
+                $"releaseDelay={relDelay:0.00}s maxBlastRadius={maxRad:0.0}m megaClip={(megaClip != null ? $"{megaClip.length:0.0}s" : "null")} aftermath={LR2Grenade.AftermathFireDuration:0.0}s fireFx={(fxLib != null && fxLib.fire != null)}");
+
+            // 6. B141: Mid-match road-to-win/loss music momentum & revamped outcomes
+            var dir = LR2MusicDirector.Instance;
+            float wMom = 0f, lMom = 0f;
+            if (dir != null)
+            {
+                dir.SetQaMomentumPreview(0.75f, true, false);
+                yield return new WaitForSeconds(0.95f);
+                wMom = dir.WinningMomentumWeight;
+                dir.SetQaMomentumPreview(0.75f, false, true);
+                yield return new WaitForSeconds(0.95f);
+                lMom = dir.LosingMomentumWeight;
+                dir.ClearQaMomentumPreview();
+            }
+            Check(dir != null && dir.HasMomentumStems && dir.HasOutcomeClips && wMom > 0.25f && lMom > 0.25f, "Music.MomentumAndOutcomes",
+                dir != null ? $"stems={dir.HasMomentumStems} outcomes={dir.HasOutcomeClips} winW={wMom:0.00} loseW={lMom:0.00}" : "null");
+
+            // 7. B143: Distinct per-weapon NPC audio (no AK12 leak onto M4/FAL) & suppressed pistol parity
+            var profiles = new Dictionary<string, WeaponAudioProfile>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in Resources.FindObjectsOfTypeAll<WeaponAudioProfile>())
+                if (p != null && !profiles.ContainsKey(p.name)) profiles[p.name] = p;
+#if UNITY_EDITOR
+            foreach (var wName in new[] { "WA_AK12", "WA_M4", "WA_FAL", "WA_Pistol" })
+            {
+                if (profiles.ContainsKey(wName)) continue;
+                var loaded = UnityEditor.AssetDatabase.LoadAssetAtPath<WeaponAudioProfile>($"Assets/LR2/Data/Weapons/{wName}.asset");
+                if (loaded != null) profiles[wName] = loaded;
+            }
+#endif
+            profiles.TryGetValue("WA_AK12", out var akProf);
+            profiles.TryGetValue("WA_M4", out var m4Prof);
+            profiles.TryGetValue("WA_FAL", out var falProf);
+            profiles.TryGetValue("WA_Pistol", out var pProf);
+            static AudioClip FirstClip(SoundSet s) => s != null && s.clips != null && s.clips.Length > 0 ? s.clips[0] : null;
+            bool akDistinctM4 = akProf == null || m4Prof == null ||
+                                (FirstClip(m4Prof.fireNpcMed) == null || FirstClip(akProf.fireNpcMed) == null ||
+                                 (FirstClip(m4Prof.fireNpcMed) != FirstClip(akProf.fireNpcMed) && FirstClip(m4Prof.fireNpcFar) != FirstClip(akProf.fireNpcFar)));
+            bool akDistinctFal = akProf == null || falProf == null ||
+                                 (FirstClip(falProf.fireNpcMed) == null || FirstClip(akProf.fireNpcMed) == null ||
+                                  (FirstClip(falProf.fireNpcMed) != FirstClip(akProf.fireNpcMed) && FirstClip(falProf.fireNpcFar) != FirstClip(akProf.fireNpcFar)));
+            bool pistolSuppOk = pProf == null || (pProf.fireNpcSuppressed != null && pProf.firePlayerSuppressed != null &&
+                                FirstClip(pProf.fireNpcSuppressed) == FirstClip(pProf.firePlayerSuppressed));
+            bool m4SuppLayered = m4Prof == null || (m4Prof.firePlayerSuppressed != null && m4Prof.firePlayerSuppressed.volume >= 0.95f &&
+                                FirstClip(m4Prof.firePlayer) != FirstClip(m4Prof.firePlayerSuppressed));
+            Check(akDistinctM4 && akDistinctFal && pistolSuppOk && m4SuppLayered, "Audio.UnifiedWeaponIdentity",
+                $"profiles={profiles.Count} ak!=m4={akDistinctM4} ak!=fal={akDistinctFal} pistolSupp={pistolSuppOk} m4SuppLayer={m4SuppLayered}");
         }
 
         private static SoldierController FindLiveHostileSoldier(SoldierController player)

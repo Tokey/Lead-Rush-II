@@ -37,6 +37,8 @@ namespace LR2.Weapons
         public virtual bool OnGrenadeThrow() { return false; }
         /// <summary>B136: seconds the throw animation keeps the hands busy (0 when the item cannot throw).</summary>
         public virtual float GrenadeThrowDuration => 0f;
+        /// <summary>B140: exact seconds from throw start until the hand releases the grenade.</summary>
+        public virtual float GrenadeReleaseDelay(float releaseFraction) => GrenadeThrowDuration * Mathf.Clamp01(releaseFraction);
         /// <summary>B136: false for items without a sight picture (knife, torch): the aim button does nothing.</summary>
         public virtual bool SupportsAds => true;
         /// <summary>B136: items that can enter Kinemation's attachment editing (guns with attachment groups).</summary>

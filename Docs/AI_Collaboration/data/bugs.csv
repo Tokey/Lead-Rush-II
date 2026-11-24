@@ -99,3 +99,9 @@ D97,2026-11-22 15:03,user,,,escaped,"Loading screen overlapping text and dual-pa
 D98,2026-11-22 15:03,user,,,escaped,"Grenade throw playing an emote (AA_CallEmote) instead of a throw clip on demo rifles",B136,Claude,claude-opus-5-5,high,fixed
 D99,2026-11-22 15:14,user,,,escaped,"Killcam header used faux-bold LiberationSans SDF instead of UITheme fonts",G21,Gemini,gemini-4-hydrogen,low,fixed
 D100,2026-11-22 14:30,gemini-self,Gemini,orchestrator-neon,review,"Q/E lean polarity inverted, bottom-right weaponName overlapped magText, gun blood spawned below barrel, reload audio out of sync, and PiP scopes used square crosshair quads",B136,Claude,claude-opus-5-5,medium,fixed
+D101,2026-11-23 18:50,gemini-self,Gemini,orchestrator-neon,review,"MainMenuController.BuildSkirmishLobby cleared SkirmishSetup.Active=false on Start, collapsing 4v4 AI bench runs into 1v1 + idle P1",C105,Claude,claude-opus-5-5,high,fixed
+D102,2026-11-23 17:46,user,,,escaped,"HDRI sky zenith pinch artifact, missing multi-layer volumetric clouds, and dark Saltworks courtyard lighting floor",B136,Claude,claude-opus-5-5,high,fixed
+D103,2026-11-23 17:06,user,,,escaped,"Reload cutoff truncated slightly before magazine visibly seated, and flying props appeared in Saltworks corners",G55,Gemini,orchestrator-neon,high,fixed
+D104,2026-11-23 17:06,user,,,escaped,"Grenade mesh throw timed out of sync with hand release, explosion lacked fiery scale, and indoor rain vanished outside doorways",G54,Gemini,orchestrator-neon,high,fixed
+D105,2026-11-23 17:52,user,,,escaped,"Killcam enemy weapon and hands desynced during replay playback (weapon followed one transform path while hands followed another)",B132,Claude,claude-opus-5-5,high,fixed
+D106,2026-11-23 18:13,user,,,escaped,"Suppressed MK18 shot SFX sounded too faint without layered crisp suppressed fire punch",G55,Gemini,orchestrator-neon,high,fixed

@@ -42,7 +42,7 @@ namespace LR2.UI
         private bool _initialBoot = true;
         private bool _shadersWarmed;
         private string _pendingEyebrow = "TACTICAL COMBAT";
-        private string _pendingTitle = "LEADRUSH II";
+        private string _pendingTitle = "LEAD RUSH II";
         private string _pendingSub = "INITIALIZING SYSTEMS";
         private Coroutine _activeRoutine;
 
@@ -213,7 +213,7 @@ namespace LR2.UI
             if (_initialBoot)
             {
                 _pendingEyebrow = "TACTICAL COMBAT";
-                _pendingTitle = "LEADRUSH II";
+                _pendingTitle = "LEAD RUSH II";
                 _pendingSub = "INITIALIZING SYSTEMS";
             }
             else if (menu)
@@ -405,7 +405,7 @@ namespace LR2.UI
             // Quiet minimal brand mark top-left (strictly outside centered column)
             _brandText = MakeText("BrandWordmark", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(48f, -42f),
                 new Vector2(320f, 26f), 13f, FontStyles.Normal, new Color(1f, 1f, 1f, 0.34f), TextAlignmentOptions.Left, 6f, false, 0f, bodyFont);
-            _brandText.text = "LEADRUSH II";
+            _brandText.text = "LEAD RUSH II";
 
             // Center non-overlapping editorial stack (+84 / +30 / -24 bar / -56)
             Vector2 mid = new Vector2(0.5f, 0.5f);

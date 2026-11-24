@@ -1,16 +1,21 @@
-# LeadRush 2
+# Lead Rush II
 
 Tactical first-person shooter built in **Unity 6 (`6000.5.0f1`) HDRP** ([github.com/Tokey/Lead-Rush-2](https://github.com/Tokey/Lead-Rush-2)).
 
-LeadRush 2 pairs full-body procedural first-person weapon & locomotion animation with multi-layered HDRP lighting, utility-driven AI bots and seeker drones, custom per-mode match rules, persistent camera/audio settings, and first-person killcam replays across four combat maps.
+**Lead Rush II** pairs full-body procedural first-person weapon & locomotion animation (`FPSGenericPlayer` + `GenericBoneMirror`) with multi-layer volumetric clouds and HDRP lighting, utility-driven & Groq LLM tactical bots, custom per-mode match rules, persistent camera/audio settings, and synchronized first-person killcam replays across four combat maps.
 
-![LeadRush 2 — Main Menu & Tactical Recon](Docs/Media/main_menu_hero.png)
+![Lead Rush II — Main Menu & Tactical Recon](Docs/Media/main_menu_hero.png)
 
-> **Built by 4 AI agents.** One developer directs; **Claude Code** (`claude-opus-5-5`), **Antigravity ("Gemini")** (`gemini-4-hydrogen` / `argon`), **GitHub Copilot** (`gpt-5.6-luna`), and **OpenAI Codex** (`gpt-6`) write the code, verify metrics, and cross-review through a shared board. The full story — with prompts, agent messages, 4-agent token/usage telemetry (`B56`), and model quality charts:
+> **Built by 4 AI agents.** One developer directs; **Claude Code** (`claude-opus-5-5`), **Antigravity ("Gemini")** (`gemini-4-hydrogen` / `orchestrator-neon` / `argon`), **GitHub Copilot** (`gpt-5.6-luna`), and **OpenAI Codex** (`gpt-6`) write the code, verify metrics, and cross-review through a shared board. The full story — with prompts, token usage rankings (`B150`), live LLM bot benchmarks (`B149`), and data-driven human-likeness research (`B152–B158`):
 >
-> - **[How AI agents are building LeadRush 2](Docs/AI_Collaboration/README.md)**
+> - **[How AI agents are building Lead Rush II](Docs/AI_Collaboration/README.md)** (includes per-model token usage ranking charts!)
+> - **[Human-Likeness Evaluation, Heatmaps & Equation Fitting (`11.24.26.1`)](Docs/Research/HUMAN_LIKENESS_EVALUATION.md)** (Composite HLI, 5-fold C2ST Turing test & `C1–C3` 20 Hz heatmaps)
+> - **[Experimental `Data/` Folder & Zero-Stutter CSV Column Schema](Docs/Research/DATA_COLUMNS.md)** (`InvasionFramerate`-modeled `SessionState` / `SessionInfo` / `SessionLog` / `Ticks` / `Flicks` / `Recoil`)
+> - **[Interactive LLM Architecture, 9 Tactical Maneuvers & 20 Hz Heatmap Lab](Docs/Bot/llm-architecture.html)** (plain-English guide, 9 live key-pulsing animations & C1–C3 heatmaps)
 > - **[Who decided what: the developer's and the AI's decisions, feature by feature](Docs/AI_Collaboration/DECISION_PROVENANCE.md)**
-> - **[How the AI agents test LeadRush 2 (QA process & pose/aim telemetry)](Docs/AI_Collaboration/QA_PROCESS.md)**
+> - **[LLM Squad AI Study (`M1–M8` Live Groq Benchmark & Humanization Roadmap)](Docs/AI_Collaboration/LLM_BOT_STUDY.md)**
+> - **[How the LLM Bot Was Implemented (C# & Groq API Guide)](Docs/Guides/LLM_BOT_IMPLEMENTATION.md)**
+> - **[How the AI agents test Lead Rush II (QA process & pose/aim telemetry)](Docs/AI_Collaboration/QA_PROCESS.md)**
 >
 > Project documentation:
 >
@@ -20,17 +25,17 @@ LeadRush 2 pairs full-body procedural first-person weapon & locomotion animation
 
 ### By the numbers
 
-As of 2026-11-22 15:48 (build `11.22.26.1`). Prompts are counted from [PROMPTS.md](Docs/AI_Collaboration/PROMPTS.md), tasks and defects
+Through **`11.24.26.1` (`2026-11-24`)**. Prompts are counted from [PROMPTS.md](Docs/AI_Collaboration/PROMPTS.md), tasks and defects
 from the [ledgers](Docs/AI_Collaboration/data), board items from [AGENT_COORDINATION.md](AGENT_COORDINATION.md).
 
-| Developer prompts | Tasks delivered | Defects logged | Board items | Commits | C# code (`Assets/LR2`) |
-|---:|---:|---:|---:|---:|---:|
-| **268** (plus 11-22 follow-ups) | **225** (`227` rows) | **100** | **165+** | **158+** | **46,995** lines in **141** files |
+| Developer prompts | Tasks delivered | Defects logged | Features traced | Commits |
+|---:|---:|---:|---:|---:|
+| **319** (`329` archive sections) | **237** (`238` rows) | **106** | **287** | **165+** |
 
-- **Tasks by agent:** Claude `112`, Gemini `59`, Copilot `35`, Codex `19`. **Defects:** `100` logged; `45` developer-reported, `55` caught by agents/reviews/QA (`Claude` 28, `Gemini` 7, `Copilot` 6, `Codex` 4, automated QA/runtime 9, push check 1).
-- **Scope:** 7 days of development (`2026-11-16` to `11-22`), 4 AI agents, 4 combat maps, up to 20 bots per match in 2 to 4 teams.
+- **Tasks by agent:** Claude `113`, Gemini `71`, Copilot `35`, Codex `19`. **Defects:** `106` logged; `50` developer-reported, `56` caught by AI reviews/QA/pre-push checks.
+- **Scope:** 9 calendar days (`2026-11-16` to `11-24`), 4 AI agents, 4 combat maps, dual-tab Skirmish/Experiments lobby with 4 bot archetypes (`HumanLike`, `DumbRobotic`, `LlmEnhanced`, `HumanFitted`), `20–60 Hz` zero-stutter telemetry, and live Groq LLM benchmarks (`38,405` exact API tokens across `M1–M8` + `C3`).
 
-What changed most recently: **[What's new on 2026-11-22 (`11.22.26.1`)](Docs/Updates/2026-11-22.md)** (OG Kinemation Generic robot rig `B136`, circular `LR2/PipScope` sights, grenade throw fix, `PainVoice` death impact + health-replenished + self/target armor-break SFX, 19-stem per-map music, minimalistic obsidian loading screen, `UITheme` Killcam font, Controls/Keybinds update, 0-blocked-spawn / 0-floating prop pass) · earlier: [2026-11-20](Docs/Updates/2026-11-20.md), [2026-11-19](Docs/Updates/2026-11-19.md).
+What changed recently: **[What's new on 2026-11-24 (`11.24.26.1`)](Docs/Updates/2026-11-24.md)** (Dual-tab `SKIRMISH` | `EXPERIMENTS` lobby + `AI VS AI` moved `B153`, `InvasionFramerate`-modeled `Data/` zero-stutter telemetry + Saving overlay `B155`, K/D-matched `DumbRobotic` + solo 1v1/FFA LLM `B154`, 5-pillar HLI / C2ST / 20 Hz heatmaps & `HumanFitted` profile loader `B152`/`B156`/`B157`, 9-maneuver animated + heatmap HTML lab `B158`) · earlier: [2026-11-23 (`11.23.26.1`)](Docs/Updates/2026-11-23.md), [2026-11-22](Docs/Updates/2026-11-22.md), [2026-11-20](Docs/Updates/2026-11-20.md), [2026-11-19](Docs/Updates/2026-11-19.md).
 
 ### Who built what
 
@@ -40,23 +45,21 @@ What changed most recently: **[What's new on 2026-11-22 (`11.22.26.1`)](Docs/Upd
 </picture>
 
 Contribution score per agent and model, from the task and defect ledgers in `Docs/AI_Collaboration/data` (tasks delivered and
-verified, bugs found in other agents' work, adopted suggestions, minus defects that reached the developer). Method, all charts
-and the protocol experiments: [How AI agents are building LeadRush 2](Docs/AI_Collaboration/README.md#quality-which-model-produced-what-quality-of-work).
+verified, bugs found in other agents' work, adopted suggestions, minus defects that reached the developer). Method, token rankings
+and the protocol experiments: [How AI agents are building Lead Rush II](Docs/AI_Collaboration/README.md#quality-which-model-produced-what-quality-of-work).
 
 ### Who decided what
 
-<p align="center"><img src="Docs/AI_Collaboration/figures/prov_growth.gif" alt="Animated chart: 270 features appear in the order they shipped, in five rows by origin" width="820"></p>
+<p align="center"><img src="Docs/AI_Collaboration/figures/prov_growth.gif" alt="Animated chart: 287 features appear in the order they shipped, in five rows by origin" width="820"></p>
 
-Every one of the 270 features and fixes is traced back to its origin, in five kinds: the developer's exact words, an AI's design for
-the developer's goal, an AI's own idea, the developer's bug report, or an AI test that found a defect.
+Every one of the **287** tracked features and fixes is traced back to its origin, in five kinds: the developer's exact words (`33.4 %`), an AI's design for
+the developer's goal (`28.9 %`), an AI's own idea (`12.2 %`), the developer's bug report (`20.9 %`), or an AI test that found a defect (`4.5 %`).
 
-- **31 %** came straight from a prompt, **30 %** were AI-designed from the developer's goal, **13 %** were AI-initiated,
-  **21 %** started as the developer's bug report and **5 %** as an AI QA finding.
-- The developer set the goal for **82 %** of the features; an AI chose the design for **69 %**.
-- **78 %** of finished features were kept as built. All four reverts were AI design decisions.
+- The developer set the goal for **83.3 %** of features (`239 / 287`); an AI chose the implementation design for **66.6 %** (`191 / 287`).
+- **79.6 %** of finished features were kept as built. All four reverts were AI design decisions.
 
 The full study, with case studies and an evaluation using published research methods: **[Who decided what](Docs/AI_Collaboration/DECISION_PROVENANCE.md)**.
-Every feature in one table, with the developer's words and the AI's decisions: **[Atomic feature table](Docs/AI_Collaboration/FEATURES_TABLE.md)**.
+Every feature in one table, with the developer's words and the AI's decisions: **[Atomic feature table](Docs/AI_Collaboration/FEATURES_TABLE.md)** (snapshot from `11-20`, raw dataset updated to `281` rows in `data/features.csv`).
 
 ---
 
@@ -125,6 +128,16 @@ In-game captures, 1920 x 1080, build **`11.22.26.1` (`2026-11-22`)**.
 |---|---|
 | ![Deploy screen with loadout, map and bot team mode](Docs/Media/menu_deploy.png) | ![Graphics & HDRP upscaler settings page](Docs/Media/settings_graphics_v2.png) |
 
+### Dual-Tab Lobby & `11.24.26.1` 20 Hz Bot Research (`HumanLike` vs `LlmEnhanced` vs `DumbRobotic`)
+
+| `SKIRMISH` Tab (Casual Play + Type Steppers) | `EXPERIMENTS` Tab (N-Match Designer + `AI VS AI`) |
+|---|---|
+| ![Skirmish Lobby Tab](Docs/Media/lobby_skirmish_tab.png) | ![Experiments Lobby Tab](Docs/Media/lobby_experiments_tab.png) |
+
+| 20 Hz Spatial Occupancy Heatmaps | Composite Human-Likeness Index (`HLI`) Scorecard |
+|---|---|
+| ![Movement Heatmaps](Docs/Media/experiments/heatmap_movement_comparison.png) | ![HLI Scorecard](Docs/Media/experiments/human_likeness_scorecard.png) |
+
 ### How the bots behave
 
 | Armour break and resupply | Flank a camper |
@@ -159,9 +172,10 @@ was built (agent ledgers, protocol results, research specs). All eight scenarios
 - **Game Modes & Persistent Custom Rules (`Assets/LR2/Runtime/Game/`):** **Duel (1v1)**, **Free For All**, **Team Deathmatch**, and **Rotating Capture the Flag** (`FlagZoneController.cs` BF6-inspired proximity-weighted capture speed across 5 `BotTeamAlignment` modes including **Half & Half 50/50 split**, Squads, FFA, Pack, and Co-op) plus live **Tactical Bot Chat** (`[T]` keyword directives & delayed banter in `TacticalChatSystem.cs`). Horizontal FOV slider (`65–120`), Master/Effects/Music/UI audio sliders, `< VALUE >` stepper controls for graphics quality, **HDRP 17.5 multi-upscaler backend (`NATIVE`, `STP`, `TAAU`, `FSR 1.0`, `DLSS`, `FSR 2` in `UpscalerBackend.cs`)**, anti-aliasing (`None`, `FXAA`, `SMAA`, `TAA`), frame rate limit, bot difficulty, live keybind rebinding (`LR2Bindings.cs` -> `PlayerInputSource.cs`), and FPS counter persist via `PlayerPrefs` (`LR2Settings.cs`, `SettingsPanel.cs`, `MainMenuController.cs`).
 - **Four-Map Optimization & Automated Telemetry (`Assets/LR2/Runtime/World/PerformanceFrameTelemetry.cs`, `specs/P3_Report.md`):** Quality-aware shadow tiers, camera-distance light culling (`fadeDistance`/`shadowFadeDistance`), single-light burning barrels, time-sliced arena reflection probes, throttled `WeatherSystem` & `FoliageSway`, and spawn-to-spawn cover safety across all four maps bring steady 1080p frame times to `6.8–9.6 ms` avg (`15.7–19.1 ms` p99, `0` QA failures across all 5 scenes).
 - **War-Torn Procedural Arenas (`Assets/LR2/Editor/LR2MapBuilder*.cs`, `Assets/LR2/Meshes/Procedural/`):** Leartes/ScansFactory pack props preserving tactical cover heights (`B75`), tileable `_DetailMap` wear, HDRP `SSAO` + `ContactShadows`, per-map `ShadowsMidtonesHighlights` colour grading, ground-level `AtmosphereFX` fog, `FireHazard` burning barrels (`heat haze`), destructible thin-refraction `M_LR2_Glass_*` panes (`B30`), and tuned HDRP lighting across all four combat maps (`B1`/`B72`).
-- **Skirmish Lobby & AI vs AI (`Assets/LR2/Runtime/UI/SkirmishLobby.cs`, `Game/SkirmishSetup.cs`, `Game/SpectatorCamera.cs`):** The main menu is a single **PLAY**. It opens a Command & Conquer style lobby: up to 20 bots in a scrolling roster, each with its own difficulty (Recruit to Veteran, or Adaptive) and team (free for all, Alpha, Bravo, Charlie, Delta) for 2, 3 and 4-way games, plus presets, mode, map, limits and weapon. **AI vs AI** leaves you out of the match: a spectator camera (chase, eye view, free fly, auto director) follows the bots while an AI test bench tallies kills, deaths and K/D per difficulty. The menu background cuts to a matching slow-motion shot for each screen (`World/MenuCinematic.cs`).
-- **LLM Squad Commander (experimental, `Assets/LR2/Runtime/AI/LLM/`):** An optional commander for a bot team asks a Groq-hosted model (free tier) for squad orders every 12 s. It sees only what its own team knows (last-known enemy positions), its orders become directives for the existing bots, and its plan is posted to the squad chat; the AI vs AI bench logs per-team K/D against rule-based bots. Off by default: launch with `-lr2LlmTeams Alpha` (or `Alpha,Bravo`) and put the key in `GROQ_API_KEY`, `-lr2GroqKeyFile <path>` or `groq_api_key.txt` in the game's persistent data folder. The key is never logged or committed.
-- **Tactical Bot AI (`Assets/LR2/Runtime/AI/`):** Staggered line-of-sight & noise perception (`BotPerception.cs`), 4 Hz utility brain with cover retreat, disengaged-only `AmmoCrate` ammo/armour resupply (`B74b`), stealth/flank goals, hunting & squad following (`TacticalBotBrain.cs`), NavMesh locomotion with unstuck mantling, Fitts/ESTA/CSKnow/Aim Lab biomechanical aiming (`BotController.cs`), per-preset detection speed and composure with Hardened/Veteran bots pressing a reloading or hurt target ([explainer 4b](Docs/LR2_Bot_Explainer.md)), Adaptive difficulty (`AdaptiveDifficultyTracker.cs`), and external LLM/commander hooks (`IBotDirectiveProvider`). Explore the **[LR2 Bot Lab](Docs/Bot/bot-lab.html)** (eight live scenarios, also a [Claude artifact](https://claude.ai/artifact/Mj3oVBaf6NpdgRJSsxicPo)), the **[Bot explainer with animated GIFs](Docs/LR2_Bot_Explainer.md)**, or the [3-tab manual](Docs/Bot/bot-brain.html).
+- **Dual-Tab Lobby (`SKIRMISH` | `EXPERIMENTS`) & Spectator Bench (`Assets/LR2/Runtime/UI/SkirmishLobby.cs`, `ExperimentsTabView.cs`, `Game/ExperimentSession.cs`, `SpectatorCamera.cs`):** The main menu **PLAY** tile opens a two-tab lobby: **`SKIRMISH`** configures quick 2/3/4-way, Duel, or FFA matches with up to 20 bots (`TYPE`: `HUMAN` / `DUMB` / `LLM` / `FITTED`, `DIFF`, `TEAM`), while **`EXPERIMENTS`** hosts **`AI VS AI`** plus customizable N-match experimental protocols (Blind Mode, Order Randomization, `20/30/60 Hz` telemetry, JSON presets in `Data/Presets/`, and post-match 0–100% Turing ratings). The menu background cuts to slow-motion shots per screen (`World/MenuCinematic.cs`).
+- **`InvasionFramerate`-Modeled Zero-Stutter Telemetry & Equation Fitting (`ExperimentPaths.cs`, `ExperimentTelemetryRecorder.cs`, `Tools/analyze_experiment_session.py`):** Logs continuous `20–60 Hz` player + bot kinematics (`Ticks_*.csv`, `Events_*.csv`, `Flicks_*.csv`, `Recoil_*.csv`, `Summary_*.csv`, `Meta_*.json` with `frameDelivery` stats) into `<project|exe>/Data/Logs/<sessionId>_<runId>/` using pre-allocated buffers flushed off-thread behind `SAVING EXPERIMENT TELEMETRY`. `Tools/analyze_experiment_session.py` scores bots against humans on a **0–100% Human-Likeness Index (`HLI`)** + 5-fold C2ST Turing test and exports fitted equations to `Data/Profiles/human_behavior_fit.json` (`HumanBehaviorProfile.cs` -> `HumanFitted` clones).
+- **LLM Integration Depths (`Assets/LR2/Runtime/AI/LLM/`):** Supports `Commander` [Macro], `TacticalMicro` (stance/peek/burst/utility + `>= 3.2 s` reactive interrupts), and `AvatarPilot` [60 Hz Action Chunks] across **both team squads and solo 1v1 Duel / FFA matches** via **SETTINGS -> GAMEPLAY** or CLI flags (`-lr2LlmTeams`, `-lr2LlmMode`). Fog-of-war safe state (`LLMCommander.BuildState`); Groq API key resolves safely from `-lr2GroqKeyFile`, `GROQ_API_KEY`, or persistent `groq_api_key.txt` and is never logged or committed.
+- **Tactical Bot AI (`Assets/LR2/Runtime/AI/`):** Staggered line-of-sight & noise perception (`BotPerception.cs`), 4 Hz utility brain with cover retreat, disengaged-only `AmmoCrate` ammo/armour resupply (`B74b`), stealth/flank goals, hunting & squad following (`TacticalBotBrain.cs`), NavMesh locomotion with unstuck mantling, Fitts/ESTA/CSKnow/Aim Lab biomechanical aiming (`BotController.cs`), skill-matched **`DumbRobotic`** mechanical control bots (`B154`), **`HumanFitted`** data-driven clones (`B157`), Adaptive difficulty (`AdaptiveDifficultyTracker.cs`), and external commander hooks (`IBotDirectiveProvider`). Explore the interactive **[LLM Architecture, 9 Maneuvers & Heatmap Lab](Docs/Bot/llm-architecture.html)**, **[LR2 Bot Lab](Docs/Bot/bot-lab.html)**, or the **[Bot explainer with animated GIFs](Docs/LR2_Bot_Explainer.md)**.
 
 ---
 
@@ -215,19 +229,26 @@ Assets/LR2/
 ├── Prefabs/        # Operator/bot prefabs, weapon prefabs, UI prefabs
 ├── Resources/LR2/  # Runtime-loaded MapPreviews sprites and themes
 ├── Runtime/
-│   ├── AI/         # BotPerception, TacticalBotBrain, BotController, SeekerDrone, BotTypes
+│   ├── AI/         # BotPerception, TacticalBotBrain, BotController, HumanBehaviorProfile, SeekerDrone, BotTypes, LLM/
 │   ├── Audio/      # LR2Audio spatial/layered mixer & ambush/reverb ambience
-│   ├── Characters/ # SoldierController, SoldierMovement, RetargetProxy, ReloadMotionBridge, BodycamRig
+│   ├── Characters/ # SoldierController, SoldierMovement, RetargetProxy, GenericBoneMirror, ReloadMotionBridge, BodycamRig
 │   ├── Combat/     # Ballistics, Hitbox, Health, DestructibleProp
 │   ├── Core/       # GameEvents, LR2Settings, LR2Layers
 │   ├── FX/         # GunBloodFX, MuzzleFlash, Tracer, ShellEjector
-│   ├── Game/       # MatchManager, MatchSettings (LR2Session), GameModeRules
-│   ├── UI/         # MainMenuController, SettingsPanel, HUDController, HitFeedbackHUD, CombatPostFX
+│   ├── Game/       # MatchManager, MatchSettings (LR2Session), ExperimentSession, ExperimentPaths, GameModeRules
+│   ├── UI/         # MainMenuController, SkirmishLobby, ExperimentsTabView, SettingsPanel, HUDController, HitFeedbackHUD, CombatPostFX
 │   ├── Weapons/    # LR2Firearm, WeaponDefinition, LR2Item
-│   └── World/      # KillcamDirector, WeatherSystem, LightFlicker, FoliageSway, PlaytestRobot
+│   └── World/      # KillcamDirector, ExperimentTelemetryRecorder, MediaDirector, WeatherSystem, FoliageSway, PlaytestRobot
 └── Scenes/         # LR2_MainMenu + Saltworks, Deadsector, Foundry, TestRange + baked NavMeshes
+Data/               # External runtime telemetry & fitted profiles (Presets/, Profiles/, git-ignored Logs/ + SessionState.csv)
 Docs/
-├── AI_Collaboration/  # How the AI agents build the game: story, prompts, protocol, research log
-├── Media/             # README screenshots
+├── AI_Collaboration/  # How the AI agents build the game: story, prompts, protocol, research log, token rankings, LLM study
+├── Bot/               # llm-architecture.html (9 maneuvers + 20 Hz heatmaps), bot-lab.html
+├── Guides/            # LLM_BOT_IMPLEMENTATION.md
+├── Media/             # README screenshots, lobby tabs, LLM charts & experiments/ 20 Hz heatmaps
+├── Research/          # HUMAN_LIKENESS_EVALUATION.md & DATA_COLUMNS.md
+├── Updates/           # Daily release notes (2026-11-19 .. 2026-11-24)
 └── LR2_Bot_Explainer.md
+Tools/
+└── analyze_experiment_session.py  # Offline 20-60 Hz heatmap, 5-fold C2ST, HLI scorer & equation fitter
 ```

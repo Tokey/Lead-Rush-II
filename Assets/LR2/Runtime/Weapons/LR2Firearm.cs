@@ -35,13 +35,12 @@ namespace LR2.Weapons
         [Tooltip("Tactical reload: with a round still chambered, the empty-reload clip is cut shortly after the new magazine seats (no charging handle).")]
         [SerializeField] private bool tacticalReload = true;
         [Tooltip("How long after the mag-in cue (fraction of the full clip) a tactical reload ends and blends back to ready.")]
-        [SerializeField, Range(0f, 0.3f)] private float tacticalEndAfterMagIn = 0.03f;
+        [SerializeField, Range(0f, 0.3f)] private float tacticalEndAfterMagIn = 0.075f;
         [Tooltip("A tactical reload keeps the chambered round, so the gun holds magazine + 1 (30+1).")]
         [SerializeField] private bool chamberedRoundBonus = true;
         private FPSAnimationAsset _reloadRuntime, _tacticalRuntime;
-        // B94 + B136k: End reloads early right after the mag/bolt action completes so the robot stops rotating the gun in
-        // recovery tail; tighten blend-out from 0.45 s to 0.18 s (empty 0.16 s).
-        private const float TacticalSpeedUp = 1.15f, TacticalBlendOut = 0.18f, EmptyBlendOut = 0.16f;
+        // B94 + B136k + B139: Play slightly past mag-in (~7.5% of clip) so the magazine seats fully before blending back.
+        private const float TacticalSpeedUp = 1.15f, TacticalBlendOut = 0.20f, EmptyBlendOut = 0.18f;
         private float _activeReloadRate = 1f;
         [SerializeField] private FPSCameraAnimation cameraReloadAnimation;
         [SerializeField] private FPSAnimationAsset grenadeClip;
@@ -113,7 +112,10 @@ namespace LR2.Weapons
         public override bool HasEditableAttachments => kinemationAttachments &&
             (scopeGroups.Count > 0 || barrelAttachments.attachments.Count > 1 || gripAttachments.attachments.Count > 1);
         public override float GrenadeThrowDuration => FPSAnimationAsset.IsValid(grenadeClip) && grenadeClip.clip != null
-            ? grenadeClip.clip.length * 0.8f / Mathf.Max(0.1f, grenadeThrowRate) : 0f;
+            ? grenadeClip.clip.length * 0.72f / Mathf.Max(0.1f, grenadeThrowRate) : 0f;
+        public override float GrenadeReleaseDelay(float releaseFraction) => FPSAnimationAsset.IsValid(grenadeClip) && grenadeClip.clip != null
+            ? grenadeClip.clip.length * Mathf.Clamp(releaseFraction, 0.1f, 0.7f) / Mathf.Max(0.1f, grenadeThrowRate)
+            : base.GrenadeReleaseDelay(releaseFraction);
         /// <summary>B136: the sight the gun is aimed through (null = its default aim point / iron sights).</summary>
         public ScopeAttachment ActiveScope => scopeGroups.Count > 0 ? scopeGroups[_scopeIndex].GetActiveAttachment() : null;
         public bool UsesKinemationAttachments => kinemationAttachments;
@@ -831,7 +833,10 @@ namespace LR2.Weapons
                 hasEndPoint = haveEnd,
                 audibleRadius = radius,
                 suppressed = suppressed,
-                weaponName = definition != null ? definition.shortName : DisplayName
+                aiming = owner.IsAiming,
+                indoors = _indoors,
+                weaponName = definition != null ? definition.shortName : DisplayName,
+                audioProfile = definition != null ? definition.audio : null
             });
             GameEvents.RaiseNoise(combatant, Muzzle.position, radius, NoiseType.Gunshot);
             Fired?.Invoke();
@@ -843,57 +848,113 @@ namespace LR2.Weapons
             if (definition == null || definition.audio == null) return;
             var a = definition.audio;
             Vector3 pos = Muzzle.position;
-            var combatant = Owner.Combatant;
-            // Indoor check is cheap (2 rays) but only needed every few shots.
+            var combatant = Owner != null ? Owner.Combatant : null;
             if (_shotCounter % 4 == 1 || Time.time - _lastShotTime > 0.4f) _indoors = LR2Audio.IsIndoors(pos);
             float overheat = Mathf.Clamp01((_barrelHeat - 0.30f) / 0.70f);
-            float sup = _suppressorFitted ? 0.42f : 1f; // B136: suppressor fitted from the attachment menu
+            bool firstPerson = combatant != null && combatant.IsLocalPlayer;
+            bool aiming = Owner != null && Owner.IsAiming;
+            bool firstShot = Time.time - _lastShotTime > 0.35f;
+            PlayWeaponShotAudio(a, pos, firstPerson, _suppressorFitted, aiming, _indoors, firstShot, overheat, _shotCounter, _triggerHeld);
+            if (!_suppressorFitted && (_shotCounter % 2 == 0 || !_triggerHeld)) PlayEchoes(pos, a.TailFor(_indoors));
+        }
+
+        /// <summary>
+        /// B143: Shared weapon audio synthesis/routing so live 1P, 3P enemies/allies, and Killcam killer POV replay
+        /// preserve the exact same weapon core character, suppressor state, mech layer, and indoor/outdoor tails.
+        /// </summary>
+        public static void PlayWeaponShotAudio(
+            WeaponAudioProfile a, Vector3 pos, bool firstPerson, bool suppressed, bool aiming,
+            bool indoors, bool firstShot, float overheat, int shotCounter, bool triggerHeld)
+        {
+            if (a == null) return;
+            float sup = suppressed ? 0.42f : 1f;
             float heatPitch = overheat > 0f ? Mathf.Lerp(1f, 1.16f, overheat) * (1f + UnityEngine.Random.Range(-0.03f, 0.07f) * overheat) : 1f;
-            float supPitch = _suppressorFitted ? 1.04f : 1f;
-            if (combatant != null && combatant.IsLocalPlayer)
+            float supPitch = suppressed ? 1.04f : 1f;
+            // B146: suppressed tactical rifles keep a real ballistic bullet-fire body layered beneath the baffle thump
+            bool hasDistinctBulletFire = a.firePlayer != null && a.firePlayer.IsValid
+                && (a.firePlayerSuppressed == null || !a.firePlayerSuppressed.IsValid
+                    || a.firePlayer.clips[0] != a.firePlayerSuppressed.clips[0]);
+
+            if (firstPerson)
             {
-                if (_suppressorFitted)
+                if (suppressed)
                 {
                     SoundSet shotSet = a.firePlayerSuppressed.IsValid ? a.firePlayerSuppressed : a.firePlayer;
-                    float shotVol = (a.firePlayerSuppressed.IsValid ? 0.96f : 0.42f) + overheat * 0.14f;
+                    float shotVol = (a.firePlayerSuppressed.IsValid ? 1.0f : 0.48f) + overheat * 0.14f;
                     LR2Audio.PlayAt(shotSet, pos, shotVol, 0f, false, heatPitch * (a.firePlayerSuppressed.IsValid ? 1f : supPitch));
-                    LR2Audio.PlayAt(Owner.IsAiming && a.fireMechAds.IsValid ? a.fireMechAds : a.fireMech, pos, 0.88f + overheat * 0.35f, 0f, false, heatPitch);
-                    SoundSet supTail = a.SuppressedTailFor(_indoors);
-                    if (supTail.IsValid && (_shotCounter % 2 == 0 || !_triggerHeld))
-                        LR2Audio.PlayAt(supTail, pos, _indoors ? 0.62f : 0.48f, 0f, false, 1f + overheat * 0.06f);
-                    LR2Audio.Duck(_indoors ? 0.30f : 0.22f);
+                    if (hasDistinctBulletFire)
+                        LR2Audio.PlayAt(a.firePlayer, pos, 0.60f + overheat * 0.12f, 0f, false, heatPitch * 1.04f);
+                    LR2Audio.PlayAt(aiming && a.fireMechAds.IsValid ? a.fireMechAds : a.fireMech, pos, 0.95f + overheat * 0.35f, 0f, false, heatPitch);
+                    SoundSet supTail = a.SuppressedTailFor(indoors);
+                    if (supTail.IsValid && (shotCounter % 2 == 0 || !triggerHeld))
+                        LR2Audio.PlayAt(supTail, pos, indoors ? 0.72f : 0.60f, 0f, false, 1f + overheat * 0.06f);
+                    if (hasDistinctBulletFire && (shotCounter % 2 == 0 || !triggerHeld))
+                        LR2Audio.PlayAt(a.TailFor(indoors), pos, indoors ? 0.34f : 0.26f, 0f, false, 1.08f + overheat * 0.06f);
+                    LR2Audio.Duck(indoors ? 0.42f : 0.30f);
                 }
                 else
                 {
-                    bool first = Time.time - _lastShotTime > 0.35f && a.fireFirstShot.IsValid;
-                    LR2Audio.PlayAt(first ? a.fireFirstShot : a.firePlayer, pos, 1f + overheat * 0.18f, 0f, false, heatPitch);
-                    LR2Audio.PlayAt(Owner.IsAiming && a.fireMechAds.IsValid ? a.fireMechAds : a.fireMech, pos, 1f + overheat * 0.45f, 0f, false, heatPitch * (1f + overheat * 0.12f));
+                    bool useFirst = firstShot && a.fireFirstShot.IsValid;
+                    LR2Audio.PlayAt(useFirst ? a.fireFirstShot : a.firePlayer, pos, 1f + overheat * 0.18f, 0f, false, heatPitch);
+                    LR2Audio.PlayAt(aiming && a.fireMechAds.IsValid ? a.fireMechAds : a.fireMech, pos, 1f + overheat * 0.45f, 0f, false, heatPitch * (1f + overheat * 0.12f));
                     if (overheat > 0.25f && a.fireMech.IsValid)
                         LR2Audio.PlayAt(a.fireMech, pos, 0.44f * overheat, 0.012f, true, 1.48f + overheat * 0.18f);
-                    if (_shotCounter % 2 == 0 || !_triggerHeld) LR2Audio.PlayAt(a.TailFor(_indoors), pos, 1f, 0f, false, 1f + overheat * 0.08f);
-                    LR2Audio.Duck(_indoors ? 0.75f : 0.55f);
+                    if (shotCounter % 2 == 0 || !triggerHeld) LR2Audio.PlayAt(a.TailFor(indoors), pos, 1f, 0f, false, 1f + overheat * 0.08f);
+                    LR2Audio.Duck(indoors ? 0.75f : 0.55f);
                 }
+                return;
+            }
+
+            Vector3 listener = LR2Audio.ListenerPosition;
+            float dist = Vector3.Distance(listener, pos);
+            float travelDelay = dist / 343f;
+            if (suppressed)
+            {
+                SoundSet coreSet = (dist < 24f && a.firePlayerSuppressed.IsValid)
+                    ? a.firePlayerSuppressed
+                    : (a.fireNpcSuppressed.IsValid ? a.fireNpcSuppressed : a.firePlayerSuppressed);
+                if (coreSet != null && coreSet.IsValid)
+                {
+                    LR2Audio.PlayClip(coreSet.Pick(), pos, coreSet.volume * (0.96f + overheat * 0.12f),
+                        coreSet.PickPitch() * heatPitch, 4f, 64f, 1f, coreSet.category, coreSet.priority, travelDelay);
+                }
+                if (hasDistinctBulletFire && dist < 56f)
+                {
+                    LR2Audio.PlayClip(a.firePlayer.Pick(), pos, a.firePlayer.volume * (0.50f + overheat * 0.10f),
+                        a.firePlayer.PickPitch() * heatPitch * 1.04f, 4f, 64f, 1f, a.firePlayer.category, a.firePlayer.priority, travelDelay);
+                }
+                if (dist < 12f && a.fireMech.IsValid)
+                    LR2Audio.PlayClip(a.fireMech.Pick(), pos, a.fireMech.volume * 0.62f, a.fireMech.PickPitch(), 2f, 16f, 1f, a.fireMech.category, a.fireMech.priority, travelDelay);
+                SoundSet supTail = a.SuppressedTailFor(indoors);
+                if (supTail.IsValid && dist < 30f && (shotCounter % 2 == 0 || !triggerHeld))
+                    LR2Audio.PlayClip(supTail.Pick(), pos, supTail.volume * 0.58f, supTail.PickPitch(), 4f, 55f, 1f, supTail.category, supTail.priority, travelDelay);
+                if (hasDistinctBulletFire && dist < 28f && (shotCounter % 2 == 0 || !triggerHeld))
+                {
+                    SoundSet bTail = a.TailFor(indoors);
+                    if (bTail != null && bTail.IsValid)
+                        LR2Audio.PlayClip(bTail.Pick(), pos, bTail.volume * 0.24f, bTail.PickPitch() * 1.08f, 4f, 60f, 1f, bTail.category, bTail.priority, travelDelay);
+                }
+                if (dist < 16f) LR2Audio.Duck(0.20f);
             }
             else
             {
-                Vector3 listener = LR2Audio.ListenerPosition;
-                float dist = Vector3.Distance(listener, pos);
-                if (_suppressorFitted && a.fireNpcSuppressed.IsValid)
+                // Use the exact same gun's core shot out to 28m in true 3D space so bots & players never sound like different guns.
+                SoundSet shotSet = (dist < 28f && a.firePlayer.IsValid)
+                    ? a.firePlayer
+                    : a.NpcShotForDistance(dist);
+                if (shotSet != null && shotSet.IsValid)
                 {
-                    LR2Audio.PlayAtWithTravelTime(a.fireNpcSuppressed, pos, listener, 0.85f + overheat * 0.12f);
-                    SoundSet supTail = a.SuppressedTailFor(_indoors);
-                    if (supTail.IsValid && dist < 20f && (_shotCounter % 3 == 0))
-                        LR2Audio.PlayAt(supTail, pos, 0.42f);
-                    if (dist < 12f) LR2Audio.Duck(0.14f);
+                    float maxDist = dist < 28f ? 120f : Mathf.Max(90f, shotSet.maxDistance);
+                    LR2Audio.PlayClip(shotSet.Pick(), pos, shotSet.volume * (1f + overheat * 0.14f) * sup,
+                        shotSet.PickPitch() * heatPitch, Mathf.Max(3.5f, shotSet.minDistance), maxDist, 1f, shotSet.category, shotSet.priority, travelDelay);
                 }
-                else
-                {
-                    LR2Audio.PlayAtWithTravelTime(a.NpcShotForDistance(dist * (_suppressorFitted ? 2.5f : 1f)), pos, listener, (1f + overheat * 0.15f) * sup);
-                    if (!_suppressorFitted && dist < 30f && (_shotCounter % 3 == 0)) LR2Audio.PlayAt(a.TailFor(_indoors), pos, 0.6f);
-                    if (dist < 20f) LR2Audio.Duck(0.25f * sup);
-                }
+                if (dist < 12f && a.fireMech.IsValid)
+                    LR2Audio.PlayClip(a.fireMech.Pick(), pos, a.fireMech.volume * 0.65f, a.fireMech.PickPitch(), 2.5f, 16f, 1f, a.fireMech.category, a.fireMech.priority, travelDelay);
+                SoundSet tail = a.TailFor(indoors);
+                if (tail.IsValid && dist < 38f && (shotCounter % 2 == 0 || !triggerHeld))
+                    LR2Audio.PlayClip(tail.Pick(), pos, tail.volume * 0.68f, tail.PickPitch(), 5f, 110f, 1f, tail.category, tail.priority, travelDelay);
+                if (dist < 20f) LR2Audio.Duck(0.25f * sup);
             }
-            if (!_suppressorFitted && (_shotCounter % 2 == 0 || !_triggerHeld)) PlayEchoes(pos, a.TailFor(_indoors));
         }
 
         private void EnsureHeatFX()
@@ -1162,8 +1223,10 @@ namespace LR2.Weapons
                 ? reloadClip.clip.length / _activeReloadRate
                 : (definition != null ? (_reloadEmpty ? definition.emptyReloadTime : definition.reloadTime) / reloadSpeedMultiplier : 2.4f);
             float emptyEnd = (hasClip && cues != null) ? Mathf.Clamp(cues.emptyReloadEndAt, 0.60f, 0.96f) : (hasClip ? 0.84f : 1f);
+            float tacTarget = cues != null ? cues.magInAt + Mathf.Max(tacticalEndAfterMagIn, 0.07f) : 0.60f;
+            float tacMax = cues != null && cues.boltAt > cues.magInAt + 0.04f ? cues.boltAt - 0.035f : 0.92f;
             _reloadEndAt = tacticalNow
-                ? Mathf.Clamp(cues.magInAt + Mathf.Min(tacticalEndAfterMagIn, 0.005f), 0.3f, 0.92f)
+                ? Mathf.Clamp(tacTarget, cues.magInAt + 0.06f, Mathf.Min(tacMax, 0.92f))
                 : emptyEnd;
             _reloadStart = Time.time;
             IsReloading = true;

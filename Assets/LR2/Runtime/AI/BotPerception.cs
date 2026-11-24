@@ -163,11 +163,19 @@ namespace LR2.AI
                 if (los)
                 {
                     rec ??= Get(c);
-                    float rate = speedMul * (0.9f + 9f / Mathf.Max(dist, 1.5f));
-                    if (c.Velocity.sqrMagnitude > 4f) rate *= 1.35f;
-                    if (now - c.LastLoudShotTime < 1f) rate *= 2.2f;
-                    if (angle < 12f) rate *= 1.4f;
-                    if (c.HeadPosition.y - c.Position.y < 1.3f) rate *= 0.7f; // crouched
+                    float rate;
+                    if (_bot != null && _bot.Archetype == BotArchetype.DumbRobotic)
+                    {
+                        rate = speedMul * 2.25f;
+                    }
+                    else
+                    {
+                        rate = speedMul * (0.9f + 9f / Mathf.Max(dist, 1.5f));
+                        if (c.Velocity.sqrMagnitude > 4f) rate *= 1.35f;
+                        if (now - c.LastLoudShotTime < 1f) rate *= 2.2f;
+                        if (angle < 12f) rate *= 1.4f;
+                        if (c.HeadPosition.y - c.Position.y < 1.3f) rate *= 0.7f; // crouched
+                    }
                     rec.detection = Mathf.Min(1.25f, rec.detection + rate * step);
                     if (rec.detection >= 1f)
                     {

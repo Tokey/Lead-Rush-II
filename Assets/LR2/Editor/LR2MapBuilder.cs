@@ -1004,6 +1004,8 @@ namespace LR2.EditorTools
                     vis.transform.localScale = new Vector3(s.z, s.y, s.x);
                     Vector3 rotatedCenter = Quaternion.Euler(0f, 90f, 0f) * new Vector3(local.center.x * s.z, local.center.y * s.y, local.center.z * s.x);
                     vis.transform.localPosition = -rotatedCenter;
+                    var boxCol = root.GetComponent<BoxCollider>();
+                    if (boxCol != null) boxCol.size = new Vector3(targetSize.x, local.size.y * s.y, targetSize.z);
                 }
                 else
                 {
@@ -1013,6 +1015,8 @@ namespace LR2.EditorTools
                         targetSize.z / Mathf.Max(0.05f, local.size.z)));
                     vis.transform.localScale = s;
                     vis.transform.localPosition = -Vector3.Scale(local.center, s);
+                    var boxCol = root.GetComponent<BoxCollider>();
+                    if (boxCol != null) boxCol.size = new Vector3(targetSize.x, local.size.y * s.y, targetSize.z);
                 }
             }
             return root;
@@ -1077,8 +1081,8 @@ namespace LR2.EditorTools
             return _terrain.SampleHeight(new Vector3(x, 0f, z)) + _terrain.transform.position.y;
         }
 
-        /// <summary>Puts a ground-level design position (y = 0) onto the terrain.</summary>
-        private static Vector3 G(Vector3 p, float offset = 0f) => new Vector3(p.x, Mathf.Max(GroundY(p.x, p.z), -0.02f) + offset, p.z);
+        /// <summary>Puts a ground-level design position (y = 0) onto the exact terrain elevation (incl. ditches/dips).</summary>
+        private static Vector3 G(Vector3 p, float offset = 0f) => new Vector3(p.x, GroundY(p.x, p.z) + offset, p.z);
 
         /// <summary>Standing position for spawns/markers: on terrain, never below building floors.</summary>
         private static Vector3 Stand(Vector3 p) => new Vector3(p.x, Mathf.Max(GroundY(p.x, p.z) + 0.05f, 0.12f), p.z);
@@ -1210,11 +1214,31 @@ namespace LR2.EditorTools
             FittedPackProp("ACUnit", "SM_ConcreteColum2", h, new Vector3(2.2f, py + 0.55f, 3.6f), new Vector3(1.8f, 1.1f, 1.2f), 0f, SurfaceType.Metal);
             PropOrBox("SM_Smallpipe2", "Vent", h, new Vector3(-2.4f, py, 4.2f), 90f, 1f, new Vector3(0.9f, 0.8f, 0.9f), _m.rust, SurfaceType.Metal);
             // Interior: desk + lockers + detailed crate & industrial chair
-            FittedPackProp("Desk", "SM_Table_01", h, new Vector3(-2.6f, 0.5f, 4.4f), new Vector3(2.2f, 0.8f, 0.9f), 0f, SurfaceType.Wood);
+            var desk = FittedPackProp("Desk", "SM_Table_01", h, new Vector3(-2.6f, 0.5f, 4.4f), new Vector3(2.2f, 0.8f, 0.9f), 0f, SurfaceType.Wood);
             FittedPackProp("Lockers", "SM_Crate_02", h, new Vector3(3.9f, 1.05f, 4.6f), new Vector3(0.6f, 1.9f, 1.6f), 90f, SurfaceType.Wood);
             PropOrBox("SM_Crate_01", "Crate", h, new Vector3(1.2f, 0.1f, 0.2f), 14f, 0.95f, new Vector3(0.9f, 0.9f, 0.9f), _m.wood, SurfaceType.Wood);
             Prop("SM_Chair_01", h, new Vector3(-2.4f, 0.1f, 3.3f), 195f, 1f, true, SurfaceType.Wood);
-            Prop("SM_Lantern_01", h, new Vector3(-2.6f, 0.81f, 4.4f), 0f, 0.9f, false);
+            float deskTopY = 0.81f;
+            if (desk != null)
+            {
+                var drs = desk.GetComponentsInChildren<Renderer>(true);
+                if (drs.Length > 0)
+                {
+                    deskTopY = drs[0].bounds.max.y;
+                    for (int ri = 1; ri < drs.Length; ri++) deskTopY = Mathf.Max(deskTopY, drs[ri].bounds.max.y);
+                }
+            }
+            var chLantern = Prop("SM_Lantern_01", h, new Vector3(-2.6f, deskTopY, 4.4f), 0f, 0.9f, false);
+            if (chLantern != null)
+            {
+                var lrs = chLantern.GetComponentsInChildren<Renderer>(true);
+                if (lrs.Length > 0)
+                {
+                    float minY = lrs[0].bounds.min.y;
+                    for (int ri = 1; ri < lrs.Length; ri++) minY = Mathf.Min(minY, lrs[ri].bounds.min.y);
+                    chLantern.transform.position += Vector3.up * (deskTopY - 0.005f - minY);
+                }
+            }
             // Windows glass (thin, bullets penetrate)
             foreach (var (pos, rotY) in new[] { (new Vector3(-2f, 1.55f, z1), 0f), (new Vector3(2f, 1.55f, z1), 0f), (new Vector3(-1.5f, 1.55f, z0), 0f), (new Vector3(2.5f, 1.55f, z0), 0f) })
                 Box("Glass", h, pos, new Vector3(1.6f, 1.1f, 0.03f), _m.glass, LR2Layers.Default, SurfaceType.Glass, rotY);
@@ -1657,13 +1681,13 @@ namespace LR2.EditorTools
             ApplyHdriSky(ve, profile, "Assets/LeartesStudios/Art/Textures/T_HDRI_01.HDR", exposureEv: 11.6f, rotationDeg: 38f);
             // Global indirect/sky visibility floor so dark shadows & sheltered walls keep clear enemy silhouettes
             var ilcGlobal = profile.Add<IndirectLightingController>(true);
-            ilcGlobal.indirectDiffuseLightingMultiplier.Override(2.15f);
-            ilcGlobal.reflectionLightingMultiplier.Override(1.35f);
+            ilcGlobal.indirectDiffuseLightingMultiplier.Override(2.25f);
+            ilcGlobal.reflectionLightingMultiplier.Override(1.55f);
             var fog = profile.Add<Fog>(true);
             fog.enabled.Override(true);
-            fog.meanFreePath.Override(_cfg.fogMeanFreePath);
+            fog.meanFreePath.Override(Mathf.Max(_cfg.fogMeanFreePath, 68f));
             fog.baseHeight.Override(_cfg.fogBaseHeight);
-            fog.maximumHeight.Override(_cfg.fogMaxHeight);
+            fog.maximumHeight.Override(9.5f);
             fog.enableVolumetricFog.Override(true);
             fog.albedo.Override(_cfg.fogAlbedo);
             fog.anisotropy.Override(_cfg.fogAnisotropy);
@@ -1671,9 +1695,9 @@ namespace LR2.EditorTools
             fog.maxFogDistance.Override(3000f);
             var exposure = profile.Add<Exposure>(true);
             exposure.mode.Override(ExposureMode.AutomaticHistogram);
-            exposure.compensation.Override(Mathf.Max(_cfg.exposureCompensation, 0.45f));
-            exposure.limitMin.Override(Mathf.Min(_cfg.exposureLimitMin, 2.4f));
-            exposure.limitMax.Override(Mathf.Min(_cfg.exposureLimitMax, 12.2f));
+            exposure.compensation.Override(Mathf.Clamp(_cfg.exposureCompensation, 0.30f, 0.48f));
+            exposure.limitMin.Override(Mathf.Min(_cfg.exposureLimitMin, 2.0f));
+            exposure.limitMax.Override(Mathf.Max(_cfg.exposureLimitMax, 14.5f));
             exposure.adaptationMode.Override(AdaptationMode.Progressive);
             exposure.adaptationSpeedDarkToLight.Override(2.8f);
             exposure.adaptationSpeedLightToDark.Override(1.8f);
@@ -2191,7 +2215,28 @@ namespace LR2.EditorTools
                 return has;
             }
 
-            bool RaycastStaticFloor(Vector3 origin, float maxDist, out RaycastHit bestHit)
+            bool TryFivePointFloor(Bounds b, HashSet<Collider> skipCols, float maxDist, out float targetFloorY)
+            {
+                targetFloorY = 0f;
+                float probeY = b.min.y + Mathf.Min(1.2f, b.size.y * 0.6f + 0.35f);
+                if (!RaycastStaticFloor(new Vector3(b.center.x, probeY, b.center.z), maxDist, out var cHit, skipCols))
+                    return false;
+                float minY = cHit.point.y;
+                float insetX = Mathf.Min(0.12f, b.extents.x * 0.35f);
+                float insetZ = Mathf.Min(0.12f, b.extents.z * 0.35f);
+                float[] xs = { b.min.x + insetX, b.max.x - insetX };
+                float[] zs = { b.min.z + insetZ, b.max.z - insetZ };
+                foreach (float cx in xs)
+                    foreach (float cz in zs)
+                    {
+                        if (RaycastStaticFloor(new Vector3(cx, probeY, cz), maxDist, out var kh, skipCols) && kh.point.y >= cHit.point.y - 0.45f)
+                            minY = Mathf.Min(minY, kh.point.y);
+                    }
+                targetFloorY = minY;
+                return true;
+            }
+
+            bool RaycastStaticFloor(Vector3 origin, float maxDist, out RaycastHit bestHit, HashSet<Collider> extraSkip = null)
             {
                 bestHit = default;
                 var hits = Physics.RaycastAll(origin, Vector3.down, maxDist, LR2Layers.EnvironmentMask, QueryTriggerInteraction.Ignore);
@@ -2201,7 +2246,8 @@ namespace LR2.EditorTools
                 {
                     var h = hits[i];
                     if (propColliderSet.Contains(h.collider)) continue;
-                    if (h.normal.y < 0.55f) continue;
+                    if (extraSkip != null && extraSkip.Contains(h.collider)) continue;
+                    if (h.normal.y < 0.45f) continue;
                     if (h.distance < bestDist)
                     {
                         bestDist = h.distance;
@@ -2215,9 +2261,8 @@ namespace LR2.EditorTools
             void SnapToSurface(Transform tr)
             {
                 if (!TryBounds(tr, out var b)) return;
-                Vector3 probe = new Vector3(b.center.x, b.min.y + Mathf.Min(1.2f, b.size.y * 0.6f + 0.35f), b.center.z);
-                if (RaycastStaticFloor(probe, 3.0f, out var hit))
-                    tr.position += Vector3.up * (hit.point.y - b.min.y - 0.01f);
+                if (TryFivePointFloor(b, null, 3.5f, out float floorY))
+                    tr.position += Vector3.up * (floorY - b.min.y - 0.015f);
             }
 
             int adjusted = 0, removed = 0;
@@ -2227,10 +2272,11 @@ namespace LR2.EditorTools
             {
                 var tr = candidates[i];
                 if (tr == null) { candidates.RemoveAt(i); continue; }
-                // Wall-mounted ivy / roof moss / webs should keep their surface alignment; only ground props snap.
+                // Wall-mounted ivy / roof moss / webs should keep their surface alignment; trees are already planted with -0.28m terrain embed in BuildNature.
                 bool isOvergrowth = nature != null && tr.parent != null && tr.parent.name == "Overgrowth";
+                bool isTree = nature != null && tr.parent != null && tr.parent.name == "Trees";
                 bool isFoliage = nature != null && tr.IsChildOf(nature);
-                if (isOvergrowth) continue;
+                if (isOvergrowth || isTree) continue;
 
                 SnapToSurface(tr);
                 if (!TryBounds(tr, out var b)) continue;
@@ -2400,22 +2446,22 @@ namespace LR2.EditorTools
                 }
             }
 
-            // B99: Final grounding pass after MTV nudges so no surviving movable prop floats above floors/terrain
+            // B99 + B144: Final 5-point grounding pass after MTV nudges so no surviving prop/crate/pole/log floats above sloped terrain
             int grounded = 0;
             for (int i = candidates.Count - 1; i >= 0; i--)
             {
                 var tr = candidates[i];
                 if (tr == null) continue;
                 bool isOvergrowth = nature != null && tr.parent != null && tr.parent.name == "Overgrowth";
-                if (isOvergrowth || !TryBounds(tr, out var b)) continue;
+                bool isTree = nature != null && tr.parent != null && tr.parent.name == "Trees";
+                if (isOvergrowth || isTree || !TryBounds(tr, out var b)) continue;
                 bool isPropGroup = props != null && tr.IsChildOf(props);
-                Vector3 probe = new Vector3(b.center.x, b.min.y + 0.35f, b.center.z);
-                if (RaycastStaticFloor(probe, 4.0f, out var gHit))
+                if (TryFivePointFloor(b, null, 4.5f, out float gFloorY))
                 {
-                    float gap = b.min.y - gHit.point.y;
-                    if (gap > 0.02f || gap < -0.18f)
+                    float gap = b.min.y - gFloorY;
+                    if (gap > 0.01f || gap < -0.22f)
                     {
-                        tr.position += Vector3.up * (gHit.point.y - b.min.y - 0.01f);
+                        tr.position += Vector3.up * (gFloorY - b.min.y - 0.015f);
                         grounded++;
                     }
                 }
@@ -2423,6 +2469,53 @@ namespace LR2.EditorTools
                 {
                     Object.DestroyImmediate(tr.gameObject);
                     removed++;
+                }
+            }
+
+            void GroundFreestanding(Transform tr, float embed)
+            {
+                if (tr == null || !TryBounds(tr, out var b)) return;
+                var selfCols = new HashSet<Collider>(tr.GetComponentsInChildren<Collider>(true));
+                if (TryFivePointFloor(b, selfCols, 5.0f, out float fy))
+                {
+                    float delta = fy - b.min.y - embed;
+                    if (Mathf.Abs(delta) > 0.005f) { tr.position += Vector3.up * delta; grounded++; }
+                }
+            }
+
+            if (gameplay != null)
+                foreach (var ac in gameplay.GetComponentsInChildren<AmmoCrate>(true))
+                    if (ac != null) GroundFreestanding(ac.transform, 0.015f);
+            var lightingRoot = structures != null && structures.parent != null ? structures.parent.Find("Lighting") : null;
+            if (lightingRoot != null)
+            {
+                for (int i = 0; i < lightingRoot.childCount; i++)
+                    if (lightingRoot.GetChild(i).name.StartsWith("LampPole"))
+                        GroundFreestanding(lightingRoot.GetChild(i), 0.05f);
+            }
+            if (structures != null)
+            {
+                string[] groundKeys = { "FallenTree", "BurntLog", "Desk", "Workbench", "Lockers", "SM_Chair_", "SM_Barrel_", "SM_Gascylender", "SM_fireextinguisher", "Crate", "Bollard", "SM_Docks_Rope" };
+                foreach (Transform t in structures.GetComponentsInChildren<Transform>(true))
+                {
+                    if (t == structures || t.GetComponentInParent<Light>() != null) continue;
+                    if (t.name.Contains("_LOD") || t.name == "Mesh" || (t.parent != null && (t.parent.name == "Mesh" || t.parent.GetComponent<LODGroup>() != null))) continue;
+                    bool isGroundProp = false;
+                    for (int k = 0; k < groundKeys.Length; k++)
+                        if (t.name.IndexOf(groundKeys[k], System.StringComparison.OrdinalIgnoreCase) >= 0) { isGroundProp = true; break; }
+                    if (isGroundProp)
+                        GroundFreestanding(t, t.name.Contains("FallenTree") || t.name.Contains("BurntLog") ? 0.06f : 0.01f);
+                }
+                // Re-seat SM_Lantern_01 inside ControlHouse flush on top of Desk after Desk grounding.
+                var ch = structures.Find("ControlHouse");
+                if (ch != null)
+                {
+                    var chDesk = ch.Find("Desk");
+                    Transform chLantern = null;
+                    for (int i = 0; i < ch.childCount; i++)
+                        if (ch.GetChild(i).name.Contains("SM_Lantern_01")) { chLantern = ch.GetChild(i); break; }
+                    if (chDesk != null && chLantern != null && TryBounds(chDesk, out var db) && TryBounds(chLantern, out var lb))
+                        chLantern.position += Vector3.up * (db.max.y - 0.005f - lb.min.y);
                 }
             }
 
@@ -2790,7 +2883,7 @@ namespace LR2.EditorTools
                 var skullMask = AssetDatabase.LoadAssetAtPath<Material>("Assets/LR2/Materials/Characters/M_FaceMask_GhostSkull.mat");
                 var enemyMask = AssetDatabase.LoadAssetAtPath<Material>("Assets/LR2/Materials/Characters/M_FaceMask_EnemyMarauder.mat");
                 var sv = hero.GetComponent<SoldierVisuals>();
-                var swatVis = hero.transform.Find("SWAT_Visual");
+                var swatVis = hero.transform.Find("SWAT_Visual") ?? hero.transform.Find("MilitaryVisual");
                 if (swatVis != null)
                 {
                     if (sv != null)
@@ -2802,7 +2895,7 @@ namespace LR2.EditorTools
                     {
                         bool underSwat = r.transform.IsChildOf(swatVis);
                         bool underWeapon = r.transform.GetComponentInParent<Weapons.LR2Item>(true) != null;
-                        if (!underSwat && (!underWeapon || r is SkinnedMeshRenderer)) r.enabled = false;
+                        if (!underSwat && !underWeapon) r.enabled = false;
                         else r.enabled = true;
                     }
                     foreach (var smr in hero.GetComponentsInChildren<SkinnedMeshRenderer>(true))
@@ -2874,19 +2967,22 @@ namespace LR2.EditorTools
             var profile = NewProfile(LightDir + "/LR2_Menu_Profile.asset");
             var ve = profile.Add<VisualEnvironment>(true);
             ve.skyAmbientMode.Override(SkyAmbientMode.Dynamic);
-            ApplyHdriSky(ve, profile, "Assets/LeartesStudios/Art/Textures/T_HDRI_01.HDR", exposureEv: 11.4f, rotationDeg: 28f);
+            ApplyHdriSky(ve, profile, "Assets/LeartesStudios/Art/Textures/T_HDRI_01.HDR", exposureEv: 10.6f, rotationDeg: 28f);
             var ilcMenu = profile.Add<IndirectLightingController>(true);
-            ilcMenu.indirectDiffuseLightingMultiplier.Override(1.35f);
-            ilcMenu.reflectionLightingMultiplier.Override(1.25f);
+            ilcMenu.indirectDiffuseLightingMultiplier.Override(1.15f);
+            ilcMenu.reflectionLightingMultiplier.Override(1.10f);
             var fog = profile.Add<Fog>(true);
             fog.enabled.Override(true);
             fog.enableVolumetricFog.Override(true);
-            fog.meanFreePath.Override(28f);
+            fog.meanFreePath.Override(38f);
+            fog.maximumHeight.Override(8.5f);
             fog.albedo.Override(new Color(0.6f, 0.66f, 0.72f));
             fog.anisotropy.Override(0.8f);
             var ex = profile.Add<Exposure>(true);
             ex.mode.Override(ExposureMode.AutomaticHistogram);
-            ex.compensation.Override(0.4f);
+            ex.compensation.Override(0.0f);
+            ex.limitMin.Override(5.5f);
+            ex.limitMax.Override(11.5f);
             ex.adaptationMode.Override(AdaptationMode.Progressive);
             var tone = profile.Add<Tonemapping>(true);
             tone.mode.Override(TonemappingMode.ACES);
