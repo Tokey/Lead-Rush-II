@@ -106,7 +106,16 @@ namespace LR2.Core
         public static event Action<Combatant> CombatantSpawned;
         public static event Action<Combatant> CombatantDespawned;
 
-        public static void RaiseHit(in HitEvent e) => Hit?.Invoke(e);
+        public static void RaiseHit(in HitEvent e)
+        {
+            var handlers = Hit;
+            if (handlers == null) return;
+            foreach (var d in handlers.GetInvocationList())
+            {
+                try { ((Action<HitEvent>)d)(e); }
+                catch (Exception ex) { Debug.LogException(ex); }
+            }
+        }
         public static void RaiseKilled(in KillEvent e) => Killed?.Invoke(e);
         public static void RaiseShotFired(in ShotEvent e) => ShotFired?.Invoke(e);
         public static void RaiseNoise(in NoiseEvent e) => Noise?.Invoke(e);

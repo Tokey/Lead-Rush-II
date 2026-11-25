@@ -874,13 +874,13 @@ namespace LR2.AI
                 float yawErr = rawYawErr;
                 float pitchErr = rawPitchErr;
 
-                if (pitchErr > 0.2f && now < _recoilReactAt)
-                    pitchErr *= 0.12f;
-                else if (pitchErr > 0.3f && _sprayHeat > 0.1f)
+                if (pitchErr > 0.2f && pitchErr < 4.0f && now < _recoilReactAt)
+                    pitchErr *= 0.45f;
+                else if (pitchErr > 0.3f && pitchErr < 4.5f && _sprayHeat > 0.1f)
                 {
-                    float baseComp = fitted && fit != null ? fit.recoilCompGain * fitSkill : (d != null ? d.aimSpeed / 10.5f : 0.74f);
-                    float compEfficiency = Mathf.Clamp(baseComp, 0.50f, 0.94f);
-                    pitchErr *= Mathf.Clamp(compEfficiency * (1f - _sprayHeat * 0.22f), 0.45f, 0.94f);
+                    float baseComp = fitted && fit != null ? fit.recoilCompGain * fitSkill : (d != null ? d.aimSpeed / 10.5f : 0.78f);
+                    float compEfficiency = Mathf.Clamp(baseComp, 0.65f, 0.96f);
+                    pitchErr *= Mathf.Clamp(compEfficiency * (1f - _sprayHeat * 0.15f), 0.60f, 0.96f);
                 }
 
                 float cmdMag = Mathf.Sqrt(yawErr * yawErr + pitchErr * pitchErr);

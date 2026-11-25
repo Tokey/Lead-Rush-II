@@ -30,6 +30,7 @@ namespace LR2.Characters
         private Vector3 _velocity;
         private float _headBias;
         private RetargetProxy _proxy;
+        private SoldierController _soldier;
 
         /// <summary>Current flinch of the chest (world rotation to pre-multiply); identity when calm.</summary>
         public Quaternion SpineFlinch { get; private set; } = Quaternion.identity;
@@ -48,6 +49,7 @@ namespace LR2.Characters
             _health = GetComponent<Health>();
             _combatant = GetComponent<Combatant>();
             _proxy = GetComponent<RetargetProxy>();
+            _soldier = GetComponent<SoldierController>();
             var animator = GetComponent<Animator>();
             if (animator != null)
             {
@@ -96,6 +98,7 @@ namespace LR2.Characters
 
         private void LateUpdate()
         {
+            if (_soldier != null && _soldier.IsLocalPlayer && _soldier.AimBlend > 0.25f) return;
             if (_proxy != null && _proxy.isActiveAndEnabled) return; // the proxy bends the visible body (B125)
             if (_health != null && !_health.IsAlive) return;
             if (spine != null) spine.rotation = SpineFlinch * spine.rotation;

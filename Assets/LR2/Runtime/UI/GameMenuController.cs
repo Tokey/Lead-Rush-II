@@ -47,8 +47,12 @@ namespace LR2.UI
         private TMP_Text _expStatusText;
         private Button _holdAutoBtn;
         private GameObject _ratePromptGo;
-        private readonly List<Image> _rateBtnImages = new List<Image>();
-        private readonly List<GameObject> _rateBtnGos = new List<GameObject>();
+        private GameObject _rateMinLabelGo;
+        private GameObject _rateMaxLabelGo;
+        private Slider _rateSlider;
+        private TMP_Text _rateValueText;
+        private bool _ratingTouched;
+        private bool _showRateSlider;
         private string _baseRestartLabel;
         private string _baseMenuLabel;
         private Vector2 _baseScoreboardPos, _baseScoreboardSize;
@@ -102,6 +106,8 @@ namespace LR2.UI
             {
                 if (_nextActionTriggered) return;
                 _nextActionTriggered = true;
+                if (_showRateSlider && !_ratingTouched && _rateSlider != null)
+                    ExperimentSessionRunner.RecordBlindRating(_rateSlider.value / 100f, "default_unmoved");
                 ExperimentSessionRunner.AdvanceToNextMatch();
             }
             else
@@ -330,6 +336,15 @@ namespace LR2.UI
             }
         }
 
+        private static string DescribeHumanRating(int pct)
+        {
+            if (pct <= 15) return "ROBOTIC";
+            if (pct <= 38) return "STIFF";
+            if (pct <= 62) return "UNSURE";
+            if (pct <= 84) return "NATURAL";
+            return "HUMAN";
+        }
+
         private void BuildOrUpdateExperimentEndBar()
         {
             int cur = ExperimentSessionRunner.CurrentQueueIndex + 1;
@@ -337,6 +352,8 @@ namespace LR2.UI
             var spec = ExperimentSessionRunner.CurrentMatchSpec;
             bool aiBatch = spec != null && spec.aiVsAi;
             bool showRating = (ExperimentSessionRunner.ActiveConfig == null || ExperimentSessionRunner.ActiveConfig.promptHumanRating) && !aiBatch;
+            _showRateSlider = showRating;
+            _ratingTouched = false;
 
             if (endScoreboard != null)
             {
@@ -402,52 +419,114 @@ namespace LR2.UI
                     if (_expStatusText != null) _expStatusText.text = "AUTO-ADVANCE PAUSED  ·  PRESS NEXT MATCH OR [ENTER]";
                 });
 
-                // 5-button Blind Human-Likeness Turing Rating Bar
+                // Continuous 0-100% Human-Likeness Turing Rating Slider
                 _ratePromptGo = new GameObject("RatePrompt", typeof(RectTransform));
                 _ratePromptGo.transform.SetParent(_expBarGo.transform, false);
                 var rl = _ratePromptGo.AddComponent<TextMeshProUGUI>();
                 if (theme != null && theme.bodyFont != null) rl.font = theme.bodyFont;
-                rl.text = "DID THESE BOTS FEEL HUMAN?";
-                rl.fontSize = 16f;
+                rl.text = "DID BOTS FEEL HUMAN?";
+                rl.fontSize = 15f;
                 rl.color = new Color(1f, 1f, 1f, 0.85f);
                 rl.alignment = TextAlignmentOptions.MidlineLeft;
                 rl.raycastTarget = false;
                 rl.rectTransform.anchorMin = new Vector2(0.025f, 0.08f);
-                rl.rectTransform.anchorMax = new Vector2(0.32f, 0.48f);
+                rl.rectTransform.anchorMax = new Vector2(0.255f, 0.48f);
                 rl.rectTransform.offsetMin = rl.rectTransform.offsetMax = Vector2.zero;
 
-                string[] labels = { "0% ROBOT", "25% STIFF", "50% UNSURE", "75% NATURAL", "100% HUMAN" };
-                float[] vals = { 0f, 0.25f, 0.5f, 0.75f, 1f };
-                _rateBtnImages.Clear();
-                _rateBtnGos.Clear();
-                for (int i = 0; i < 5; i++)
+                _rateMinLabelGo = new GameObject("RateMin", typeof(RectTransform));
+                _rateMinLabelGo.transform.SetParent(_expBarGo.transform, false);
+                var minT = _rateMinLabelGo.AddComponent<TextMeshProUGUI>();
+                if (theme != null && theme.headingFont != null) minT.font = theme.headingFont;
+                minT.text = "0% ROBOT"; minT.fontSize = 13f; minT.color = new Color(0.96f, 0.45f, 0.38f);
+                minT.alignment = TextAlignmentOptions.MidlineRight; minT.raycastTarget = false;
+                minT.rectTransform.anchorMin = new Vector2(0.26f, 0.08f); minT.rectTransform.anchorMax = new Vector2(0.355f, 0.48f);
+                minT.rectTransform.offsetMin = minT.rectTransform.offsetMax = Vector2.zero;
+
+                var sliderGo = new GameObject("RateSlider", typeof(RectTransform), typeof(Slider));
+                sliderGo.transform.SetParent(_expBarGo.transform, false);
+                var slRt = (RectTransform)sliderGo.transform;
+                slRt.anchorMin = new Vector2(0.365f, 0.11f);
+                slRt.anchorMax = new Vector2(0.735f, 0.45f);
+                slRt.offsetMin = slRt.offsetMax = Vector2.zero;
+
+                var bgGo = new GameObject("Background", typeof(RectTransform), typeof(Image));
+                bgGo.transform.SetParent(sliderGo.transform, false);
+                var bgImg2 = bgGo.GetComponent<Image>();
+                bgImg2.color = new Color(1f, 1f, 1f, 0.16f);
+                var bgRt = (RectTransform)bgGo.transform;
+                bgRt.anchorMin = new Vector2(0f, 0.28f); bgRt.anchorMax = new Vector2(1f, 0.72f);
+                bgRt.offsetMin = bgRt.offsetMax = Vector2.zero;
+
+                var fillArea = new GameObject("Fill Area", typeof(RectTransform));
+                fillArea.transform.SetParent(sliderGo.transform, false);
+                var faRt = (RectTransform)fillArea.transform;
+                faRt.anchorMin = new Vector2(0f, 0.28f); faRt.anchorMax = new Vector2(1f, 0.72f);
+                faRt.offsetMin = new Vector2(6f, 0f); faRt.offsetMax = new Vector2(-6f, 0f);
+
+                var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+                fillGo.transform.SetParent(fillArea.transform, false);
+                var fillImg = fillGo.GetComponent<Image>();
+                fillImg.color = new Color(accent.r, accent.g, accent.b, 0.88f);
+                fillImg.raycastTarget = false;
+                var fillRt = (RectTransform)fillGo.transform;
+                fillRt.anchorMin = Vector2.zero; fillRt.anchorMax = Vector2.one;
+                fillRt.offsetMin = fillRt.offsetMax = Vector2.zero;
+
+                var handleArea = new GameObject("Handle Slide Area", typeof(RectTransform));
+                handleArea.transform.SetParent(sliderGo.transform, false);
+                var haRt = (RectTransform)handleArea.transform;
+                haRt.anchorMin = Vector2.zero; haRt.anchorMax = Vector2.one;
+                haRt.offsetMin = new Vector2(10f, 0f); haRt.offsetMax = new Vector2(-10f, 0f);
+
+                var handleGo = new GameObject("Handle", typeof(RectTransform), typeof(Image));
+                handleGo.transform.SetParent(handleArea.transform, false);
+                var handleImg = handleGo.GetComponent<Image>();
+                handleImg.color = new Color(1f, 0.94f, 0.80f, 1f);
+                var handleRt = (RectTransform)handleGo.transform;
+                handleRt.anchorMin = new Vector2(0f, 0.08f); handleRt.anchorMax = new Vector2(0f, 0.92f);
+                handleRt.sizeDelta = new Vector2(22f, 0f);
+
+                _rateSlider = sliderGo.GetComponent<Slider>();
+                _rateSlider.fillRect = fillRt;
+                _rateSlider.handleRect = handleRt;
+                _rateSlider.targetGraphic = handleImg;
+                _rateSlider.direction = Slider.Direction.LeftToRight;
+                _rateSlider.minValue = 0f;
+                _rateSlider.maxValue = 100f;
+                _rateSlider.wholeNumbers = true;
+                _rateSlider.SetValueWithoutNotify(50f);
+
+                _rateMaxLabelGo = new GameObject("RateMax", typeof(RectTransform));
+                _rateMaxLabelGo.transform.SetParent(_expBarGo.transform, false);
+                var maxT = _rateMaxLabelGo.AddComponent<TextMeshProUGUI>();
+                if (theme != null && theme.headingFont != null) maxT.font = theme.headingFont;
+                maxT.text = "100% HUMAN"; maxT.fontSize = 13f; maxT.color = new Color(0.42f, 0.82f, 1f);
+                maxT.alignment = TextAlignmentOptions.MidlineLeft; maxT.raycastTarget = false;
+                maxT.rectTransform.anchorMin = new Vector2(0.745f, 0.08f); maxT.rectTransform.anchorMax = new Vector2(0.845f, 0.48f);
+                maxT.rectTransform.offsetMin = maxT.rectTransform.offsetMax = Vector2.zero;
+
+                var valGo = new GameObject("RateValue", typeof(RectTransform));
+                valGo.transform.SetParent(_expBarGo.transform, false);
+                _rateValueText = valGo.AddComponent<TextMeshProUGUI>();
+                if (theme != null && theme.headingFont != null) _rateValueText.font = theme.headingFont;
+                _rateValueText.text = "50% · DRAG";
+                _rateValueText.fontSize = 15f;
+                _rateValueText.color = accent;
+                _rateValueText.alignment = TextAlignmentOptions.MidlineRight;
+                _rateValueText.raycastTarget = false;
+                _rateValueText.rectTransform.anchorMin = new Vector2(0.85f, 0.08f);
+                _rateValueText.rectTransform.anchorMax = new Vector2(0.98f, 0.48f);
+                _rateValueText.rectTransform.offsetMin = _rateValueText.rectTransform.offsetMax = Vector2.zero;
+
+                _rateSlider.onValueChanged.AddListener(v =>
                 {
-                    int k = i;
-                    var bGo = new GameObject($"R_{k}", typeof(RectTransform), typeof(Image), typeof(Button));
-                    bGo.transform.SetParent(_expBarGo.transform, false);
-                    var img = bGo.GetComponent<Image>();
-                    img.color = new Color(1f, 1f, 1f, 0.10f);
-                    _rateBtnImages.Add(img);
-                    _rateBtnGos.Add(bGo);
-                    var brt = (RectTransform)bGo.transform;
-                    float x0 = 0.33f + k * 0.132f;
-                    brt.anchorMin = new Vector2(x0, 0.08f);
-                    brt.anchorMax = new Vector2(x0 + 0.124f, 0.48f);
-                    brt.offsetMin = brt.offsetMax = Vector2.zero;
-                    var tGo = new GameObject("Text", typeof(RectTransform)); tGo.transform.SetParent(bGo.transform, false);
-                    var t = tGo.AddComponent<TextMeshProUGUI>();
-                    if (theme != null && theme.headingFont != null) t.font = theme.headingFont;
-                    t.text = labels[k]; t.fontSize = 14f; t.color = Color.white; t.alignment = TextAlignmentOptions.Center;
-                    t.raycastTarget = false;
-                    t.rectTransform.anchorMin = Vector2.zero; t.rectTransform.anchorMax = Vector2.one; t.rectTransform.offsetMin = t.rectTransform.offsetMax = Vector2.zero;
-                    bGo.GetComponent<Button>().onClick.AddListener(() =>
-                    {
-                        ExperimentSessionRunner.RecordBlindRating(vals[k]);
-                        for (int j = 0; j < _rateBtnImages.Count; j++)
-                            _rateBtnImages[j].color = j == k ? new Color(accent.r, accent.g, accent.b, 0.78f) : new Color(1f, 1f, 1f, 0.10f);
-                        if (_expStatusText != null) _expStatusText.text = $"RATED {labels[k]}  ·  READY FOR NEXT MATCH [ENTER]";
-                    });
-                }
+                    _ratingTouched = true;
+                    int pct = Mathf.RoundToInt(v);
+                    string desc = DescribeHumanRating(pct);
+                    ExperimentSessionRunner.RecordBlindRating(pct / 100f);
+                    if (_rateValueText != null) _rateValueText.text = $"{pct}% · {desc}";
+                    if (_expStatusText != null) _expStatusText.text = $"RATED {pct}% ({desc})  ·  READY FOR NEXT MATCH [ENTER]";
+                });
             }
 
             if (_expBarGo != null)
@@ -482,11 +561,17 @@ namespace LR2.UI
                     _holdAutoBtn.gameObject.SetActive(aiBatch);
                 }
                 if (_ratePromptGo != null) _ratePromptGo.SetActive(showRating);
-                for (int i = 0; i < _rateBtnGos.Count; i++)
+                if (_rateMinLabelGo != null) _rateMinLabelGo.SetActive(showRating);
+                if (_rateMaxLabelGo != null) _rateMaxLabelGo.SetActive(showRating);
+                if (_rateSlider != null)
                 {
-                    if (_rateBtnGos[i] != null) _rateBtnGos[i].SetActive(showRating);
-                    if (i < _rateBtnImages.Count && _rateBtnImages[i] != null)
-                        _rateBtnImages[i].color = new Color(1f, 1f, 1f, 0.10f);
+                    _rateSlider.gameObject.SetActive(showRating);
+                    _rateSlider.SetValueWithoutNotify(50f);
+                }
+                if (_rateValueText != null)
+                {
+                    _rateValueText.gameObject.SetActive(showRating);
+                    _rateValueText.text = "50% · DRAG";
                 }
             }
 

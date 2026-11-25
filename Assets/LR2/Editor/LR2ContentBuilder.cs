@@ -971,7 +971,7 @@ namespace LR2.EditorTools
             var botTracerProp = so.FindProperty("botTracerEvery");
             if (botTracerProp != null) botTracerProp.intValue = 1;
             var tacEndProp = so.FindProperty("tacticalEndAfterMagIn");
-            if (tacEndProp != null) tacEndProp.floatValue = 0.03f;
+            if (tacEndProp != null) tacEndProp.floatValue = 0.025f;
             // B49: Ensure every rifle/pistol weapon uses the Humanoid FPSAnimator controller (AK74N/Mk18/FAL came from Generic demo prefabs).
             if (UseKinemationDriver && !robot)
             {

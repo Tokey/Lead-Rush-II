@@ -292,11 +292,11 @@ namespace LR2.UI
             float y = 0.905f;
             void Row(string icon, string label, Func<string> value, Action<int> step, Func<string> valueIcon = null)
             {
-                y -= 0.094f;
-                Icon(pr, icon, Dim, 0.05f, y + 0.058f, 0.1f, y + 0.092f);
-                var l = Label(pr, label, 17, Dim);
-                Anchor(l.rectTransform, 0.115f, y + 0.056f, 0.95f, y + 0.094f);
-                Stepper(pr, 0.045f, y, 0.955f, y + 0.058f, value, step, null, valueIcon);
+                y -= 0.085f;
+                Icon(pr, icon, Dim, 0.05f, y + 0.052f, 0.1f, y + 0.082f);
+                var l = Label(pr, label, 16, Dim);
+                Anchor(l.rectTransform, 0.115f, y + 0.050f, 0.95f, y + 0.084f);
+                Stepper(pr, 0.045f, y, 0.955f, y + 0.050f, value, step, null, valueIcon);
             }
             Row("mode", "MODE", () => SkirmishSetup.ModeNames[ModeIndex()], d =>
             {
@@ -310,10 +310,10 @@ namespace LR2.UI
                 LR2Session.SelectedMapIndex = (LR2Session.SelectedMapIndex + d + n) % n;
                 Rebuild();
             });
-            y -= 0.15f;
+            y -= 0.125f;
             _preview = Img(pr, "MapPreview", Color.white);
             _preview.preserveAspect = false;
-            Anchor(_preview.rectTransform, 0.05f, y + 0.008f, 0.95f, y + 0.148f);
+            Anchor(_preview.rectTransform, 0.05f, y + 0.008f, 0.95f, y + 0.120f);
             Row("score", "SCORE LIMIT", () => $"{_rules.scoreLimit}", d => { _rules.scoreLimit += d * (_rules.scoreLimit < 10 ? 1 : 5); SaveRules(); });
             Row("clock", "TIME LIMIT", () => _rules.timeLimitSeconds <= 0f ? "NONE" : $"{Mathf.RoundToInt(_rules.timeLimitSeconds / 60f)} MIN",
                 d => { _rules.timeLimitSeconds = Mathf.Max(60f, _rules.timeLimitSeconds + d * 60f); SaveRules(); });
@@ -323,6 +323,12 @@ namespace LR2.UI
             {
                 int n = LR2Session.PrimaryWeaponNames.Length;
                 LR2Session.SelectedPrimaryWeapon = (LR2Session.SelectedPrimaryWeapon + d + n) % n;
+                Rebuild();
+            });
+            Row("mode", "YOUR SCOPE", () => LR2Session.ScopeNames[LR2Session.SelectedPrimaryScope], d =>
+            {
+                int n = LR2Session.ScopeNames.Length;
+                LR2Session.SelectedPrimaryScope = (LR2Session.SelectedPrimaryScope + d + n) % n;
                 Rebuild();
             });
 

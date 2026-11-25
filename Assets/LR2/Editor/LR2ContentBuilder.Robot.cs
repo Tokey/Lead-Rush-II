@@ -222,7 +222,7 @@ namespace LR2.EditorTools
             if (_lr2GenericController == null) _lr2GenericController = BuildLR2GenericController();
             void B(string n, bool v) { var p = so.FindProperty(n); if (p != null) p.boolValue = v; }
             B("kinemationAttachments", true);
-            B("gateWallTuckInAds", false); // Kinemation's full wall tuck: nothing in LR2 edits the gun after Kinemation any more
+            B("gateWallTuckInAds", true); // Gate wall collision out during ADS so cover parapets never deflect sights off target
             var ov = so.FindProperty("overrideController");
             if (ov != null) ov.objectReferenceValue = LR2Override(ov.objectReferenceValue as RuntimeAnimatorController, _lr2GenericController);
             // every gun can throw: the pistol borrows the rifles' grenade toss

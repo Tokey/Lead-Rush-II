@@ -169,6 +169,7 @@ namespace LR2.Characters
         private Transform _camParent;
         private Vector3 _camLocalPos;
         private Quaternion _camLocalRot;
+        private bool _hasCamBindPose;
         private Combatant _killer;
         private Vector3 _deathPos;
         private GameObject _droppedWeapon;
@@ -214,6 +215,13 @@ namespace LR2.Characters
             _ragdoll = GetComponent<SoldierRagdoll>();
             _proxy = GetComponent<RetargetProxy>();
             ViewCamera = GetComponentInChildren<Camera>(true);
+            if (ViewCamera != null && ViewCamera.transform.parent != null)
+            {
+                _camParent = ViewCamera.transform.parent;
+                _camLocalPos = ViewCamera.transform.localPosition;
+                _camLocalRot = ViewCamera.transform.localRotation;
+                _hasCamBindPose = true;
+            }
             if (InputSource == null) InputSource = GetComponent<ISoldierInputSource>();
 
             if (Health != null)
@@ -382,8 +390,10 @@ namespace LR2.Characters
                     if (p != null) spawnList.Add(p);
             }
 
-            foreach (var prefab in spawnList)
+            bool allowPrimaryScopeChoice = settings.weaponPrefabs.Count >= 2;
+            for (int i = 0; i < spawnList.Count; i++)
             {
+                var prefab = spawnList[i];
                 if (prefab == null) continue;
                 var go = Instantiate(prefab, transform.position, Quaternion.identity);
                 var t = go.transform;
@@ -397,6 +407,8 @@ namespace LR2.Characters
                     Destroy(go);
                     continue;
                 }
+                if (allowPrimaryScopeChoice && i == 0 && IsLocalPlayer && item is LR2Firearm primaryGun)
+                    primaryGun.SetConfiguredScopeChoice(LR2.Game.LR2Session.SelectedPrimaryScope);
                 _items.Add(item);
                 go.SetActive(false);
             }
@@ -540,7 +552,8 @@ namespace LR2.Characters
 
             if (UserInput != null)
             {
-                UserInput.SetValue(FPSANames.MouseDeltaInput, new Vector4(deltaYaw, deltaPitch));
+                // Feed raw look delta so RecoilPattern recognizes pull-down compensation instead of post-recoil sum.
+                UserInput.SetValue(FPSANames.MouseDeltaInput, new Vector4(rawYaw, rawPitch));
                 UserInput.SetValue(FPSANames.MouseInput, new Vector4(_yawAccum, _pitch));
             }
         }
@@ -1126,9 +1139,13 @@ namespace LR2.Characters
         {
             if (ViewCamera == null) return;
             var cam = ViewCamera.transform;
-            _camParent = cam.parent;
-            _camLocalPos = cam.localPosition;
-            _camLocalRot = cam.localRotation;
+            if (!_hasCamBindPose && cam.parent != null)
+            {
+                _camParent = cam.parent;
+                _camLocalPos = cam.localPosition;
+                _camLocalRot = cam.localRotation;
+                _hasCamBindPose = true;
+            }
             cam.SetParent(null, true);
         }
 
@@ -1151,12 +1168,14 @@ namespace LR2.Characters
 
         private void EndDeathCam()
         {
-            if (ViewCamera == null || _camParent == null) return;
+            if (ViewCamera == null || !_hasCamBindPose || _camParent == null) return;
             var cam = ViewCamera.transform;
             cam.SetParent(_camParent, false);
             cam.localPosition = _camLocalPos;
             cam.localRotation = _camLocalRot;
-            _camParent = null;
+            if (CameraController != null) CameraController.ResetCameraState();
+            var bodycam = ViewCamera.GetComponent<BodycamRig>();
+            if (bodycam != null) bodycam.ResetState();
         }
 
         public void Teleport(Vector3 position, float yaw)
@@ -1175,12 +1194,13 @@ namespace LR2.Characters
             // B136h: Restore bone rest transforms + rebind Animator BEFORE rebuilding Kinemation playables so
             // PoseSampler/BlendingLayer/AttachHandLayer never capture crumpled corpse angles into the next life.
             if (_ragdoll != null) _ragdoll.Deactivate();
+            // Re-parent ViewCamera under Head BEFORE Animator.Rebind() and RebuildPlayables() so Kinemation binds Head/Camera stream handles cleanly.
+            EndDeathCam();
             if (Animator != null)
             {
                 Animator.enabled = true;
                 if (wasDead) Animator.Rebind();
             }
-            EndDeathCam();
             if (CameraController != null) CameraController.enabled = true;
 
             _controller.enabled = true;

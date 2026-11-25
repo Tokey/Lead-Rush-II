@@ -34,6 +34,7 @@ namespace LR2.Game
         public float respawnDelay = 2.5f;
         public bool spawnOrbs;
         public int playerWeapon;
+        public int playerScope = 1;
         public LlmIntegrationMode llmMode = LlmIntegrationMode.Commander;
         public List<ExperimentBotSlot> bots = new List<ExperimentBotSlot>();
 
@@ -50,6 +51,7 @@ namespace LR2.Game
                 respawnDelay = respawnDelay,
                 spawnOrbs = spawnOrbs,
                 playerWeapon = playerWeapon,
+                playerScope = playerScope,
                 llmMode = llmMode,
                 bots = new List<ExperimentBotSlot>(bots.Count)
             };
@@ -347,6 +349,7 @@ namespace LR2.Game
                 respawnDelay = 2.0f,
                 spawnOrbs = false,
                 playerWeapon = LR2Session.SelectedPrimaryWeapon,
+                playerScope = LR2Session.SelectedPrimaryScope,
                 llmMode = llmMode,
                 bots = new List<ExperimentBotSlot>()
             };
@@ -544,6 +547,7 @@ namespace LR2.Game
             template = m != null ? ResolveTemplateForMode(m.mode) : null;
             LR2Session.SelectedMapIndex = m.mapIndex;
             LR2Session.SelectedPrimaryWeapon = m.playerWeapon;
+            LR2Session.SelectedPrimaryScope = m.playerScope;
 
             ModeRuleConfig rc = LR2Session.LoadModeRules(template);
             rc.scoreLimit = Mathf.Max(1, m.scoreLimit);

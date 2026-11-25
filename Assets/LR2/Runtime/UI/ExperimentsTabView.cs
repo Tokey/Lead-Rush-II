@@ -79,7 +79,9 @@ namespace LR2.UI
             BuildMatchConfigColumn(root);
 
             var back = IconBtn(root, "back", "BACK", 24, () => OnBack?.Invoke(), ButtonBg, Text);
-            Anchor((RectTransform)back.transform, 0.135f, 0.035f, 0.24f, 0.1f);
+            Anchor((RectTransform)back.transform, 0.135f, 0.035f, 0.220f, 0.1f);
+            var openLogs = IconBtn(root, "rules", "OPEN LOGS", 18, OpenLogsFolder, ButtonBg, Accent);
+            Anchor((RectTransform)openLogs.transform, 0.228f, 0.035f, 0.345f, 0.1f);
             var start = IconBtn(root, "flask", "START EXPERIMENT", 28, () =>
             {
                 if (_cfg.matches.Count == 0) return;
@@ -89,10 +91,27 @@ namespace LR2.UI
             Anchor((RectTransform)start.transform, 0.65f, 0.03f, 0.865f, 0.105f);
             start.GetComponentInChildren<TMP_Text>().color = new Color(0.05f, 0.05f, 0.05f);
 
-            _footerSummary = Label(root, "", 16, Dim);
+            _footerSummary = Label(root, "", 14, Dim);
             _footerSummary.alignment = TextAlignmentOptions.MidlineRight;
-            Anchor(_footerSummary.rectTransform, 0.25f, 0.032f, 0.64f, 0.102f);
+            Anchor(_footerSummary.rectTransform, 0.352f, 0.032f, 0.64f, 0.102f);
 
+            RebuildAll();
+        }
+
+        private void OpenLogsFolder()
+        {
+            try
+            {
+                string dir = ExperimentPaths.LogsRoot.Replace('/', '\\');
+                System.IO.Directory.CreateDirectory(dir);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+                _toastText = $"LOGS: {dir}";
+            }
+            catch (Exception ex)
+            {
+                _toastText = "OPEN FAILED: " + ex.Message;
+            }
+            RefreshStatic();
             RebuildAll();
         }
 
@@ -261,15 +280,15 @@ namespace LR2.UI
                     SaveAndRebuild();
                 }, new Color(0.75f, 0.56f, 1f), () => CurrentMatch() != null && CurrentMatch().aiVsAi ? "spectate" : "player");
 
-            // 2-column compact stepper rows (top half y: 0.52..0.90)
+            // 2-column compact stepper rows (4 rows, y: 0.545..0.900)
             void Cell(float x0, float y0, float x1, float y1, string lbl, Func<string> val, Action<int> step, Func<string> icon = null)
             {
-                var t = Label(pr, lbl, 13, Dim);
-                Anchor(t.rectTransform, x0, y1 - 0.032f, x1, y1);
-                Stepper(pr, x0, y0, x1, y1 - 0.032f, val, step, Text, icon);
+                var t = Label(pr, lbl, 12, Dim);
+                Anchor(t.rectTransform, x0, y1 - 0.026f, x1, y1);
+                Stepper(pr, x0, y0, x1, y1 - 0.026f, val, step, Text, icon);
             }
 
-            Cell(0.025f, 0.80f, 0.485f, 0.90f, "MODE", () =>
+            Cell(0.025f, 0.815f, 0.485f, 0.900f, "MODE", () =>
             {
                 var m = CurrentMatch(); if (m == null) return "-";
                 int i = Mathf.Max(0, Array.IndexOf(SkirmishSetup.Modes, m.mode));
@@ -283,7 +302,7 @@ namespace LR2.UI
                 SaveAndRebuild();
             });
 
-            Cell(0.51f, 0.80f, 0.975f, 0.90f, "MAP", () =>
+            Cell(0.51f, 0.815f, 0.975f, 0.900f, "MAP", () =>
             {
                 var m = CurrentMatch(); if (m == null) return "-";
                 return LR2Session.MapDisplayNames[Mathf.Clamp(m.mapIndex, 0, LR2Session.MapDisplayNames.Length - 1)].Split('-')[0].Trim();
@@ -295,7 +314,7 @@ namespace LR2.UI
                 SaveAndRebuild();
             }, () => "map");
 
-            Cell(0.025f, 0.695f, 0.485f, 0.795f, "LLM INTEGRATION DEPTH", () =>
+            Cell(0.025f, 0.725f, 0.485f, 0.810f, "LLM INTEGRATION DEPTH", () =>
             {
                 var m = CurrentMatch(); if (m == null) return "OFF";
                 return LlmDepthNames[Mathf.Clamp((int)m.llmMode, 0, 3)];
@@ -306,10 +325,10 @@ namespace LR2.UI
                 SaveAndRebuild();
             }, () => "brain");
 
-            Cell(0.51f, 0.695f, 0.975f, 0.795f, "SCORE  /  TIME LIMIT", () =>
+            Cell(0.51f, 0.725f, 0.975f, 0.810f, "SCORE LIMIT", () =>
             {
                 var m = CurrentMatch(); if (m == null) return "-";
-                return $"{m.scoreLimit} KILLS · {Mathf.RoundToInt(m.timeLimitSeconds / 60f)}M";
+                return $"{m.scoreLimit} KILLS";
             }, d =>
             {
                 var m = CurrentMatch(); if (m == null) return;
@@ -317,7 +336,7 @@ namespace LR2.UI
                 SaveAndRebuild();
             }, () => "score");
 
-            Cell(0.025f, 0.59f, 0.485f, 0.69f, "YOUR WEAPON", () =>
+            Cell(0.025f, 0.635f, 0.485f, 0.720f, "YOUR WEAPON", () =>
             {
                 var m = CurrentMatch(); if (m == null) return "-";
                 return LR2Session.PrimaryWeaponNames[Mathf.Clamp(m.playerWeapon, 0, LR2Session.PrimaryWeaponNames.Length - 1)];
@@ -329,10 +348,33 @@ namespace LR2.UI
                 SaveAndRebuild();
             }, () => "gun");
 
-            Cell(0.51f, 0.59f, 0.975f, 0.69f, "RESPAWN  /  TIME (STEP)", () =>
+            Cell(0.51f, 0.635f, 0.975f, 0.720f, "YOUR SCOPE", () =>
             {
                 var m = CurrentMatch(); if (m == null) return "-";
-                return $"{m.respawnDelay:0.0}S · {Mathf.RoundToInt(m.timeLimitSeconds / 60f)} MIN";
+                return LR2Session.ScopeNames[Mathf.Clamp(m.playerScope, 0, LR2Session.ScopeNames.Length - 1)];
+            }, d =>
+            {
+                var m = CurrentMatch(); if (m == null) return;
+                int n = LR2Session.ScopeNames.Length;
+                m.playerScope = (m.playerScope + d + n) % n;
+                SaveAndRebuild();
+            }, () => "mode");
+
+            Cell(0.025f, 0.545f, 0.485f, 0.630f, "RESPAWN DELAY", () =>
+            {
+                var m = CurrentMatch(); if (m == null) return "-";
+                return $"{m.respawnDelay:0.0} S";
+            }, d =>
+            {
+                var m = CurrentMatch(); if (m == null) return;
+                m.respawnDelay = Mathf.Clamp(m.respawnDelay + d * 0.5f, 0.5f, 15f);
+                SaveAndRebuild();
+            }, () => "respawn");
+
+            Cell(0.51f, 0.545f, 0.975f, 0.630f, "TIME LIMIT", () =>
+            {
+                var m = CurrentMatch(); if (m == null) return "-";
+                return $"{Mathf.RoundToInt(m.timeLimitSeconds / 60f)} MIN";
             }, d =>
             {
                 var m = CurrentMatch(); if (m == null) return;
@@ -341,10 +383,10 @@ namespace LR2.UI
             }, () => "clock");
 
             // Bot roster bar inside match
-            var rHead = Label(pr, "BOTS IN THIS MATCH (TYPE / DIFFICULTY / TEAM)", 14, Dim);
-            Anchor(rHead.rectTransform, 0.025f, 0.538f, 0.56f, 0.58f);
+            var rHead = Label(pr, "BOTS IN THIS MATCH (TYPE / DIFFICULTY / TEAM)", 13, Dim);
+            Anchor(rHead.rectTransform, 0.025f, 0.492f, 0.56f, 0.536f);
 
-            Stepper(pr, 0.57f, 0.538f, 0.77f, 0.582f, () => "ALL TYPE", d =>
+            Stepper(pr, 0.57f, 0.492f, 0.77f, 0.536f, () => "ALL TYPE", d =>
             {
                 var m = CurrentMatch(); if (m == null || m.bots.Count == 0) return;
                 int cur = Mathf.Clamp((int)m.bots[0].archetype, 0, ArchShort.Length - 1);
@@ -355,7 +397,7 @@ namespace LR2.UI
                 SaveAndRebuild();
             }, Accent);
 
-            Stepper(pr, 0.78f, 0.538f, 0.975f, 0.582f, () => "ALL DIFF", d =>
+            Stepper(pr, 0.78f, 0.492f, 0.975f, 0.536f, () => "ALL DIFF", d =>
             {
                 var m = CurrentMatch(); if (m == null || m.bots.Count == 0) return;
                 int next = (m.bots[0].difficulty + d + 5) % 5;
@@ -365,7 +407,7 @@ namespace LR2.UI
 
             var rView = Rect(pr, "RosterViewport");
             var rvr = rView.rectTransform();
-            Anchor(rvr, 0.02f, 0.115f, 0.975f, 0.532f);
+            Anchor(rvr, 0.02f, 0.115f, 0.975f, 0.486f);
             rView.AddComponent<RectMask2D>();
             var rCont = Rect(rvr, "Content");
             _rosterContent = rCont.rectTransform();
@@ -405,6 +447,7 @@ namespace LR2.UI
                     if (m == cur) continue;
                     m.aiVsAi = cur.aiVsAi; m.mode = cur.mode; m.mapIndex = cur.mapIndex; m.scoreLimit = cur.scoreLimit;
                     m.timeLimitSeconds = cur.timeLimitSeconds; m.respawnDelay = cur.respawnDelay; m.llmMode = cur.llmMode;
+                    m.playerWeapon = cur.playerWeapon; m.playerScope = cur.playerScope;
                 }
                 _toastText = "SETTINGS COPIED TO ALL MATCHES";
                 SaveAndRebuild();

@@ -93,7 +93,7 @@ Shader "LR2/PipScope"
                 float2 retUv = 0.5 + p / max(0.08, _CrosshairSize);
                 float inRet = step(0.0, retUv.x) * step(retUv.x, 1.0) * step(0.0, retUv.y) * step(retUv.y, 1.0);
                 float4 ret = SAMPLE_TEXTURE2D(_CrosshairTex, sampler_CrosshairTex, saturate(retUv));
-                float retMask = saturate(max(ret.a, max(ret.r, max(ret.g, ret.b)))) * inRet * vig;
+                float retMask = smoothstep(0.20, 0.70, ret.a) * inRet * vig;
 
                 float3 outCol = lerp(sceneCol, _CrosshairColor.rgb, saturate(retMask * _CrosshairColor.a));
                 return float4(outCol, 1.0);

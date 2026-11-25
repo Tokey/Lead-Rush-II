@@ -7,17 +7,17 @@ namespace LR2.Characters
     /// <summary>
     /// Bodycam-style camera motion layered on top of the Kinemation camera: a chest-mounted camera that bounces with
     /// every stride, rolls into strafes and turns, tilts with acceleration, breathes, shakes when hit and dips on
-    /// landings. Runs after Kinemation's camera update (which resets the camera every frame), so it never accumulates.
-    /// The aim direction is untouched: only the rendered view moves, the crosshair stays true.
+    /// landings. Runs after Kinemation's camera update (which resets the camera every frame), before ADS sight locking.
+    /// At full ADS, bodycam offsets damp cleanly to zero so ViewCamera stays optical-axis locked onto the reticle.
     /// </summary>
-    [DefaultExecutionOrder(1100)]
+    [DefaultExecutionOrder(120)]
     public class BodycamRig : MonoBehaviour
     {
         [Header("Global")]
         [Tooltip("Overall strength (0 = disabled, uses crisp Kinemation FPSCameraController directly). Also scaled by the BODYCAM MOTION setting.")]
         [SerializeField, Range(0f, 2f)] private float intensity = 1f;
-        [Tooltip("How much of the motion remains while aiming down sights (0 = none, 1 = all).")]
-        [SerializeField, Range(0f, 1f)] private float adsDamping = 0.88f;
+        [Tooltip("How much motion is removed in ADS (1 = zero offset at full ADS).")]
+        [SerializeField, Range(0f, 1f)] private float adsDamping = 1f;
 
         [Header("Stride bob")]
         [SerializeField] private float strideLength = 1.55f;
@@ -87,13 +87,28 @@ namespace LR2.Characters
 
         private void OnDamaged(DamageInfo info) => _shake = Mathf.Min(1.6f, _shake + info.amount / 26f);
 
+        public void ResetState()
+        {
+            _sway = _swayVel = Vector2.zero;
+            _roll = _turnRoll = _accelTilt = 0f;
+            _lastVel = Vector3.zero;
+            _impact = _impactVel = _kick = _kickVel = _shake = 0f;
+            if (_soldier != null)
+            {
+                _lastYaw = _soldier.Yaw;
+                _lastPitch = _soldier.Pitch;
+            }
+        }
+
         private void LateUpdate()
         {
             if (!_ready || _soldier.IsDead || !_soldier.IsLocalPlayer) return;
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
-            float k = intensity * LR2Settings.BodycamMotion * Mathf.Lerp(1f, 1f - adsDamping, _soldier.AimBlend);
-            if (k <= 0.001f) return;
+            float adsT = Mathf.SmoothStep(0f, 1f, _soldier.AimBlend);
+            float k = intensity * LR2Settings.BodycamMotion * (1f - adsT);
+            if (_soldier.AimBlend >= 0.985f) k = 0f;
+            if (k <= 0.0005f) return;
 
             var move = _soldier.Movement;
             float speed = move.IsGrounded ? move.Speed : 0f;

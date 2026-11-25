@@ -67,7 +67,7 @@ namespace LR2.Weapons
             dotObject.transform.SetParent(transform, false);
             dotObject.transform.localScale = Vector3.one * 0.07f;
             var collider = dotObject.GetComponent<Collider>();
-            if (collider != null) Destroy(collider);
+            if (collider != null) DestroyImmediate(collider);
             _dot = dotObject.transform;
             _dotRenderer = dotObject.GetComponent<Renderer>();
             _dotMaterial = CreateGlowMaterial(EnemyDotColor, DotTexture(), 2.6f) ?? CreateMaterial(EnemyDotColor);

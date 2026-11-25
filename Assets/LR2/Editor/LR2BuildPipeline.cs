@@ -143,6 +143,30 @@ namespace LR2.EditorTools
             return ok;
         }
 
+        /// <summary>Fast batch entry: rebuilds weapons/scopes, UI prefabs, and LR2_MainMenu hero scene without rebuilding map geometry.</summary>
+        public static void RebuildWeaponsUiAndMenuBatch()
+        {
+            try
+            {
+                ConfigureBuildIdentity();
+                bool ok = true;
+                ok &= Step("Weapons & optics", LR2ScopeBuilder.UpgradePipScopesAndGrenades);
+                ok &= Step("UI", LR2UIBuilder.Build);
+                ok &= Step("Main menu scene", LR2MapBuilder.BuildMenuScene);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+                RestoreMainMenuLastSceneSetup();
+                Debug.Log(ok ? "[LR2] RebuildWeaponsUiAndMenuBatch: SUCCESS" : "[LR2] RebuildWeaponsUiAndMenuBatch: FAILED");
+                if (Application.isBatchMode) EditorApplication.Exit(ok ? 0 : 1);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[LR2] RebuildWeaponsUiAndMenuBatch FAILED: {ex}");
+                if (Application.isBatchMode) EditorApplication.Exit(1);
+                throw;
+            }
+        }
+
         /// <summary>Fast batch entry: rebuilds Ghost gear/uniforms, UI prefabs, and LR2_MainMenu hero scene without rebuilding map geometry.</summary>
         public static void RebuildGearUiAndMenuBatch()
         {
@@ -184,7 +208,7 @@ namespace LR2.EditorTools
         [MenuItem("LR2/Configure Build Icon & Version", priority = 35)]
         public static void ConfigureBuildIdentity()
         {
-            PlayerSettings.bundleVersion = "11.24.26.2";
+            PlayerSettings.bundleVersion = "11.24.26.3";
             EditorUserBuildSettings.buildScriptsOnly = false;
             const string iconPath = "Assets/LR2/UI/Icons/LR2_AppIcon.png";
             Directory.CreateDirectory(Path.GetDirectoryName(iconPath));

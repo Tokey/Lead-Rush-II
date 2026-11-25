@@ -35,12 +35,12 @@ namespace LR2.Weapons
         [Tooltip("Tactical reload: with a round still chambered, the empty-reload clip is cut shortly after the new magazine seats (no charging handle).")]
         [SerializeField] private bool tacticalReload = true;
         [Tooltip("How long after the mag-in cue (fraction of the full clip) a tactical reload ends and blends back to ready.")]
-        [SerializeField, Range(0f, 0.3f)] private float tacticalEndAfterMagIn = 0.075f;
+        [SerializeField, Range(0f, 0.3f)] private float tacticalEndAfterMagIn = 0.025f;
         [Tooltip("A tactical reload keeps the chambered round, so the gun holds magazine + 1 (30+1).")]
         [SerializeField] private bool chamberedRoundBonus = true;
         private FPSAnimationAsset _reloadRuntime, _tacticalRuntime;
-        // B94 + B136k + B139: Play slightly past mag-in (~7.5% of clip) so the magazine seats fully before blending back.
-        private const float TacticalSpeedUp = 1.15f, TacticalBlendOut = 0.20f, EmptyBlendOut = 0.18f;
+        // Cut tactical reload shortly after mag-in so the empty-reload twist toward bolt catch/charging handle never plays.
+        private const float TacticalSpeedUp = 1.22f, TacticalBlendOut = 0.16f, EmptyBlendOut = 0.18f;
         private float _activeReloadRate = 1f;
         [SerializeField] private FPSCameraAnimation cameraReloadAnimation;
         [SerializeField] private FPSAnimationAsset grenadeClip;
@@ -68,6 +68,15 @@ namespace LR2.Weapons
         [SerializeField] private bool kinemationAttachments;
         [Tooltip("B125 wall-tuck gate: at full ADS only 12 % of Kinemation's collision tuck is left. Kinemation itself tucks fully.")]
         [SerializeField] private bool gateWallTuckInAds = true;
+
+        [Header("LR2 Unified Scopes & Iron Sights")]
+        [SerializeField] private SkinnedMeshRenderer primaryBodyRenderer;
+        [SerializeField] private Mesh ironSightsMesh;
+        [SerializeField] private Mesh scopedNoIronsMesh;
+        [SerializeField] private Material[] ironSightsMaterials;
+        [SerializeField] private Material[] scopedNoIronsMaterials;
+        [SerializeField] private Transform ironAimPoint;
+        [SerializeField] private List<GameObject> ironSightOnlyObjects = new List<GameObject>();
 
         [Header("LR2 Gunplay")]
         [SerializeField] private WeaponDefinition definition;
@@ -116,9 +125,18 @@ namespace LR2.Weapons
         public override float GrenadeReleaseDelay(float releaseFraction) => FPSAnimationAsset.IsValid(grenadeClip) && grenadeClip.clip != null
             ? grenadeClip.clip.length * Mathf.Clamp(releaseFraction, 0.1f, 0.7f) / Mathf.Max(0.1f, grenadeThrowRate)
             : base.GrenadeReleaseDelay(releaseFraction);
-        /// <summary>B136: the sight the gun is aimed through (null = its default aim point / iron sights).</summary>
-        public ScopeAttachment ActiveScope => scopeGroups.Count > 0 ? scopeGroups[_scopeIndex].GetActiveAttachment() : null;
+        /// <summary>The sight the gun is aimed through (null = iron sights / default aim point).</summary>
+        public ScopeAttachment ActiveScope => !_usingIronSights && scopeGroups.Count > 0 ? scopeGroups[_scopeIndex].GetActiveAttachment() : null;
         public bool UsesKinemationAttachments => kinemationAttachments;
+        public Transform ActiveAimPointTransform => _entity != null ? _entity.defaultAimPoint : null;
+        public bool IsSightLockEligible => Owner != null && Owner.IsLocalPlayer && !Owner.IsDead && !IsReloading;
+        public RecoilAnimation LiveRecoilAnimation => _recoilAnimation;
+        public bool HasUnifiedScopes => scopeGroups != null && scopeGroups.Count > 0 && scopeGroups[0].attachments != null && scopeGroups[0].attachments.Count >= 2 && (ironAimPoint != null || scopedNoIronsMesh != null);
+        public int CurrentScopeChoice => _currentScopeChoice;
+        public bool IsUsingIronSights => _usingIronSights;
+        public Mesh IronSightsMesh => ironSightsMesh;
+        public Mesh ScopedNoIronsMesh => scopedNoIronsMesh;
+        public Transform IronAimPoint => ironAimPoint;
         private bool _suppressorFitted;
 
         public bool CanFire => Owner != null && !IsReloading && AmmoInMagazine > 0 && Time.time >= _equipReadyAt && Owner.CanShootNow;
@@ -150,13 +168,19 @@ namespace LR2.Weapons
         private IPlayablesController _playables;
         private FPSCameraController _cameraController;
         private FPSAnimator _fpsAnimator;
+        private FPSBoneController _boneController;
         private FPSAnimatorEntity _entity;
         private RecoilAnimation _recoilAnimation;
         private RecoilPattern _recoilPattern;
         private Animator _weaponAnimator;
         private int _scopeIndex;
+        private int _configuredScopeChoice = -1;
+        private int _currentScopeChoice = -1;
+        private bool _usingIronSights;
         private Transform _baseDefaultAimPoint;
         private bool _baseAimPointCached;
+        private static readonly FieldInfo ScopeActiveIndexField = typeof(AttachmentGroup<ScopeAttachment>).GetField(
+            "_activeIndex", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
         // Gunplay state
         private FireMode _fireMode = FireMode.Auto;
@@ -296,6 +320,7 @@ namespace LR2.Weapons
             EnsureAmmo();
 
             _fpsAnimator = owner.FPSAnimator;
+            _boneController = owner.GetComponent<FPSBoneController>();
             _entity = GetComponent<FPSAnimatorEntity>();
             if (_entity != null && !_baseAimPointCached)
             {
@@ -341,12 +366,95 @@ namespace LR2.Weapons
             if (_fpsAnimator != null) _fpsAnimator.LinkAnimatorLayer(Owner != null ? Owner.OwnMotion(unEquipMotion) : unEquipMotion);
         }
 
+        public void SetConfiguredScopeChoice(int choice)
+        {
+            _configuredScopeChoice = Mathf.Clamp(choice, 0, LR2.Game.LR2Session.ScopeNames.Length - 1);
+            if (_entity != null) ApplyScopeChoice(_configuredScopeChoice);
+        }
+
+        public void ApplyScopeChoice(int choice)
+        {
+            if (scopeGroups == null || (scopeGroups.Count == 0 && ironAimPoint == null)) return;
+            choice = Mathf.Clamp(choice, 0, LR2.Game.LR2Session.ScopeNames.Length - 1);
+            _configuredScopeChoice = _currentScopeChoice = choice;
+            bool iron = choice == 0;
+            _usingIronSights = iron;
+
+            if (primaryBodyRenderer != null)
+            {
+                Mesh targetMesh = iron ? ironSightsMesh : scopedNoIronsMesh;
+                if (targetMesh != null && primaryBodyRenderer.sharedMesh != targetMesh)
+                    primaryBodyRenderer.sharedMesh = targetMesh;
+                Material[] targetMats = iron ? ironSightsMaterials : scopedNoIronsMaterials;
+                if (targetMats != null && targetMats.Length > 0 && targetMesh != null && targetMats.Length == targetMesh.subMeshCount)
+                    primaryBodyRenderer.sharedMaterials = targetMats;
+            }
+            if (ironSightOnlyObjects != null)
+            {
+                for (int i = 0; i < ironSightOnlyObjects.Count; i++)
+                    if (ironSightOnlyObjects[i] != null) ironSightOnlyObjects[i].SetActive(iron);
+            }
+
+            Transform chosenAim = iron ? (ironAimPoint != null ? ironAimPoint : _baseDefaultAimPoint) : _baseDefaultAimPoint;
+            ScopeAttachment activeScope = null;
+
+            if (scopeGroups.Count > 0)
+            {
+                _scopeIndex = 0;
+                int optIdx = Mathf.Max(0, choice - 1);
+                var primaryGroup = scopeGroups[0];
+                int groupOpt = primaryGroup.attachments != null && primaryGroup.attachments.Count > 0
+                    ? Mathf.Clamp(optIdx, 0, primaryGroup.attachments.Count - 1)
+                    : 0;
+                if (ScopeActiveIndexField != null) ScopeActiveIndexField.SetValue(primaryGroup, groupOpt);
+
+                for (int g = 0; g < scopeGroups.Count; g++)
+                {
+                    var grp = scopeGroups[g];
+                    if (grp?.attachments == null) continue;
+                    for (int a = 0; a < grp.attachments.Count; a++)
+                    {
+                        var att = grp.attachments[a];
+                        if (att == null) continue;
+                        bool enable = !iron && g == 0 && a == groupOpt;
+                        att.gameObject.SetActive(enable);
+                        if (enable) activeScope = att;
+                    }
+                }
+            }
+
+            if (!iron && activeScope != null)
+            {
+                if (activeScope.transform.parent != null && !activeScope.transform.parent.gameObject.activeSelf)
+                    activeScope.transform.parent.gameObject.SetActive(true);
+                if (activeScope.aimPoint != null) chosenAim = activeScope.aimPoint;
+                if (_fpsAnimator != null && activeScope.attachmentLayerSettings != null)
+                    foreach (var s in activeScope.attachmentLayerSettings)
+                        if (s != null) _fpsAnimator.LinkAnimatorLayer(s);
+            }
+
+            if (_entity != null && chosenAim != null)
+                _entity.defaultAimPoint = chosenAim;
+            if (_boneController != null && _entity != null)
+                _boneController.UpdateEntity(_entity);
+
+            UpdateScopeCameras();
+            UpdateFieldOfView(Owner != null && Owner.IsAiming);
+        }
+
         private void InitializeAttachments()
         {
             if (kinemationAttachments)
             {
-                // B136: Kinemation's demo behaviour. Every group shows its active attachment (main optic AND canted sight,
-                // grip, muzzle device) and links that attachment's layer settings (left-hand grip pose, sight offsets).
+                if (_configuredScopeChoice >= 0 && (scopeGroups.Count > 0 || ironAimPoint != null))
+                {
+                    ShowOnlyActive(barrelAttachments);
+                    ShowOnlyActive(gripAttachments);
+                    ApplyScopeChoice(_configuredScopeChoice);
+                    RefreshSuppressor();
+                    return;
+                }
+                // Default behaviour when no explicit scope override was configured: sync iron-sight mesh & active scope.
                 ShowOnlyActive(barrelAttachments);
                 ShowOnlyActive(gripAttachments);
                 foreach (var group in scopeGroups) ShowOnlyActive(group);
@@ -355,6 +463,7 @@ namespace LR2.Weapons
                 _scopeIndex = 0;
                 if (_entity != null && _baseAimPointCached) _entity.defaultAimPoint = _baseDefaultAimPoint;
                 UpdateAimPoint();
+                SyncIronSightMeshState();
                 RefreshSuppressor();
                 return;
             }
@@ -374,6 +483,28 @@ namespace LR2.Weapons
             _scopeIndex = 0;
             if (scopeGroups.Count == 0) return;
             UpdateAimPoint();
+            SyncIronSightMeshState();
+        }
+
+        private void SyncIronSightMeshState()
+        {
+            var sc = ActiveScope;
+            bool iron = sc == null;
+            _usingIronSights = iron && ironAimPoint != null;
+            if (primaryBodyRenderer != null)
+            {
+                Mesh target = iron ? ironSightsMesh : scopedNoIronsMesh;
+                if (target != null && primaryBodyRenderer.sharedMesh != target)
+                    primaryBodyRenderer.sharedMesh = target;
+                Material[] targetMats = iron ? ironSightsMaterials : scopedNoIronsMaterials;
+                if (targetMats != null && targetMats.Length > 0 && target != null && targetMats.Length == target.subMeshCount)
+                    primaryBodyRenderer.sharedMaterials = targetMats;
+            }
+            if (ironSightOnlyObjects != null)
+                for (int i = 0; i < ironSightOnlyObjects.Count; i++)
+                    if (ironSightOnlyObjects[i] != null) ironSightOnlyObjects[i].SetActive(iron);
+            if (_usingIronSights && _entity != null && ironAimPoint != null)
+                _entity.defaultAimPoint = ironAimPoint;
         }
 
         /// <summary>
@@ -396,6 +527,11 @@ namespace LR2.Weapons
 
         private void UpdateAimPoint()
         {
+            if (_usingIronSights && _entity != null && ironAimPoint != null)
+            {
+                _entity.defaultAimPoint = ironAimPoint;
+                return;
+            }
             if (scopeGroups.Count == 0 || _entity == null) return;
             var scope = scopeGroups[_scopeIndex].GetActiveAttachment();
             if (scope != null && scope.aimPoint != null) _entity.defaultAimPoint = scope.aimPoint;
@@ -451,10 +587,18 @@ namespace LR2.Weapons
             else if (attachmentTypeIndex == 2) gripAttachments.CycleAttachments(_fpsAnimator);
             else
             {
-                if (scopeGroups.Count == 0) return;
-                scopeGroups[_scopeIndex].CycleAttachments(_fpsAnimator);
-                UpdateAimPoint();
-                UpdateFieldOfView(Owner != null && Owner.IsAiming);
+                if (HasUnifiedScopes)
+                {
+                    int next = (_currentScopeChoice + 1) % LR2.Game.LR2Session.ScopeNames.Length;
+                    ApplyScopeChoice(next);
+                }
+                else
+                {
+                    if (scopeGroups.Count == 0) return;
+                    scopeGroups[_scopeIndex].CycleAttachments(_fpsAnimator);
+                    UpdateAimPoint();
+                    UpdateFieldOfView(Owner != null && Owner.IsAiming);
+                }
             }
             if (definition != null && definition.audio != null) LR2Audio.PlayAt(definition.audio.fireModeSwitch, transform.position, 0.7f);
         }
@@ -502,21 +646,25 @@ namespace LR2.Weapons
                             _runtimeAdsSettings = Instantiate(origAds);
                             _runtimeAdsSettings.name = $"{origAds.name}_{name}_Runtime";
                             _runtimeAdsSettings.hideFlags = HideFlags.HideAndDontSave;
+                            // Eliminate static hip-snapshot _additivePose blend bias and bind directly to Camera.
+                            _runtimeAdsSettings.positionBlend = default;
+                            _runtimeAdsSettings.rotationBlend = default;
+                            _runtimeAdsSettings.cameraBlend = 0f;
+                            _runtimeAdsSettings.aimTargetBone = new KINEMATION.Shared.KAnimationCore.Runtime.Rig.KRigElement(-1, "Camera");
                             _runtimeProfile.settings[i] = _runtimeAdsSettings;
                         }
                         else if (gateWallTuckInAds && _runtimeProfile.settings[i] is KINEMATION.FPSAnimationFramework.Runtime.Layers.CollisionLayer.CollisionLayerSettings origCol)
                         {
-                            // B125 (user 11-19: "during ADS, when I hit other obstacles"; -lr2AdsWallCheck: the full wall tuck swung
-                            // the rifle 23 deg off the sight line in ADS). Same gate as LR2ContentBuilder.TuneHumanoidCollision,
-                            // applied here too so it holds without a rebuild: at full ADS 12 % of the tuck is left.
+                            // Gate wall collision out completely at full ADS so obstacles/cover parapets never deflect sights off target.
                             var col = Instantiate(origCol);
                             col.name = $"{origCol.name}_{name}_Runtime";
                             col.hideFlags = HideFlags.HideAndDontSave;
+                            col.layerMask = LR2Layers.EnvironmentMask;
                             var blends = new List<CurveBlend>();
                             if (col.curveBlending != null)
                                 foreach (var b in col.curveBlending)
                                     if (b.name != FPSANames.AimingWeight) blends.Add(b);
-                            blends.Add(new CurveBlend { name = FPSANames.AimingWeight, mode = ECurveBlendMode.Mask, clampMin = 0.12f, source = ECurveSource.Input });
+                            blends.Add(new CurveBlend { name = FPSANames.AimingWeight, mode = ECurveBlendMode.Mask, clampMin = 0f, source = ECurveSource.Input });
                             col.curveBlending = blends;
                             _runtimeProfile.settings[i] = col;
                         }
@@ -535,14 +683,11 @@ namespace LR2.Weapons
             float hipFovV = LR2Settings.VerticalFov(hipFovH, viewCam != null ? viewCam.aspect : 16f / 9f);
             float adsFovV = hipFovV * (definition != null ? definition.adsFovMultiplier : 0.8f);
             float sens = 1f;
-            if (scopeGroups.Count != 0)
+            var scope = ActiveScope;
+            if (scope != null)
             {
-                var scope = scopeGroups[_scopeIndex].GetActiveAttachment();
-                if (scope != null)
-                {
-                    adsFovV *= scope.aimFovZoom > 0.01f ? Mathf.Min(1f, scope.aimFovZoom) : 1f;
-                    if (aiming) sens = scope.sensitivityMultiplier;
-                }
+                adsFovV *= scope.aimFovZoom > 0.01f ? Mathf.Min(1f, scope.aimFovZoom) : 1f;
+                if (aiming) sens = scope.sensitivityMultiplier;
             }
             float fov = aiming ? adsFovV : hipFovV;
             if (_userInput != null) _userInput.SetValue("SensitivityMultiplier", sens);
@@ -579,7 +724,7 @@ namespace LR2.Weapons
 
         public override void OnCycleScope()
         {
-            if (scopeGroups.Count == 0) return;
+            if (_usingIronSights || scopeGroups.Count <= 1) return;
             _scopeIndex = (_scopeIndex + 1) % scopeGroups.Count;
             UpdateAimPoint();
             UpdateFieldOfView(Owner != null && Owner.IsAiming);
@@ -653,11 +798,11 @@ namespace LR2.Weapons
         }
 
         /// <summary>Per-shot climb = demo pattern x weapon scale x (ADS multiplier while aiming). Read by RecoilPattern.OnFireStart.</summary>
-        private void ScalePatternForShot(bool aiming, bool shot = false)
+        private void ScalePatternForShot(bool aiming, bool shot = false, float extraScale = 1f)
         {
             if (_patternRuntime == null) return;
-            float v = definition != null ? definition.recoilPatternScale : 1f;
-            float h = definition != null ? definition.recoilPatternHorizontalScale : 1f;
+            float v = (definition != null ? definition.recoilPatternScale : 1f) * extraScale;
+            float h = (definition != null ? definition.recoilPatternHorizontalScale : 1f) * extraScale;
             float ads = aiming && definition != null ? definition.adsRecoilMultiplier : 1f;
             if (!shot)
             {
@@ -789,12 +934,17 @@ namespace LR2.Weapons
                 _weaponAnimator.speed = 1f;
                 _weaponAnimator.Play("Fire", 0, 0f);
             }
+            bool isBot = combatant == null || !combatant.IsLocalPlayer;
             if (_cameraController != null) _cameraController.PlayCameraShake(cameraShake);
             if (fireClip != null && _playables != null) _playables.PlayAnimation(fireClip);
-            if (_recoilAnimation != null && recoilData != null) _recoilAnimation.Play();
+            if (_recoilAnimation != null && recoilData != null)
+            {
+                if (isBot) _recoilAnimation.isAiming = true;
+                _recoilAnimation.Play();
+            }
             if (_recoilPattern != null)
             {
-                ScalePatternForShot(owner.IsAiming, true);
+                ScalePatternForShot(owner.IsAiming, true, isBot ? 0.16f : 1f);
                 _recoilPattern.OnFireStart();
             }
             else
@@ -808,7 +958,7 @@ namespace LR2.Weapons
 
             if (definition != null)
             {
-                Vector2 kick = definition.cameraKick * (owner.IsAiming ? definition.adsKickMultiplier : 1f);
+                Vector2 kick = definition.cameraKick * (owner.IsAiming ? definition.adsKickMultiplier : 1f) * (isBot ? 0.20f : 1f);
                 owner.AddViewKick(new Vector2(kick.y * Mathf.Clamp(_sprayWeaveNow * 2f, -1f, 1f), -kick.x)); // B47: side follows the weave
             }
 
@@ -1217,16 +1367,17 @@ namespace LR2.Weapons
                 _tacticalRuntime = Instantiate(reloadClip);
                 var bt = _tacticalRuntime.blendTime;
                 bt.rateScale = ReloadRate * TacticalSpeedUp;
+                bt.blendOutTime = TacticalBlendOut;
                 _tacticalRuntime.blendTime = bt;
             }
             _reloadDuration = hasClip
                 ? reloadClip.clip.length / _activeReloadRate
                 : (definition != null ? (_reloadEmpty ? definition.emptyReloadTime : definition.reloadTime) / reloadSpeedMultiplier : 2.4f);
             float emptyEnd = (hasClip && cues != null) ? Mathf.Clamp(cues.emptyReloadEndAt, 0.60f, 0.96f) : (hasClip ? 0.84f : 1f);
-            float tacTarget = cues != null ? cues.magInAt + Mathf.Max(tacticalEndAfterMagIn, 0.07f) : 0.60f;
-            float tacMax = cues != null && cues.boltAt > cues.magInAt + 0.04f ? cues.boltAt - 0.035f : 0.92f;
+            float tacTarget = cues != null ? cues.magInAt + Mathf.Max(tacticalEndAfterMagIn, 0.02f) : 0.56f;
+            float tacMax = cues != null && cues.boltAt > cues.magInAt + 0.03f ? cues.boltAt - 0.035f : 0.90f;
             _reloadEndAt = tacticalNow
-                ? Mathf.Clamp(tacTarget, cues.magInAt + 0.06f, Mathf.Min(tacMax, 0.92f))
+                ? Mathf.Clamp(tacTarget, cues.magInAt + 0.02f, Mathf.Min(tacMax, 0.90f))
                 : emptyEnd;
             _reloadStart = Time.time;
             IsReloading = true;

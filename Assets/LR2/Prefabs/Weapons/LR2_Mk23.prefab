@@ -494,7 +494,7 @@ MonoBehaviour:
   reloadPlayRate: 0.85
   reloadSpeedMultiplier: 1.5
   tacticalReload: 1
-  tacticalEndAfterMagIn: 0.075
+  tacticalEndAfterMagIn: 0.025
   chamberedRoundBonus: 1
   cameraReloadAnimation: {fileID: 11400000, guid: 07fc9d875c58d584a8f0dcdaa9242f7b, type: 2}
   grenadeClip: {fileID: 11400000, guid: 9f809575cb33274409176e3b6e84b708, type: 2}
@@ -521,6 +521,13 @@ MonoBehaviour:
     - {fileID: 2660157611918459829}
   kinemationAttachments: 1
   gateWallTuckInAds: 0
+  primaryBodyRenderer: {fileID: 0}
+  ironSightsMesh: {fileID: 0}
+  scopedNoIronsMesh: {fileID: 0}
+  ironSightsMaterials: []
+  scopedNoIronsMaterials: []
+  ironAimPoint: {fileID: 0}
+  ironSightOnlyObjects: []
   definition: {fileID: 11400000, guid: d91ad8efaf4230c4caaf7778fc39d89f, type: 2}
   muzzle: {fileID: 4739317030417599408}
   muzzleFlash: {fileID: 8255759710322799496}

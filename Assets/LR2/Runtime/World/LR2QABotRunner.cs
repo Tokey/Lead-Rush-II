@@ -298,7 +298,7 @@ namespace LR2.World
 
             // B31: Starter title screen support before Main Menu
             Check(LR2LoadingIntro.HasTitlePromptSupport, "Intro.StarterTitleScreenSupported", "supported=True");
-            Check(string.Equals(Application.version, "11.24.26.2", StringComparison.Ordinal), "Build.VersionStamped",
+            Check(string.Equals(Application.version, "11.24.26.3", StringComparison.Ordinal), "Build.VersionStamped",
                 $"version={Application.version}");
 
             // Capture main-menu visual screenshot + close-up Ghost mask / NATO olive uniform verification frame
@@ -1799,7 +1799,7 @@ namespace LR2.World
             var gun = player.ActiveFirearm != null ? player.ActiveFirearm : (player.Items.Count > 0 ? player.Items[0] as LR2Firearm : null);
             var tacField = typeof(LR2Firearm).GetField("tacticalEndAfterMagIn", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             float tacVal = gun != null && tacField != null ? (float)tacField.GetValue(gun) : 0f;
-            bool tacFieldOk = tacVal >= 0.06f;
+            bool tacFieldOk = tacVal >= 0.02f;
             bool stayedPastMag = false;
             if (gun != null && gun.Definition != null && gun.Definition.audio != null)
             {
@@ -1982,15 +1982,31 @@ namespace LR2.World
 
             bool hitNext = RaycastHitsButton(menu.endRestartButton, out string nextHit);
             bool hitEnd = RaycastHitsButton(menu.endMenuButton, out string endHit);
-            Button r3Btn = barTf != null ? barTf.Find("R_3")?.GetComponent<Button>() : null;
-            Button r1Btn = barTf != null ? barTf.Find("R_1")?.GetComponent<Button>() : null;
-            bool hitRate = RaycastHitsButton(r3Btn, out string rateHit);
+            Slider rateSlider = barTf != null ? barTf.Find("RateSlider")?.GetComponent<Slider>() : null;
+            bool hitRate = false;
+            string rateHit = "none";
+            if (rateSlider != null && EventSystem.current != null)
+            {
+                var sc = new Vector3[4];
+                ((RectTransform)rateSlider.transform).GetWorldCorners(sc);
+                var ped = new PointerEventData(EventSystem.current) { position = (sc[0] + sc[2]) * 0.5f };
+                var res = new List<RaycastResult>();
+                EventSystem.current.RaycastAll(ped, res);
+                if (res.Count > 0)
+                {
+                    rateHit = $"{res[0].gameObject.name}(total={res.Count})";
+                    hitRate = res[0].gameObject.GetComponentInParent<Slider>() == rateSlider;
+                }
+            }
             Check(hitNext && hitEnd && hitRate, "ExperimentEnd.ButtonsRaycastClickable",
                 $"next={nextHit}({hitNext}) end={endHit}({hitEnd}) rate={rateHit}({hitRate})");
 
-            // 4. Verify rating deduplication on repeated clicks + telemetry CSV output
-            if (r1Btn != null) r1Btn.onClick.Invoke();
-            if (r3Btn != null) r3Btn.onClick.Invoke();
+            // 4. Verify rating deduplication on continuous slider changes + telemetry CSV output
+            if (rateSlider != null)
+            {
+                rateSlider.value = 32f;
+                rateSlider.value = 75f;
+            }
             int ratingCount = ExperimentSessionRunner.Ratings.Count;
             float ratingVal = ratingCount > 0 ? ExperimentSessionRunner.Ratings[0].humanLikenessRating01 : -1f;
             Check(ratingCount == 1 && Mathf.Abs(ratingVal - 0.75f) < 0.01f, "ExperimentEnd.RatingDeduplicated",

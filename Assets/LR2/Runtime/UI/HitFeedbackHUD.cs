@@ -250,7 +250,8 @@ namespace LR2.UI
             {
                 _killTime = now;
                 _headKill = head;
-                _skullRim.color = head ? new Color(1f, 0.72f, 0.2f, 1f) : new Color(0f, 0f, 0f, 0f);
+                if (_skullRim != null)
+                    _skullRim.color = head ? new Color(1f, 0.72f, 0.2f, 1f) : new Color(0f, 0f, 0f, 0f);
             }
 
             if (LR2Settings.HitmarkerSound) PlaySounds(head, killed, armorHit, armorBroke);

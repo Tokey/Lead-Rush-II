@@ -169,7 +169,9 @@ namespace LR2.Game
 
         private const string MapPrefKey = "LR2.SelectedMap";
         private const string WeaponPrefKey = "LR2.SelectedPrimaryWeapon.v2";
+        private const string ScopePrefKey = "LR2.SelectedPrimaryScope.v1";
         public static readonly string[] PrimaryWeaponNames = { "MK18", "AK-12", "AK-74N", "FAL" };
+        public static readonly string[] ScopeNames = { "IRON SIGHTS", "HOLO (EOTECH)", "RED DOT", "ACOG 4X", "1P29 4X", "SNIPER 8X" };
         public static readonly string[] BotTeamModeLabels =
         {
             "SQUADS (ALLIES VS ENEMIES)",
@@ -187,6 +189,17 @@ namespace LR2.Game
             {
                 int v = Mathf.Clamp(value, 0, PrimaryWeaponNames.Length - 1);
                 PlayerPrefs.SetInt(WeaponPrefKey, v);
+                PlayerPrefs.Save();
+            }
+        }
+
+        public static int SelectedPrimaryScope
+        {
+            get => Mathf.Clamp(PlayerPrefs.GetInt(ScopePrefKey, 1), 0, ScopeNames.Length - 1);
+            set
+            {
+                int v = Mathf.Clamp(value, 0, ScopeNames.Length - 1);
+                PlayerPrefs.SetInt(ScopePrefKey, v);
                 PlayerPrefs.Save();
             }
         }
