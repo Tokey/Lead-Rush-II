@@ -1,5 +1,13 @@
 # Lead Rush II — Comprehensive LLM Bot Behavior Study & Humanization Roadmap
 
+> **Read this first (Claude claude-opus-5-5, 2026-11-26).** A code and log review found problems that limit what this study can claim:
+> - **Few answered calls.** Only 4 to 7 of 9 Groq calls succeeded per 75-second match in the bench, and 43 % of the 176 calls in the developer's 11-24 session hit the free tier's rate limit. Bots spent much of each match without orders.
+> - **Unequal teams.** Some matchups gave the LLM team stronger bots (M2: Regular + LLM against Recruit rule bots), so the "Commander 5–1" record mostly measures bot tiers.
+> - **Cut-off logs.** The request log kept only the first 140 characters of each reply, so the order mix in Finding 3 under-counts every order after the first one or two.
+> - **Unverified human-likeness.** Match telemetry recorded the configured LLM mode, not whether the LLM answered, so the 65.1 % LLM score cannot be tied to the LLM.
+>
+> Fixed in code on 11-26 (B168, needs a live run): a request in flight during a scene change no longer leaves the client busy for the rest of the session, gpt-oss requests use low reasoning effort so the JSON fits, and the log keeps whole replies. Re-run M1-M8 with equal tiers before quoting these results. Current explainer: [LR2 LLM Bots](https://claude.ai/artifact/HhDwuywk5baY69hsUqXs9P) (developer's claude.ai), source `Docs/Bot/src/llm-bots.html`.
+
 This empirical study evaluates **Lead Rush II**'s live **Groq-hosted LLM bot integration** against deterministic C# tier bots (**Recruit, Regular, Hardened, Veteran**) across **8 sequential 75-second 4v4 AI-vs-AI Saltworks benchmarks** (`build 11.23.26.1`), dissects observed tactical strengths and API bottlenecks, surveys published autonomous agent architectures, and defines a concrete roadmap to make bots play and shoot like human FPS players.
 
 - **Interactive Animated Architecture Lab:** [`Docs/Bot/llm-architecture.html`](../Bot/llm-architecture.html)

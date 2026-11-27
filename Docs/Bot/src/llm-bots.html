@@ -1,0 +1,148 @@
+<title>LR2 LLM Bots</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: one reading column for the story, wide blocks for the pipeline and the tables; radio-ops palette (slate, olive, amber orders). */
+:root {
+  --bg: #f4f5f1; --panel: #ffffff; --ink: #1d2320; --muted: #5a645e; --line: #d6dbd4;
+  --accent: #b5651d; --accent-soft: #f6e7d6; --ok: #3f7a4a; --warn: #a8791c; --bad: #b23b32; --chip: #e9ece6;
+  --display: "Space Grotesk", "Segoe UI", sans-serif; --body: "IBM Plex Sans", "Segoe UI", sans-serif; --mono: "IBM Plex Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141816; --panel: #1c211e; --ink: #e5e9e4; --muted: #9aa59e; --line: #2f3632;
+  --accent: #e39a52; --accent-soft: #3a2a1b; --ok: #79b884; --warn: #d6aa4c; --bad: #e07a6f; --chip: #262c28; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #141816; --panel: #1c211e; --ink: #e5e9e4; --muted: #9aa59e; --line: #2f3632;
+  --accent: #e39a52; --accent-soft: #3a2a1b; --ok: #79b884; --warn: #d6aa4c; --bad: #e07a6f; --chip: #262c28; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 400 15px/1.6 var(--body); }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: clamp(26px, 4vw, 36px); font-weight: 600; }
+h2 { font-size: 21px; font-weight: 600; }
+h3 { font-size: 16px; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+code, .mono { font-family: var(--mono); font-size: 0.9em; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+section { display: grid; gap: 12px; min-width: 0; }
+.lede { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { background: var(--chip); border-radius: 999px; padding: 3px 10px; font: 500 12px/1.6 var(--mono); }
+.chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); } .chip.bad { color: var(--bad); }
+.pipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 6px; min-width: 0; }
+.step b { font-family: var(--display); font-weight: 600; }
+.step span { color: var(--muted); font-size: 13.5px; }
+.step.cloud { border-color: var(--accent); background: var(--accent-soft); }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 12px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bars { display: grid; gap: 8px; }
+.bar { display: grid; grid-template-columns: 150px 1fr 64px; gap: 10px; align-items: center; font-size: 14px; }
+.bar .track { height: 14px; background: var(--chip); border-radius: 4px; overflow: hidden; display: flex; }
+.bar .seg { height: 100%; }
+.seg.ok { background: var(--ok); } .seg.warn { background: var(--warn); } .seg.bad { background: var(--bad); }
+.bar .n { font: 500 13px var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 8px; min-width: 0; }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.verdict { border-left: 3px solid var(--warn); padding-left: 12px; }
+.verdict.bad { border-color: var(--bad); }
+footer { color: var(--muted); font-size: 13px; }
+@media (max-width: 520px) { .bar { grid-template-columns: 1fr; } .bar .n { text-align: left; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <div class="eyebrow">Lead Rush II · build 11.26.26.1 · read from the code, not from earlier docs</div>
+    <h1>How the LLM bots work, and what the logs say about them</h1>
+    <p class="lede">The bots always aim, move and shoot with LR2's own code, every frame. The LLM is a squad leader on a radio: every few seconds it reads what the team has seen and sends orders back. This page describes that loop as the code runs it, the failure rates measured in real logs, what changed on 11-26, and which study numbers to trust.</p>
+    <div class="chips">
+      <span class="chip">Groq free tier</span><span class="chip">openai/gpt-oss-20b first</span><span class="chip">orders every 5 to 18 s</span>
+      <span class="chip ok">fair play: team-seen info only</span><span class="chip bad">43 % of calls rate-limited (11-24)</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="eyebrow">The loop</div>
+    <h2>One order cycle</h2>
+    <div class="pipe">
+      <div class="step"><b>1 · Team picture</b><span><code>LLMCommander</code> writes a JSON snapshot: own soldiers (health, armour, ammo, what each is doing), the map bounds and objective, and enemies someone on the team saw in the last 20 s, with who saw them.</span></div>
+      <div class="step"><b>2 · Send</b><span><code>GroqClient</code> sends one request at a time, at least 2.5 s apart, 15 s timeout, JSON-only replies, up to 700 tokens.</span></div>
+      <div class="step cloud"><b>3 · Groq model</b><span>gpt-oss-20b, then llama-3.1-8b-instant, then llama-3.3-70b if a model is refused. Avatar Pilot tries the fast 8b model first.</span></div>
+      <div class="step"><b>4 · Check the orders</b><span>Each order is checked per bot. "Attack" becomes "move to where the enemy was last seen", so the LLM cannot point a bot at someone nobody has seen.</span></div>
+      <div class="step"><b>5 · Bots act</b><span><code>BotController</code> carries the order out for about 1.6× the order interval. Aim, recoil control and trigger timing stay local and run every frame.</span></div>
+    </div>
+    <p>Without an API key the commander warns once, retries the key every 5 s, and the bots play exactly like the rule bots. Keys are read from <code>GROQ_API_KEY</code>, <code>-lr2GroqKeyFile</code> or the key file in the player's data folder, and never written to logs or telemetry.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Settings › LLM integration</div>
+    <h2>The three modes</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Mode</th><th>What the LLM decides</th><th>How often</th><th>Extra calls</th></tr></thead>
+      <tbody>
+        <tr><td><b>Off</b></td><td>Nothing. Rule bots only.</td><td class="num">-</td><td>-</td></tr>
+        <tr><td><b>Commander</b></td><td>A squad plan, and per bot one order (hold, move, attack, flank, retreat, regroup, free) with a target point.</td><td class="num">every 5, 8, 12 or 18 s (setting; 8 s default)</td><td>none</td></tr>
+        <tr><td><b>Tactical Micro</b></td><td>Everything Commander does, plus stance and peek style per bot.</td><td class="num">at most every 8 s</td><td>when an ally dies, more bots spot an enemy, or a bot under fire drops below 35 % health (3.2 s apart at least)</td></tr>
+        <tr><td><b>Avatar Pilot</b></td><td>Everything above, plus 2 to 4 short timed action chunks per bot (sprint to, strafe-fire, crouch-peek, hold angle).</td><td class="num">at most every 5.5 s</td><td>same as Tactical Micro</td></tr>
+      </tbody>
+    </table></div>
+    <p>A command-line <code>-lr2LlmInterval</code> (3 to 60 s) overrides the cadence for every mode, for benches.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Measured, not modelled</div>
+    <h2>What the request logs showed</h2>
+    <div class="legend"><span><i style="background:var(--ok)"></i>answered</span><span><i style="background:var(--warn)"></i>HTTP 429 rate limit</span><span><i style="background:var(--bad)"></i>other failure (bad JSON, refused model)</span></div>
+    <div class="bars">
+      <div class="bar"><span>Developer session, 11-24 18:40-18:56 (3 LLM bots, FFA)</span><span class="track"><span class="seg ok" style="width:51.7%"></span><span class="seg warn" style="width:42.6%"></span><span class="seg bad" style="width:5.7%"></span></span><span class="n">176 calls</span></div>
+      <div class="bar"><span>Bench M1-M8, 11-23 (Commander, 4v4)</span><span class="track"><span class="seg ok" style="width:34.8%"></span><span class="seg warn" style="width:15.2%"></span><span class="seg bad" style="width:50.0%"></span></span><span class="n">92 calls</span></div>
+    </div>
+    <p>In the developer's session 91 calls were answered, 75 hit the free tier's tokens-per-minute limit and 10 failed otherwise. In the bench, 45 of the 92 calls came back as cut-off JSON: gpt-oss reasons before it answers, and at its default effort the reasoning used up the 700-token budget. Sources: the <code>llm_*.jsonl</code> request logs in the player data folder and the bench logs.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Reading the 11-23 / 11-24 study</div>
+    <h2>Which numbers hold up</h2>
+    <div class="cols">
+      <div class="card verdict"><h3>"Commander 5–1 against rule bots"</h3><p>Weak. Only 4 to 7 of 9 calls succeeded per 75-second match, so bots spent much of each match without orders. Some matchups gave the LLM team better bots than the other side (M2: Regular + LLM against Recruit rule bots), which wins matches on its own.</p></div>
+      <div class="card verdict"><h3>"LLM bots score 65.1 % human-likeness"</h3><p>Unverified. Match telemetry recorded the configured LLM mode, not whether the LLM actually answered. A match where every call failed looks the same in the data as one where the LLM led all game.</p></div>
+      <div class="card verdict bad"><h3>Order mix (for example "hold 39 %")</h3><p>Biased. The study log kept only the first 140 characters of each reply, so orders after the first one or two per reply were never counted.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">11-26</div>
+    <h2>Fixed, and still open</h2>
+    <div class="cols">
+      <div class="card"><h3>Fixed in code (compiles; needs a live run)</h3><ul>
+        <li>A scene change during a request no longer leaves the client "busy" for the rest of the session. Before, every LLM bot silently turned into a rule bot after a match restart or an experiment's next match.</li>
+        <li>gpt-oss requests ask for low reasoning effort, so the JSON answer fits in the token budget.</li>
+        <li>The study log keeps the whole reply (up to 4,000 characters, properly escaped).</li>
+      </ul></div>
+      <div class="card"><h3>Still open</h3><ul>
+        <li>Pace requests by Groq's remaining-tokens header instead of a fixed 2.5 s gap; back off longer after a 429.</li>
+        <li>One shared commander for all solo LLM bots in free-for-all, instead of one per bot.</li>
+        <li>Write the LLM's health into each match's <code>Meta_*.json</code> (requests, answered, rate-limited, orders) so analyses can drop matches where it never ran.</li>
+        <li>Re-run M1-M8 with equal bot tiers on both sides, then redo the order mix and the human-likeness score.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Next run</div>
+    <h2>Getting a clean LLM measurement</h2>
+    <ul style="margin:0;padding-left:18px;display:grid;gap:6px;max-width:72ch">
+      <li>Use the same difficulty tier on both teams, Commander mode, 12 s interval, so one squad stays under the free tier's token limit.</li>
+      <li>Check the request log before trusting a match: fewer than 70 % answered calls means the bots mostly played without orders.</li>
+      <li>Count orders from the full replies in the new logs, and keep the Off-mode run as the baseline.</li>
+    </ul>
+  </section>
+
+  <footer>Code: <code>Assets/LR2/Runtime/AI/LLM/LLMCommander.cs</code>, <code>GroqClient.cs</code>; settings in <code>LR2Settings.cs</code>. Board rows B127, B149, B151, B168. The older animated page (<code>Docs/Bot/llm-architecture.html</code>) shows the maneuvers well but repeats the study claims above.</footer>
+</div>

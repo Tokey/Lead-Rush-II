@@ -6,6 +6,13 @@ Tactical first-person shooter built in **Unity 6 (`6000.5.0f1`) HDRP** ([github.
 
 ![Lead Rush II — Main Menu & Tactical Recon](Docs/Media/main_menu_hero.png)
 
+**Latest (11.26.26.1, 2026-11-26): a QA pass over the 11-24 work, measured in the editor.**
+- Hands stay on the gun: a late "sight lock" that slid the gun out of the hands is gone, and the visible hands now follow the animation rig's grip (fingers within 18-19 mm instead of 36-38, thumb out of the sight).
+- Bullets land on the sight: Kinemation's own ADS centres every sight within 4 px at 1080p, and shots use the current frame's aim.
+- Iron sights work on every gun (the FAL had none, the MK18 had no rear sight); the AK-12 is the default rifle.
+- The optic no longer slides into your eye while firing, bots take the same recoil as you, and a scripted run through every stance (sprint, crouch, prone, jump, slide, deaths and respawns) shows no pops or state leaks.
+- Kinemation's own code is back to the vendor version (plus four small, documented patches), the menu and calm music got a warmer, hand-played "focus" layer, and the LLM bots got reliability fixes. See [Weapon IK](Docs/Animation/weapon-ik-report.standalone.html) and the [board](AGENT_COORDINATION.md) rows B161-B170.
+
 > **Built by 4 AI agents.** One developer directs; **Claude Code** (`claude-opus-5-5`), **Antigravity ("Gemini")** (`gemini-4-hydrogen` / `orchestrator-neon` / `argon`), **GitHub Copilot** (`gpt-5.6-luna`), and **OpenAI Codex** (`gpt-6`) write the code, verify metrics, and cross-review through a shared board. The full story — with prompts, token usage rankings (`B150`), live LLM bot benchmarks (`B149`), and data-driven human-likeness research (`B152–B158`):
 >
 > - **[How AI agents are building Lead Rush II](Docs/AI_Collaboration/README.md)** (includes per-model token usage ranking charts!)
@@ -13,7 +20,7 @@ Tactical first-person shooter built in **Unity 6 (`6000.5.0f1`) HDRP** ([github.
 > - **[Experimental `Data/` Folder & Zero-Stutter CSV Column Schema](Docs/Research/DATA_COLUMNS.md)** (`InvasionFramerate`-modeled `SessionState` / `SessionInfo` / `SessionLog` / `Ticks` / `Flicks` / `Recoil`)
 > - **[Interactive LLM Architecture, 9 Tactical Maneuvers & 20 Hz Heatmap Lab](Docs/Bot/llm-architecture.html)** (plain-English guide, 9 live key-pulsing animations & C1–C3 heatmaps)
 > - **[Who decided what: the developer's and the AI's decisions, feature by feature](Docs/AI_Collaboration/DECISION_PROVENANCE.md)**
-> - **[LLM Squad AI Study (`M1–M8` Live Groq Benchmark & Humanization Roadmap)](Docs/AI_Collaboration/LLM_BOT_STUDY.md)**
+> - **[LLM Squad AI Study (`M1–M8` Live Groq Benchmark & Humanization Roadmap)](Docs/AI_Collaboration/LLM_BOT_STUDY.md)** (read its 11-26 note first: rate limits and unequal teams limit what it shows)
 > - **[How the LLM Bot Was Implemented (C# & Groq API Guide)](Docs/Guides/LLM_BOT_IMPLEMENTATION.md)**
 > - **[How the AI agents test Lead Rush II (QA process & pose/aim telemetry)](Docs/AI_Collaboration/QA_PROCESS.md)**
 >
