@@ -108,7 +108,9 @@ and the MK23 uses `AnimatorProfile_Pistol_Humanoid`. Select the profile and pres
 - The builder writes its sway defaults once and marks the profile with the asset label `LR2SwayTuned`. After that, rebuilds leave
   the Sway layer alone. Remove the label to get the defaults back.
 - The ADS speed in `AdsLayerSettings` and the wall tuck in ADS (`CollisionLayerSettings`, 12 % at full ADS) are set per weapon at
-  run time by `LR2Firearm` (from `WeaponDefinition.adsTime`), so edit those in code, not in the profile.
+  run time by `LR2Firearm` (from `WeaponDefinition.adsTime`), so edit those in code, not in the profile. The gun and the camera zoom
+  both use LR2's fast-start curve (`LR2Firearm.AdsEaseOutCurve`), and Kinemation's aiming motion is replayed at 60 % size so it
+  finishes within 1.5x the ADS time (`SoldierController.PlayAimingMotion`). Measure a change with `aim-audit <tag> adstime`.
 - The profiles are cloned per weapon when it is equipped. Change values before pressing Play, or switch weapons to pick them up.
 - `Assets/KinemationDemo` is a paid pack and is not in git, so profile edits stay on this machine.
 

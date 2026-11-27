@@ -28,14 +28,15 @@ namespace LR2.EditorTools
     /// measuring. A second ADS pass runs with WeaponAntiClip switched off, so Kinemation's own alignment can be compared.
     /// Screenshots (ADS with screen-centre / bullet / sight marks, hip, and side close-ups of the hands) go next to the report.
     /// Batch:  -executeMethod LR2.EditorTools.LR2AimGripAudit.RunBatch [-lr2AimGripTag before]
-    /// Editor: LR2AgentBridge command "aim-audit [tag]"; the editor stays open and returns to the scene it had.
+    /// Editor: LR2AgentBridge command "aim-audit [tag] [force] [motion|strafe|adstime]"; the editor stays open and returns to the scene it had.
+    /// "adstime" times ADS in and out per gun (standing and out of a sprint) and writes ads_trace.csv.
     /// </summary>
     [InitializeOnLoad]
     public static class LR2AimGripAudit
     {
         private const string KeyActive = "LR2AimGrip.Active", KeyDone = "LR2AimGrip.Done", KeyTag = "LR2AimGrip.Tag";
         private const string KeyExit = "LR2AimGrip.Exit", KeyCode = "LR2AimGrip.Code", KeyPrevScene = "LR2AimGrip.PrevScene";
-        private const string KeyMotion = "LR2AimGrip.Motion", KeyStrafe = "LR2AimGrip.Strafe";
+        private const string KeyMotion = "LR2AimGrip.Motion", KeyStrafe = "LR2AimGrip.Strafe", KeyAdsTiming = "LR2AimGrip.AdsTiming";
         private const string Scene = "Assets/LR2/Scenes/LR2_TestRange.unity";
         private static bool _hosted;
 
@@ -58,13 +59,14 @@ namespace LR2.EditorTools
         /// Started by LR2AgentBridge in the developer's open editor. Returns an error text, or null when started.
         /// <paramref name="discardSceneChanges"/> lets an agent proceed when its own rebuild marked the open scene dirty.
         /// </summary>
-        public static string RunFromBridge(string tag, bool discardSceneChanges = false, bool motion = false, bool strafe = false) =>
-            Begin(string.IsNullOrEmpty(tag) ? "editor" : tag, false, discardSceneChanges, motion, strafe);
+        public static string RunFromBridge(string tag, bool discardSceneChanges = false, bool motion = false, bool strafe = false, bool adsTiming = false) =>
+            Begin(string.IsNullOrEmpty(tag) ? "editor" : tag, false, discardSceneChanges, motion, strafe, adsTiming);
 
-        private static string Begin(string tag, bool exitWhenDone, bool discardSceneChanges = false, bool motion = false, bool strafe = false)
+        private static string Begin(string tag, bool exitWhenDone, bool discardSceneChanges = false, bool motion = false, bool strafe = false, bool adsTiming = false)
         {
             SessionState.SetBool(KeyMotion, motion);
             SessionState.SetBool(KeyStrafe, strafe);
+            SessionState.SetBool(KeyAdsTiming, adsTiming);
             if (EditorApplication.isPlayingOrWillChangePlaymode) return "already in play mode";
             for (int i = 0; i < SceneManager.sceneCount && !discardSceneChanges; i++)
                 if (SceneManager.GetSceneAt(i).isDirty)
@@ -98,6 +100,7 @@ namespace LR2.EditorTools
             runner.Tag = SessionState.GetString(KeyTag, "run");
             runner.MotionOnly = SessionState.GetBool(KeyMotion, false);
             runner.StrafeOnly = SessionState.GetBool(KeyStrafe, false);
+            runner.AdsTimingOnly = SessionState.GetBool(KeyAdsTiming, false);
         }
 
         private static void OnPlayModeChanged(PlayModeStateChange state)
@@ -143,11 +146,13 @@ namespace LR2.EditorTools
             public string segmentAngles;     // visible vs robot direction (deg) per left thumb / index segment
         }
 
-        [DefaultExecutionOrder(20000)] // after CameraShake (10000): sees exactly the frame the player sees
+        // After CameraShake (10000). CameraShake adds its offset only while the view camera renders, so samples here are
+        // the player's frame without shot shake (none of these tests apply trauma).
+        [DefaultExecutionOrder(20000)]
         private sealed class Runner : MonoBehaviour
         {
             public string Tag;
-            public bool MotionOnly, StrafeOnly;
+            public bool MotionOnly, StrafeOnly, AdsTimingOnly;
             private const float RangeM = 25f;
             private static readonly string[] Prefabs =
             {
@@ -203,6 +208,7 @@ namespace LR2.EditorTools
                 action?.Invoke();
                 if (_sampling) SampleStability();
                 if (_strafeSampling) SampleStrafe();
+                if (_adsSampling) SampleAds();
             }
 
             /// <summary>Runs <paramref name="action"/> at the end of this frame's LateUpdate chain and waits for it.</summary>
@@ -289,6 +295,15 @@ namespace LR2.EditorTools
                     yield return StrafeFireCheck();
                     Line($"Runtime errors during audit: {_errors}");
                     Finish(0);
+                    yield break;
+                }
+
+                if (AdsTimingOnly)
+                {
+                    yield return AdsTimingCheck(items, equip, weaponBone);
+                    Line($"ADS reversal jumps: {_motionFailures}");
+                    Line($"Runtime errors during audit: {_errors}");
+                    Finish(_motionFailures > 0 ? 1 : 0);
                     yield break;
                 }
 
@@ -603,6 +618,278 @@ namespace LR2.EditorTools
                     if (room > bestRoom) { bestRoom = room; best = yaw; }
                 }
                 return best;
+            }
+
+            // ------------------------------------------------------------------ ADS timing (11-26)
+            private struct AdsSample
+            {
+                public float t;           // s since the press (or release) was issued
+                public bool aiming, canFire;
+                public Vector2 farPx;     // sight line at 25 m, px from screen centre (the angle of the sight)
+                public Vector2 nearPx;    // sight line 0.25 m past the eye point (lateral offset of the sight picture)
+                public float fov, blend, kinW;
+                public Vector3 gunPos;    // item in camera space (m)
+                public Quaternion gunRot;
+                public Vector3 camRoot, gunRoot; // camera and item in the soldier's root space (m): which of the two is moving
+            }
+
+            private readonly List<AdsSample> _adsSamples = new List<AdsSample>();
+            private readonly StringBuilder _adsTrace = new StringBuilder();
+            private bool _adsSampling;
+            private float _adsT0;
+            private float _lastTrialYaw = float.NaN;
+
+            /// <summary>
+            /// How long ADS really takes, per gun: from the frame the aim button is pressed until the sight is on target
+            /// (first within 10 px of where it comes to rest) and until it stays there, from standing and out of a sprint in
+            /// both directions, plus the zoom, the way back to the hip pose, and a trial that reverses ADS half way in both
+            /// directions to check the gun never jumps. 1080p pixels. The resting point drifts slowly with the idle head motion
+            /// (a few px), so thresholds tighter than 10 px measure that drift, not the ADS.
+            /// </summary>
+            private IEnumerator AdsTimingCheck(List<LR2Item> items, MethodInfo equip, Transform weaponBone)
+            {
+                Line("--- ADS timing (ms from the press; onTarget = sight first within 10 px of its resting point, stays10 = within 10 px from then on; rebound = rise after onTarget; maxFrame = longest frame) ---");
+                _yaw = MostOpenYaw();
+                // phase "in": a/b = sight line at 25 m / at 0.25 m, px from its resting point; phase "out": a/b = gun offset from its hip pose, mm / deg
+                _adsTrace.AppendLine("gun,sight,trial,phase,t_ms,a,b,fov,blend,kin_w,aiming,can_fire,cam_x_mm,cam_y_mm,cam_z_mm,gun_x_mm,gun_y_mm,gun_z_mm");
+                int trial = 0;
+                foreach (string path in Prefabs)
+                {
+                    var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                    if (prefab == null) { Line($"missing {path}"); continue; }
+                    var go = Instantiate(prefab, weaponBone, false);
+                    go.transform.localPosition = Vector3.zero;
+                    go.transform.localRotation = Quaternion.identity;
+                    go.SetActive(false);
+                    var gun = go.GetComponent<LR2Firearm>();
+                    if (gun == null) { Destroy(go); continue; }
+                    items.Insert(0, gun);
+                    equip.Invoke(_player, new object[] { 0 });
+                    yield return Wait(0.9f);
+                    string gunName = Path.GetFileNameWithoutExtension(path).Replace("LR2_", "");
+                    Line($"  {gunName}: adsTime {gun.EffectiveAdsTime * 1000f:0} ms");
+                    int[] sights = gun.HasUnifiedScopes ? new[] { 0, 2 } : new[] { -1 };
+                    foreach (int sc in sights)
+                    {
+                        if (sc >= 0) gun.ApplyScopeChoice(sc);
+                        string sight = sc >= 0 ? LR2Session.ScopeNames[sc].Split(' ')[0] : "IRON";
+                        yield return AdsTrial(gunName, sight, false, trial++);
+                    }
+                    if (gun.HasUnifiedScopes) gun.ApplyScopeChoice(0);
+                    // out of a sprint both ways (forward, then back towards the start), so direction is not tied to the gun
+                    yield return AdsTrial(gunName, "IRON", true, trial++, false);
+                    yield return AdsTrial(gunName, "IRON", true, trial++, true);
+                    yield return AdsReversalTrial(gunName);
+                    items.RemoveAt(0);
+                    Destroy(go);
+                    equip.Invoke(_player, new object[] { 0 });
+                    yield return Wait(0.3f);
+                }
+                File.WriteAllText(Path.Combine(_outDir, "ads_trace.csv"), _adsTrace.ToString());
+            }
+
+            private IEnumerator AdsTrial(string gunName, string sight, bool fromSprint, int trial, bool reverse = false)
+            {
+                float yaw = _yaw + (reverse ? 180f : 0f);
+                SoldierInput Still(bool aim) { var c = Cmd(aim: aim); c.aimYaw = yaw; return c; }
+                _cmd = Still(false);
+                // After a turn, Kinemation's turn layer swings the body round for about a second and the camera slides
+                // ~6 cm with it; a trial started inside that measured the turn, not the ADS. Let it finish first.
+                bool turned = float.IsNaN(_lastTrialYaw) || Mathf.Abs(Mathf.DeltaAngle(_lastTrialYaw, yaw)) > 1f;
+                _lastTrialYaw = yaw;
+                yield return Wait(turned ? 2.2f : 0.8f);
+                Vector3 hipPos = default;
+                Quaternion hipRot = default;
+                float hipFov = 0f;
+                yield return AtFrameEnd(() => { HipPose(out hipPos, out hipRot); hipFov = _player.ViewCamera.fieldOfView; });
+                if (fromSprint)
+                {
+                    var run = Cmd(Vector2.up, sprint: true);
+                    run.aimYaw = yaw;
+                    _cmd = run;
+                    float giveUp = Time.time + 2f;
+                    while (!_player.IsSprinting && Time.time < giveUp) yield return null;
+                    yield return Wait(0.7f);
+                    if (!_player.IsSprinting) Line($"  {gunName} sprint trial: the soldier never sprinted");
+                }
+
+                string trialName = fromSprint ? (reverse ? "sprintR" : "sprint") : "stand";
+                // ADS in: hold the button 1.0 s (the last 0.25 s is the resting point)
+                _adsSamples.Clear();
+                _cmd = Still(true);
+                _adsT0 = Time.time;
+                _adsSampling = true;
+                yield return Wait(1.0f);
+                _adsSampling = false;
+                var inSamples = new List<AdsSample>(_adsSamples);
+
+                // ADS out
+                _adsSamples.Clear();
+                _cmd = Still(false);
+                _adsT0 = Time.time;
+                _adsSampling = true;
+                yield return Wait(0.8f);
+                _adsSampling = false;
+                var outSamples = new List<AdsSample>(_adsSamples);
+
+                ReportAdsTrial(gunName, sight, trialName, inSamples, outSamples, hipPos, hipRot, hipFov);
+            }
+
+            private float _plainPeakMm, _plainPeakDeg;
+
+            /// <summary>Fastest the gun moves relative to the camera between two samples (mm/s and deg/s).</summary>
+            private static void AdsPeakSpeed(List<AdsSample> samples, out float mmPerS, out float degPerS)
+            {
+                mmPerS = degPerS = 0f;
+                for (int i = 1; i < samples.Count; i++)
+                {
+                    float dt = samples[i].t - samples[i - 1].t;
+                    if (dt <= 0.0001f) continue;
+                    mmPerS = Mathf.Max(mmPerS, (samples[i].gunPos - samples[i - 1].gunPos).magnitude * 1000f / dt);
+                    degPerS = Mathf.Max(degPerS, Quaternion.Angle(samples[i].gunRot, samples[i - 1].gunRot) / dt);
+                }
+            }
+
+            /// <summary>
+            /// Presses and releases ADS half way through each transition (in, then out) and compares the gun's top speed with
+            /// a plain hip-to-ADS move. LR2Firearm.SetAdsCurve rebuilds Kinemation's ADS curve through the current point on
+            /// every press and release; a jump there would show as a speed spike far above the plain move.
+            /// </summary>
+            private IEnumerator AdsReversalTrial(string gunName)
+            {
+                float yaw = _yaw;
+                SoldierInput Still(bool aim) { var c = Cmd(aim: aim); c.aimYaw = yaw; return c; }
+                _cmd = Still(false);
+                bool turned = float.IsNaN(_lastTrialYaw) || Mathf.Abs(Mathf.DeltaAngle(_lastTrialYaw, yaw)) > 1f;
+                _lastTrialYaw = yaw;
+                yield return Wait(turned ? 2.2f : 0.8f);
+                _adsSamples.Clear();
+                _adsT0 = Time.time;
+                _adsSampling = true;
+                float limit;
+                _cmd = Still(true);                                    // in ...
+                limit = Time.time + 1f;
+                while (_player.AimBlend < 0.5f && Time.time < limit) yield return null;
+                _cmd = Still(false);                                   // ... let go half way
+                limit = Time.time + 1f;
+                while (_player.AimBlend > 0.25f && Time.time < limit) yield return null;
+                _cmd = Still(true);                                    // ... and in again
+                limit = Time.time + 1f;
+                while (_player.AimBlend < 0.999f && Time.time < limit) yield return null;
+                yield return Wait(0.3f);
+                _cmd = Still(false);                                   // out ...
+                limit = Time.time + 1f;
+                while (_player.AimBlend > 0.5f && Time.time < limit) yield return null;
+                _cmd = Still(true);                                    // ... back in half way
+                limit = Time.time + 1f;
+                while (_player.AimBlend < 0.999f && Time.time < limit) yield return null;
+                yield return Wait(0.3f);
+                _cmd = Still(false);
+                yield return Wait(0.5f);
+                _adsSampling = false;
+                AdsPeakSpeed(_adsSamples, out float mm, out float deg);
+                float rMm = _plainPeakMm > 1f ? mm / _plainPeakMm : 0f, rDeg = _plainPeakDeg > 1f ? deg / _plainPeakDeg : 0f;
+                bool jump = rMm > 2.5f || rDeg > 2.5f;
+                Line($"  {gunName,-6} reversal: gun top speed {mm,5:0} mm/s {deg,4:0} deg/s vs plain ADS {_plainPeakMm,5:0} / {_plainPeakDeg,4:0} " +
+                     $"(x{rMm:0.00} / x{rDeg:0.00}){(jump ? " JUMP" : " ok")} over {_adsSamples.Count} frames");
+                if (jump) _motionFailures++;
+            }
+
+            private void SampleAds()
+            {
+                var gun = _player.ActiveFirearm;
+                var cam = _player.ViewCamera;
+                float t = Time.time - _adsT0;
+                if (gun == null || cam == null || t <= 0f) return; // the soldier reads the new input on the next frame
+                var ap = gun.ActiveAimPointTransform;
+                if (ap == null) return;
+                var camT = cam.transform;
+                _adsSamples.Add(new AdsSample
+                {
+                    t = t,
+                    aiming = _player.IsAiming,
+                    canFire = _player.CanShootNow,
+                    farPx = ToPx(cam, ap.position + ap.forward * RangeM),
+                    nearPx = ToPx(cam, ap.position + ap.forward * 0.25f),
+                    fov = cam.fieldOfView,
+                    blend = _player.AimBlend,
+                    kinW = _player.UserInput != null ? _player.UserInput.GetValue<float>(KINEMATION.FPSAnimationFramework.Runtime.Core.FPSANames.AimingWeight) : -1f,
+                    gunPos = camT.InverseTransformPoint(_player.ActiveItem.transform.position),
+                    gunRot = Quaternion.Inverse(camT.rotation) * _player.ActiveItem.transform.rotation,
+                    camRoot = _player.transform.InverseTransformPoint(camT.position),
+                    gunRoot = _player.transform.InverseTransformPoint(_player.ActiveItem.transform.position),
+                });
+            }
+
+            private static string RootCols(AdsSample s, CultureInfo c) => string.Join(",",
+                (s.camRoot.x * 1000f).ToString("0.0", c), (s.camRoot.y * 1000f).ToString("0.0", c), (s.camRoot.z * 1000f).ToString("0.0", c),
+                (s.gunRoot.x * 1000f).ToString("0.0", c), (s.gunRoot.y * 1000f).ToString("0.0", c), (s.gunRoot.z * 1000f).ToString("0.0", c));
+
+            private void ReportAdsTrial(string gunName, string sight, string trialName, List<AdsSample> inS, List<AdsSample> outS,
+                                        Vector3 hipPos, Quaternion hipRot, float hipFov)
+            {
+                if (inS.Count < 10) { Line($"  {gunName} {sight} {trialName}: too few samples ({inS.Count})"); return; }
+                Vector2 restFar = Vector2.zero, restNear = Vector2.zero;
+                float restFov = 0f;
+                int n = 0;
+                foreach (var s in inS)
+                    if (s.t >= 0.75f) { restFar += s.farPx; restNear += s.nearPx; restFov += s.fov; n++; }
+                if (n == 0) { Line($"  {gunName} {sight} {trialName}: no resting samples"); return; }
+                restFar /= n; restNear /= n; restFov /= n;
+
+                float Err(AdsSample s) => Mathf.Max((s.farPx - restFar).magnitude, (s.nearPx - restNear).magnitude);
+                float aimFlag = -1f, canFire = -1f, onTarget = -1f, fov95 = -1f, blendDone = -1f, kinDone = -1f, lastOver10 = 0f;
+                float minAfter = float.MaxValue, rebound = 0f, maxFrame = 0f, prevT = 0f;
+                float fovSpan = Mathf.Abs(hipFov - restFov);
+                var c = CultureInfo.InvariantCulture;
+                foreach (var s in inS)
+                {
+                    float e = Err(s);
+                    if (aimFlag < 0f && s.aiming) aimFlag = s.t;
+                    if (canFire < 0f && s.canFire) canFire = s.t;
+                    if (onTarget < 0f && e <= 10f) onTarget = s.t;
+                    if (fov95 < 0f && Mathf.Abs(s.fov - restFov) <= 0.05f * Mathf.Max(0.5f, fovSpan)) fov95 = s.t;
+                    if (blendDone < 0f && s.blend >= 0.999f) blendDone = s.t;
+                    if (kinDone < 0f && s.kinW >= 0.999f) kinDone = s.t;
+                    if (s.t < 0.75f && e > 10f) lastOver10 = s.t;
+                    if (onTarget >= 0f && s.t < 0.75f)
+                    {
+                        minAfter = Mathf.Min(minAfter, e);
+                        rebound = Mathf.Max(rebound, e - minAfter); // how far it swings back out after arriving
+                    }
+                    maxFrame = Mathf.Max(maxFrame, s.t - prevT);
+                    prevT = s.t;
+                    _adsTrace.AppendLine(string.Join(",", gunName, sight, trialName, "in", (s.t * 1000f).ToString("0", c),
+                        (s.farPx - restFar).magnitude.ToString("0.0", c), (s.nearPx - restNear).magnitude.ToString("0.0", c),
+                        s.fov.ToString("0.00", c), s.blend.ToString("0.000", c), s.kinW.ToString("0.000", c), s.aiming ? "1" : "0", s.canFire ? "1" : "0", RootCols(s, c)));
+                }
+                // stays10: the first frame after the last one that was more than 10 px off
+                float stays10 = -1f;
+                foreach (var s in inS) if (s.t > lastOver10) { stays10 = s.t; break; }
+                if (trialName == "stand" && sight == "IRON") AdsPeakSpeed(inS, out _plainPeakMm, out _plainPeakDeg);
+
+                var at = new StringBuilder();
+                foreach (float probe in new[] { 0.05f, 0.1f, 0.15f, 0.2f, 0.25f, 0.3f, 0.4f, 0.5f })
+                {
+                    AdsSample best = inS[0];
+                    foreach (var s in inS) if (Mathf.Abs(s.t - probe) < Mathf.Abs(best.t - probe)) best = s;
+                    at.Append($" {probe * 1000f:0}:{Err(best):0}");
+                }
+
+                // out: back to the hip pose (within 6 mm and 1 deg of it) and the hip zoom
+                float hipBack = -1f, fovBack = -1f;
+                foreach (var s in outS)
+                {
+                    if (hipBack < 0f && (s.gunPos - hipPos).magnitude <= 0.006f && Quaternion.Angle(s.gunRot, hipRot) <= 1f) hipBack = s.t;
+                    if (fovBack < 0f && Mathf.Abs(s.fov - hipFov) <= 0.05f * Mathf.Max(0.5f, fovSpan)) fovBack = s.t;
+                    _adsTrace.AppendLine(string.Join(",", gunName, sight, trialName, "out", (s.t * 1000f).ToString("0", c),
+                        ((s.gunPos - hipPos).magnitude * 1000f).ToString("0.0", c), Quaternion.Angle(s.gunRot, hipRot).ToString("0.00", c),
+                        s.fov.ToString("0.00", c), s.blend.ToString("0.000", c), s.kinW.ToString("0.000", c), s.aiming ? "1" : "0", s.canFire ? "1" : "0", RootCols(s, c)));
+                }
+                string Ms(float v) => v < 0f ? "never" : $"{v * 1000f:0}";
+                Line($"  {gunName,-6} {sight,-5} {trialName,-7} IN aim {Ms(aimFlag),4} canFire {Ms(canFire),4} onTarget {Ms(onTarget),4} stays10 {Ms(stays10),4} " +
+                     $"fov95 {Ms(fov95),4} blend {Ms(blendDone),4} kin {Ms(kinDone),4} rebound {rebound,4:0.0}px maxFrame {maxFrame * 1000f,3:0}ms{(maxFrame > 0.03f ? " HITCH" : "")} " +
+                     $"| OUT hip {Ms(hipBack),4} fov {Ms(fovBack),4} | err px at ms:{at}");
             }
 
             private IEnumerator MotionCheck()

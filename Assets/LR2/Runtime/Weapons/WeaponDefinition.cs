@@ -64,9 +64,9 @@ namespace LR2.Weapons
 
         [Header("Handling")]
         [Tooltip("Time from sprint to being able to fire (s).")]
-        public float sprintToFireTime = 0.22f;
+        public float sprintToFireTime = 0.17f;
         [Tooltip("Aim-down-sight in/out transition time (s); drives 3D weapon ADS pose, camera FOV zoom, and spread blend.")]
-        public float adsTime = 0.21f;
+        public float adsTime = 0.15f;
         [Tooltip("Field of view multiplier while aiming (0.8 = 1.25x zoom).")]
         [Range(0.3f, 1f)] public float adsFovMultiplier = 0.8f;
         public float equipTime = 0.55f;

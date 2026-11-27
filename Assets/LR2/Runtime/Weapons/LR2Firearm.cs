@@ -101,7 +101,7 @@ namespace LR2.Weapons
 
         public WeaponDefinition Definition => definition;
         /// <summary>Authoritative ADS in/out duration (s) shared by 3D weapon ADS layer, camera FOV zoom, and spread blend.</summary>
-        public float EffectiveAdsTime => definition != null ? Mathf.Max(0.05f, definition.adsTime) : 0.21f;
+        public float EffectiveAdsTime => definition != null ? Mathf.Max(0.05f, definition.adsTime) : 0.15f;
         public int AmmoInMagazine { get; private set; }
         public int ReserveAmmo { get; private set; }
         public int MagazineSize => definition != null ? definition.magazineSize : 30;
@@ -218,9 +218,25 @@ namespace LR2.Weapons
             "fovSpeed", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         private static readonly FieldInfo CameraFovEaseModeField = typeof(FPSCameraController).GetField(
             "fovEaseMode", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        private static readonly EaseMode AdsFovEaseMode = new EaseMode(EEaseFunc.Sine);
+        // The camera zoom eases with 1 - (1 - t)^2 from wherever it is, every time the target changes, so it starts fast in
+        // both directions. FPSCameraController evaluates it on the main thread, so one shared curve is safe here.
+        private static readonly EaseMode AdsFovEaseMode = new EaseMode { easeFunc = EEaseFunc.Custom, curve = AdsEaseOutCurve() };
+
+        /// <summary>
+        /// 1 - (1 - t)^2: starts at full speed and slows into the end (11-27, "ADS time cannot be sluggish"). Kinemation's
+        /// default sine curve starts slowly: the gun covered 15 % of the way in the first quarter of the ADS time, which
+        /// felt like input lag; this curve covers 44 %. Returns a new curve on every call.
+        /// </summary>
+        public static AnimationCurve AdsEaseOutCurve() =>
+            new AnimationCurve(new Keyframe(0f, 0f, 0f, 2f), new Keyframe(1f, 1f, 0f, 0f));
+
         private FPSAnimatorProfile _runtimeProfile;
         private AdsLayerSettings _runtimeAdsSettings;
+        // The curve Kinemation's ADS layer applies to its linear aiming weight (see SetAdsCurve): which way it was built
+        // and the point (weight, eased value) it starts from.
+        private bool _adsCurveIn = true;
+        private float _adsCurveFromW, _adsCurveFromE;
+        private const float AdsCurveEpsilon = 0.001f;
 
         // Reload
         private float _reloadStart;
@@ -657,6 +673,9 @@ namespace LR2.Weapons
                             _runtimeAdsSettings.rotationBlend = default;
                             _runtimeAdsSettings.cameraBlend = 0f;
                             _runtimeAdsSettings.aimTargetBone = new KINEMATION.Shared.KAnimationCore.Runtime.Rig.KRigElement(-1, "Camera");
+                            _adsCurveIn = true;
+                            _adsCurveFromW = _adsCurveFromE = 0f;
+                            _runtimeAdsSettings.aimingEaseMode = new EaseMode { easeFunc = EEaseFunc.Custom, curve = BuildAdsCurve(true, 0f, 0f) };
                             _runtimeProfile.settings[i] = _runtimeAdsSettings;
                         }
                         else if (gateWallTuckInAds && _runtimeProfile.settings[i] is KINEMATION.FPSAnimationFramework.Runtime.Layers.CollisionLayer.CollisionLayerSettings origCol)
@@ -699,8 +718,8 @@ namespace LR2.Weapons
             if (_userInput != null) _userInput.SetValue("SensitivityMultiplier", sens);
             if (_cameraController != null)
             {
-                // FPSCameraController advances its Sine FOV curve by deltaTime * fovSpeed.
-                // Match both zoom-in and zoom-out (including mid-ADS reversals) to the weapon's 3D ADS rate and ease mode.
+                // FPSCameraController advances its FOV curve by deltaTime * fovSpeed, restarting from the current FOV.
+                // Match both zoom-in and zoom-out (including mid-ADS reversals) to the weapon's 3D ADS rate and curve.
                 float adsDuration = EffectiveAdsTime;
                 float fullDelta = Mathf.Abs(hipFovV - adsFovV);
                 float remFrac = 1f;
@@ -715,6 +734,7 @@ namespace LR2.Weapons
         public override bool OnAimPressed()
         {
             if (_userInput != null) _userInput.SetValue(FPSANames.IsAiming, true);
+            SetAdsCurve(true);
             UpdateFieldOfView(true);
             if (_recoilAnimation != null) _recoilAnimation.isAiming = true;
             return true;
@@ -723,9 +743,65 @@ namespace LR2.Weapons
         public override bool OnAimReleased()
         {
             if (_userInput != null) _userInput.SetValue(FPSANames.IsAiming, false);
+            SetAdsCurve(false);
             UpdateFieldOfView(false);
             if (_recoilAnimation != null) _recoilAnimation.isAiming = false;
             return true;
+        }
+
+        /// <summary>
+        /// Gives Kinemation's ADS layer a curve that starts fast in the direction just chosen, from where the gun is now:
+        /// into the sight on a press, back to the hip on a release. The layer moves its aiming weight linearly and applies one
+        /// curve to it both ways, so a fixed ease-out curve left the sight slowly and hit the hip at full speed, while the zoom
+        /// (which restarts its curve on every change) was already 90 % out. The new curve passes through the current point,
+        /// so a press or release halfway through does not jump. Built on the main thread in Update, never changed afterwards:
+        /// the animation job reads it on a worker thread (B125).
+        /// </summary>
+        private void SetAdsCurve(bool aiming)
+        {
+            if (_runtimeAdsSettings == null) return;
+            float w = _userInput != null ? Mathf.Clamp01(_userInput.GetValue<float>(FPSANames.AimingWeight)) : (aiming ? 0f : 1f);
+            float e = AdsEasedAt(w);
+            _adsCurveIn = aiming;
+            _adsCurveFromW = w;
+            _adsCurveFromE = e;
+            _runtimeAdsSettings.aimingEaseMode = new EaseMode { easeFunc = EEaseFunc.Custom, curve = BuildAdsCurve(aiming, w, e) };
+        }
+
+        /// <summary>The eased ADS value the current curve gives for aiming weight <paramref name="w"/> (same shape as BuildAdsCurve).</summary>
+        private float AdsEasedAt(float w)
+        {
+            float w0 = _adsCurveFromW, e0 = _adsCurveFromE;
+            if (_adsCurveIn)
+            {
+                if (w0 <= AdsCurveEpsilon || w0 >= 1f - AdsCurveEpsilon) return 1f - (1f - w) * (1f - w);
+                if (w <= w0) return e0 * w / w0;
+                float u = (w - w0) / (1f - w0);
+                return e0 + (1f - e0) * (1f - (1f - u) * (1f - u));
+            }
+            if (w0 <= AdsCurveEpsilon || w0 >= 1f - AdsCurveEpsilon) return w * w;
+            if (w >= w0) return e0 + (1f - e0) * (w - w0) / (1f - w0);
+            float r = w / w0;
+            return e0 * r * r;
+        }
+
+        /// <summary>
+        /// In: from (w0, e0) the eased value rises as 1 - (1 - u)^2 to 1 (fast start, soft arrival in the sight).
+        /// Out: from (w0, e0) it falls as (w / w0)^2 to 0 while the weight drops (fast start, soft arrival at the hip).
+        /// The unused side of w0 is a straight line, so the curve stays monotonic and passes through 0 and 1.
+        /// </summary>
+        private static AnimationCurve BuildAdsCurve(bool aiming, float w0, float e0)
+        {
+            if (aiming)
+            {
+                if (w0 <= AdsCurveEpsilon || w0 >= 1f - AdsCurveEpsilon) return AdsEaseOutCurve();
+                float lin = e0 / w0, start = 2f * (1f - e0) / (1f - w0);
+                return new AnimationCurve(new Keyframe(0f, 0f, 0f, lin), new Keyframe(w0, e0, lin, start), new Keyframe(1f, 1f, 0f, 0f));
+            }
+            if (w0 <= AdsCurveEpsilon || w0 >= 1f - AdsCurveEpsilon)
+                return new AnimationCurve(new Keyframe(0f, 0f, 0f, 0f), new Keyframe(1f, 1f, 2f, 0f));
+            float fall = 2f * e0 / w0, rest = (1f - e0) / (1f - w0);
+            return new AnimationCurve(new Keyframe(0f, 0f, 0f, 0f), new Keyframe(w0, e0, fall, rest), new Keyframe(1f, 1f, rest, 0f));
         }
 
         public override void OnCycleScope()

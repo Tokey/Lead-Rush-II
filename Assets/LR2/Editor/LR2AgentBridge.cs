@@ -13,7 +13,8 @@ namespace LR2.EditorTools
     ///   rebuild-all                       full content + all maps (LR2 > Build Everything)
     ///   rebuild-chars                     FX, audio, weapons, soldiers only (fast)
     ///   play [scenePath] [seconds]        robot playtest in the editor, screenshots + Logs/LR2_SmokeTest.txt
-    ///   aim-audit [tag] [force] [motion|strafe] ADS sight vs bullet, hand slip and thumb check per gun and sight (LR2AimGripAudit);
+    ///   aim-audit [tag] [force] [motion|strafe|adstime] ADS sight vs bullet, hand slip and thumb check per gun and sight (LR2AimGripAudit);
+    ///                                     "adstime" measures how long ADS in/out really takes per gun
     ///                                     "force" discards unsaved scene changes (use only after the agent's own rebuild)
     ///   build-fx / build-music            rebuild only the FX prefabs (tracers) / only the music stems
     ///   stop                              leave play mode
@@ -97,7 +98,8 @@ namespace LR2.EditorTools
                         bool force = parts.Length > 2 && parts[2] == "force";
                         bool motion = Array.LastIndexOf(parts, "motion") >= 2; // options come after the tag
                         bool strafe = Array.LastIndexOf(parts, "strafe") >= 2;
-                        string auditError = LR2AimGripAudit.RunFromBridge(parts.Length > 1 ? parts[1] : "editor", force, motion, strafe);
+                        bool adsTiming = Array.LastIndexOf(parts, "adstime") >= 2;
+                        string auditError = LR2AimGripAudit.RunFromBridge(parts.Length > 1 ? parts[1] : "editor", force, motion, strafe, adsTiming);
                         Result(auditError == null ? "aim-audit started (report -> Logs/LR2_AimGrip/<tag>/report.txt)" : "aim-audit not started: " + auditError);
                         break;
                     case "build-fx":

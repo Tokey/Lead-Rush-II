@@ -81,9 +81,11 @@ td .mono { white-space: nowrap; }
 </header>
 
 <section aria-labelledby="h-1126">
-  <div class="head"><span class="num">NOW · 11-26</span><h2 id="h-1126">Robot driver, mirrored body: what moves the gun today</h2>
+  <div class="head"><span class="num">NOW · 11-27</span><h2 id="h-1126">Robot driver, mirrored body: what moves the gun today</h2>
     <p>Since 11-22 the hidden driver is Kinemation's own robot (<code>FPSGenericPlayer</code>), with Kinemation's IK, ADS, sights and attachments. The gun hangs from <code>IK WeaponBone</code> under the robot's head. Since 11-23 the visible military body is posed from the robot each frame by <code>GenericBoneMirror</code> (LateUpdate 550); <code>RetargetProxy</code> no longer runs on the soldier. The sections after this one describe the 11-20 humanoid-driver setup and stay as the record of B125.</p></div>
   <div class="findings">
+    <div class="panel finding"><span class="tag ok">Fixed · measured</span><h3>The sight arrived at 1.4-1.8× the ADS time, and kept moving</h3>
+      <p>Three things stretched it. Kinemation's sine curve barely moved the gun in the first quarter of the ADS time. Its aiming motion tipped the sight 3° half way in and kept it swinging 10-17 px for 0.2 s after the gun had arrived. Out of a sprint, letting go of the keys started the 1.2 s stop lurch, which replaced the aiming motion and held the sight 50-65 px off for half a second. Now every press and release gives Kinemation's ADS layer a new curve that heads for the chosen side at full speed from where the gun is (so a tap half way never jumps; the zoom uses the same shape), the aiming motion ends within 1.5× the ADS time at 60 % size, the stop lurch is skipped while aiming, and every gun's ADS time is about 30 % shorter (AK-12 0.21 → 0.15 s).</p></div>
     <div class="panel finding"><span class="tag ok">Fixed · measured</span><h3>A sight lock slid the gun out of the hands</h3>
       <p>On 11-24 a LateUpdate at 520 rotated and moved <code>IK WeaponBone</code> so the sight sat exactly on the camera. Kinemation had already solved the arms inside the animation graph, so the gun moved and the hands did not. Its audit measured the aim after the lock had forced it, so it could not fail. Removed: Kinemation's ADS layer (<code>cameraBlend</code> 1) puts the camera on the sight by itself, 0.1 to 3.9 px from the centre at 1080p on every gun and sight. In ADS the shot now follows the sight (its sway, not the cosmetic recoil kick): 0.0 to 0.3 px between bullet and sight standing, at most 2.8 px while strafing, where the sight itself swings up to 32 px. Tracers fly at 720 m/s from the muzzle's current position, so they no longer trail a strafing shooter.</p></div>
     <div class="panel finding"><span class="tag ok">Fixed · measured</span><h3>Visible fingers 36-38 mm off the robot's grip</h3>
@@ -107,6 +109,16 @@ td .mono { white-space: nowrap; }
       <tr><td>Respawn after prone, sprint and crouched-ADS deaths</td><td class="n" colspan="3">hip pose matches the first life within 0.37 cm and 1°; no state leak</td></tr>
     </tbody></table>
     <p class="note" style="margin-top:8px">Open: the crawl's start (one 5.8 cm step while the crawl clip plants the left hand), standing up from prone (4.1 cm), and a 5.8 cm camera snap when a sight is changed while already aiming (the scope code forces Kinemation's aim point). Tool: <code>aim-audit &lt;tag&gt; force motion</code> through LR2AgentBridge; reports in <code>Logs/LR2_AimGrip/</code>.</p></div>
+  <div class="table-wrap panel"><table>
+    <thead><tr><th>ADS timing, 11-27: ms from the press until the sight is within 10 px of where it comes to rest and stays there (1080p), old code → new code, same test</th><th class="n">ADS time</th><th class="n">Standing, iron / red dot</th><th class="n">Out of a sprint</th></tr></thead>
+    <tbody>
+      <tr><td>AK-12</td><td class="n">0.21 → 0.15 s</td><td class="n">339 / 371 → 131 / 132</td><td class="n">591 → 217 (158 the other way)</td></tr>
+      <tr><td>MK18</td><td class="n">0.18 → 0.14 s</td><td class="n">256 / 302 → 121 / 124</td><td class="n">596 → 136</td></tr>
+      <tr><td>AK-74N</td><td class="n">0.22 → 0.16 s</td><td class="n">342 / 398 → 142 / 141</td><td class="n">634 → 155</td></tr>
+      <tr><td>FAL</td><td class="n">0.27 → 0.19 s</td><td class="n">394 / 478 → 170 / 160</td><td class="n">649 → 295</td></tr>
+      <tr><td>MK23 (iron sights only)</td><td class="n">0.14 → 0.11 s</td><td class="n">236 → 111</td><td class="n">662 → 280</td></tr>
+    </tbody></table>
+    <p class="note" style="margin-top:8px">Sprints are compared in the same direction as the old run; sprinting the other way changes the AK-12 and FAL figures by 30-60 ms (the body rising out of the sprint pose). Runs differ by about 20 ms. Pressing or releasing half way never jumps: the gun's top speed stays within 2× a plain ADS move. About 5 px of slow breathing sway stays in ADS on purpose. ADS-out now covers half the way in the first quarter of the ADS time (a quarter before), in step with the zoom. Bullet vs sight is still at most 0.4 px on all 25 gun and sight pairs. Prone, the gun now swings from its carry pose (57-77° off the sight) into ADS in 0.15 s, up to 15° per frame at 100 fps. Tool: <code>aim-audit &lt;tag&gt; adstime</code>; traces in <code>Logs/LR2_AimGrip/ads_before_clean</code> (old) and <code>ads_final2</code> (new).</p></div>
 </section>
 
 <section aria-labelledby="h-now">
@@ -136,7 +148,7 @@ td .mono { white-space: nowrap; }
     <div class="step lr2"><div class="when"><b>Update</b>[−50]</div><div><h3>SoldierController</h3><ul>
       <li class="hot">B125: puts the gun back at its Kinemation pose (local position and rotation zero), so Kinemation never reads last frame's LR2 edits.</li>
       <li>Input and look: writes <code>MouseInput</code> (accumulated yaw, pitch) and <code>MouseDeltaInput</code> for Kinemation; bots turn at up to 720°/s.</li>
-      <li>ADS toggle: links a runtime copy of the aiming IK motion (played at 1.8 to 3.6×) on every aim in and out.</li></ul></div></div>
+      <li>ADS toggle: links a runtime copy of the aiming IK motion (played at 1.8 to 3.6×; since 11-27 at 60 % size, finishing within 1.5× the ADS time) on every aim in and out.</li></ul></div></div>
     <div class="step kin"><div class="when"><b>Update</b>[0]</div><div><h3>FPSAnimator → FPSBoneController.UpdateController</h3><ul>
       <li class="hot">Pending profile re-link: destroys all 13 layer jobs and builds new ones; each runs <code>Initialize</code> against the current transforms.</li>
       <li>Each layer's weight from its curves and inputs (FullBodyWeight, AimingWeight, ProneWeight).</li>

@@ -6,7 +6,11 @@ Tactical first-person shooter built in **Unity 6 (`6000.5.0f1`) HDRP** ([github.
 
 ![Lead Rush II — Main Menu & Tactical Recon](Docs/Media/main_menu_hero.png)
 
-**Latest (11.26.26.1, 2026-11-26): a QA pass over the 11-24 work, measured in the editor.**
+**Latest (11.27.26.1, 2026-11-27): ADS is two to three times as fast.**
+- Every gun's ADS time is about 30 % shorter (AK-12 0.21 to 0.15 s), the gun and the zoom move at full speed from the moment you press (and again when you let go), the aiming wobble ends with the ADS, and stopping no longer throws the sight off. Measured sight-on-target times: 111-170 ms standing (was 236-478 ms; the AK-12 131 ms, was 339-371 ms), 131-295 ms out of a sprint (was 591-662 ms).
+- (11.26.26.2) Strafing: tracers stay with the gun, shots leave from where you are this frame, and in ADS they follow the sight's sway.
+
+**11.26.26.1 (2026-11-26): a QA pass over the 11-24 work, measured in the editor.**
 - Hands stay on the gun: a late "sight lock" that slid the gun out of the hands is gone, and the visible hands now follow the animation rig's grip (fingers within 18-19 mm instead of 36-38, thumb out of the sight).
 - Bullets land on the sight: Kinemation's own ADS centres every sight within 4 px at 1080p, and shots use the current frame's aim.
 - Iron sights work on every gun (the FAL had none, the MK18 had no rear sight); the AK-12 is the default rifle.

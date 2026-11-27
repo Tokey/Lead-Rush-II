@@ -343,7 +343,9 @@ namespace LR2.Characters
                 var s = LR2CommonSounds.Instance;
                 if (s != null) LR2Audio.PlayAt(s.slide, transform.position);
             };
-            Movement.onStopMoving = () => PlayTransitionMotion(settings != null ? settings.stopMotion : null);
+            // The stop lurch (a 1.2 s roll of up to 9 deg) is for a moving soldier at the hip. In ADS it replaced the aiming motion
+            // and kept the sight 50-65 px off target for half a second after a sprint (11-27), so a soldier who is aiming skips it.
+            Movement.onStopMoving = () => { if (!_isAiming) PlayTransitionMotion(settings != null ? settings.stopMotion : null); };
             Movement._sprintActionCondition = () => !_switching && !IsDead;
             Movement._slideActionCondition = () => !_switching && !IsDead;
             Movement.Jumped += () =>
@@ -492,7 +494,7 @@ namespace LR2.Characters
                 UserInput.SetValue(FPSANames.StabilizationWeight, _stabWeight);
             }
 
-            float adsTime = ActiveFirearm != null ? ActiveFirearm.EffectiveAdsTime : 0.21f;
+            float adsTime = ActiveFirearm != null ? ActiveFirearm.EffectiveAdsTime : 0.15f;
             AimBlend = Mathf.MoveTowards(AimBlend, _isAiming ? 1f : 0f, Time.deltaTime / adsTime);
             Movement.IsAimingSlowdown = _isAiming;
 
@@ -710,7 +712,14 @@ namespace LR2.Characters
             if (s != null) LR2Audio.PlayAt(aim ? s.adsIn : s.adsOut, transform.position, IsLocalPlayer ? 1f : 0.6f);
         }
 
-        /// <summary>Kinemation's aiming IK motion, played at LR2's shortened ADS rate (1.8 to 3.6x).</summary>
+        // ADS settle (11-27). Kinemation's aiming motion tips and rolls the gun by up to 2.7 deg as it comes up. Played at the
+        // old rate it ran 2.2x as long as the ADS itself, so the sight was still swinging 10-17 px on screen 0.2 s after
+        // the gun had arrived. It now finishes within 1.5x the ADS time, at 60 % of its size.
+        private const float AimingMotionAdsMultiple = 1.5f;
+        private const float AimingMotionScale = 0.6f;
+        private const float AimingMotionBlendSeconds = 0.04f;
+
+        /// <summary>Kinemation's aiming IK motion, sped up to settle with the gun's ADS time (see AimingMotionAdsMultiple).</summary>
         private void PlayAimingMotion()
         {
             if (settings == null || settings.aimingMotion == null) return;
@@ -719,12 +728,33 @@ namespace LR2.Characters
             {
                 _runtimeAimingMotion = Instantiate(ikSrc);
                 _runtimeAimingMotion.hideFlags = HideFlags.HideAndDontSave;
+                ScaleMotion(_runtimeAimingMotion, AimingMotionScale);
             }
-            float adsTime = ActiveFirearm != null ? ActiveFirearm.EffectiveAdsTime : 0.21f;
-            float targetRate = Mathf.Clamp(0.45f / adsTime, 1.8f, 3.6f);
+            float adsTime = ActiveFirearm != null ? ActiveFirearm.EffectiveAdsTime : 0.15f;
+            // the curves run over playback 0..1, so the motion lasts 1 / playRate seconds
+            float targetRate = Mathf.Clamp(1f / (adsTime * AimingMotionAdsMultiple), 2f, 8f);
             _runtimeAimingMotion.playRate = targetRate;
-            _runtimeAimingMotion.blendTime = Mathf.Clamp(ikSrc.blendTime * (ikSrc.playRate / Mathf.Max(0.1f, targetRate)), 0.05f, 0.3f);
+            // blendTime is in playback units too: blend from the previous motion over the same time at every rate
+            _runtimeAimingMotion.blendTime = Mathf.Clamp(AimingMotionBlendSeconds * targetRate, 0.05f, 0.3f);
             PlayTransitionMotion(_runtimeAimingMotion);
+        }
+
+        /// <summary>Scales a motion's rotation and translation curves (keys and tangents). For this soldier's own copy only.</summary>
+        private static void ScaleMotion(IkMotionLayerSettings motion, float scale)
+        {
+            foreach (var curve in new[] { motion.rotationCurves.x, motion.rotationCurves.y, motion.rotationCurves.z,
+                                          motion.translationCurves.x, motion.translationCurves.y, motion.translationCurves.z })
+            {
+                if (curve == null) continue;
+                var keys = curve.keys;
+                for (int i = 0; i < keys.Length; i++)
+                {
+                    keys[i].value *= scale;
+                    keys[i].inTangent *= scale;
+                    keys[i].outTangent *= scale;
+                }
+                curve.keys = keys;
+            }
         }
 
         private void ReleaseTrigger()

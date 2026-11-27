@@ -717,7 +717,10 @@ namespace LR2.EditorTools
             public string robotSource;
             public WeaponClass cls = WeaponClass.AssaultRifle;
             public float rpm = 700f, near = 33f, mid = 27f, far = 23f, head = 1.5f, range = 32f;
-            public float hip = 2.6f, ads = 0.06f, adsTime = 0.21f, sprintToFire = 0.24f, adsFov = 0.72f;
+            // ADS times (11-27, "fast paced shooter, ADS time cannot be sluggish"): about 30 % shorter than before. Rifles keep
+            // sprint-to-fire just above the ADS time, so a soldier aimed in out of a sprint can shoot as the sight arrives; the
+            // pistol is ready to fire a little before its sight is (0.10 vs 0.11 s), as it was before.
+            public float hip = 2.6f, ads = 0.06f, adsTime = 0.15f, sprintToFire = 0.17f, adsFov = 0.72f;
             public int mag = 30, reserve = 120, maxReserve = 210;
             public bool auto = true, akMaterials;
             public Vector2 kick = new Vector2(0.12f, 0.06f);
@@ -734,20 +737,20 @@ namespace LR2.EditorTools
         {
             // B55/B49/B26(D63): LeadRushHDRP default MK18 Mod 1 (clean, attachment-free iron-sight primary) is Slot 0 default; AK-12 remains selectable alongside Mk23 sidearm.
             new WeaponSpec { id = "Mk18", display = "MK18", source = DemoDir + "/Prefabs/Mk18/Mk18_Scriptable.prefab", audio = "M4", akMaterials = true,
-                             rpm = 700f, near = 37.5f, mid = 33.4f, far = 21.5f, range = 28f, hip = 2.0f, adsTime = 0.18f, sprintToFire = 0.2f, kick = new Vector2(0.1f, 0.06f),
+                             rpm = 700f, near = 37.5f, mid = 33.4f, far = 21.5f, range = 28f, hip = 2.0f, adsTime = 0.14f, sprintToFire = 0.16f, kick = new Vector2(0.1f, 0.06f),
                              pattern = 0.3f, adsRecoil = 0.50f, rightGripOffset = new Vector3(-0.004f, -0.022f, 0.012f), leftGripOffset = new Vector3(0f, -0.036f, 0f) }, // B47: 5.56 recoils less than 5.45 in ADS
             new WeaponSpec { id = "Mk23", display = "MK23", source = DemoDir + "/Prefabs/Humanoid/Mk23Mod0_Scriptable_Humanoid.prefab", audio = "Pistol",
                              robotSource = DemoDir + "/Prefabs/Pistol/Mk23Mod0_Scriptable.prefab",
                              cls = WeaponClass.Pistol, rpm = 300f, auto = false, mag = 12, reserve = 48, maxReserve = 72, near = 37.5f, mid = 33.4f, far = 21.5f,
-                             head = 1.8f, range = 18f, hip = 1.6f, ads = 0.08f, adsTime = 0.14f, sprintToFire = 0.12f, adsFov = 0.82f, kick = new Vector2(0.4f, 0.1f),
+                             head = 1.8f, range = 18f, hip = 1.6f, ads = 0.08f, adsTime = 0.11f, sprintToFire = 0.10f, adsFov = 0.82f, kick = new Vector2(0.4f, 0.1f),
                              pattern = 1f, patternH = 1f, rightGripOffset = Vector3.zero, leftGripOffset = Vector3.zero },
             // B107: slower, distinct per-weapon cadence; damage tiers compensate for the slower cycle while staying near current
             // body-shot TTK against both 100 HP and 100 HP + 50 armor (discrete shot counts limit exact matching).
             new WeaponSpec { id = "AK12", display = "AK-12", source = HumanoidAk12, robotSource = FullAk12, akMaterials = true, rpm = 600f, near = 37.5f, mid = 30f, far = 25f, hip = 2.2f },
             new WeaponSpec { id = "AK74N", display = "AK-74N", source = DemoDir + "/Prefabs/AK12/AK74N_Scriptable.prefab", akMaterials = true, rpm = 550f, near = 37.5f, mid = 30f, far = 25f,
-                             adsTime = 0.22f, pattern = 0.36f, rightGripOffset = new Vector3(0.002f, -0.014f, -0.030f), leftGripOffset = new Vector3(0f, -0.036f, 0f) },
+                             adsTime = 0.16f, sprintToFire = 0.18f, pattern = 0.36f, rightGripOffset = new Vector3(0.002f, -0.014f, -0.030f), leftGripOffset = new Vector3(0f, -0.036f, 0f) },
             new WeaponSpec { id = "FAL", display = "FAL", source = DemoDir + "/Prefabs/FAL/FAL_Scriptable.prefab", audio = "FAL", akMaterials = true, rpm = 500f, mag = 20, reserve = 80, maxReserve = 140,
-                             near = 48f, mid = 42f, far = 37.5f, range = 45f, hip = 3.0f, adsTime = 0.27f, sprintToFire = 0.3f, adsFov = 0.66f, kick = new Vector2(0.24f, 0.12f),
+                             near = 48f, mid = 42f, far = 37.5f, range = 45f, hip = 3.0f, adsTime = 0.19f, sprintToFire = 0.21f, adsFov = 0.66f, kick = new Vector2(0.24f, 0.12f),
                              pattern = 0.5f, patternH = 0.4f, adsRecoil = 0.60f, rightGripOffset = new Vector3(0.000f, -0.016f, -0.010f), leftGripOffset = new Vector3(0f, -0.036f, 0f) }, // B47: 7.62x51 stays harder in ADS
         };
 
@@ -2789,7 +2792,8 @@ namespace LR2.EditorTools
                         var fovSpd = ccso.FindProperty("fovSpeed");
                         if (fovSpd != null) fovSpd.floatValue = 8f;
                         var easeFunc = ccso.FindProperty("fovEaseMode.easeFunc");
-                        if (easeFunc != null) easeFunc.enumValueIndex = 1; // EEaseFunc.Sine (matches AdsLayerSettings)
+                        // Start-up value only: LR2Firearm.UpdateFieldOfView sets the speed and LR2's fast-start curve on every aim change.
+                        if (easeFunc != null) easeFunc.enumValueIndex = 1; // EEaseFunc.Sine
                         ccso.ApplyModifiedPropertiesWithoutUndo();
                     }
                     if (player && cam.GetComponent<BodycamRig>() == null) cam.gameObject.AddComponent<BodycamRig>(); // bodycam motion back on

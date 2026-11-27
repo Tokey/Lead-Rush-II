@@ -40,8 +40,8 @@ MonoBehaviour:
   effectiveRange: 32
   penetrationDepth: 0.25
   penetrationDamageScale: 0.65
-  sprintToFireTime: 0.24
-  adsTime: 0.22
+  sprintToFireTime: 0.18
+  adsTime: 0.16
   adsFovMultiplier: 0.72
   equipTime: 0.55
   reloadTime: 2.2
