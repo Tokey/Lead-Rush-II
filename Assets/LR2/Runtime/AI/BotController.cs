@@ -836,15 +836,18 @@ namespace LR2.AI
                     _flickOvershoot = false;
                     _flickPreFire = false;
                 }
+                // B118: the path bows sideways (half-normal, median ~8 % of the distance for casual looks, half that in a fight)
+                // the bow is a small wrist arc, never a swing: capped at 2 deg (user 11-19: the gun "keeps on going up then rotating")
                 _flickCurve = LegacyAim ? 0f : Mathf.Min(2f, angularDist * Mathf.Min(Mathf.Abs(Gauss()) * (_flickCasual ? 0.1f : 0.05f), _flickCasual ? 0.25f : 0.12f))
                               * (Random.value < 0.5f ? -1f : 1f);
                 _flickPerpYaw = nx;
                 _flickPerpPitch = ny;
                 _flickActive = true;
-                _nextFlickAllowedAt = now + _flickDuration + Random.Range(0.11f, 0.165f);
+                _nextFlickAllowedAt = now + _flickDuration + Random.Range(0.11f, 0.165f); // human visual feedback refractory period
             }
 
             float yawStepDeg, pitchStepDeg;
+            // B118: a casual look never delays a reaction: an enemy in sight ends it at once (a combat flick takes over)
             if (_flickActive && _flickCasual && engaging && bb.targetVisible && target != null) { _flickActive = false; _nextFlickAllowedAt = now; }
             if (engaging) _lookHoldUntil = 0f;
             if (_flickActive)
@@ -858,18 +861,22 @@ namespace LR2.AI
                 yawStepDeg = Mathf.DeltaAngle(_aimYaw, subYaw);
                 pitchStepDeg = subPitch - _aimPitch;
 
+                // Synchronize spring velocity so handoff from ballistic flick into closed-loop tracking has zero jerk spike
                 _yawVel = yawStepDeg / Mathf.Max(0.001f, dt);
                 _pitchVel = pitchStepDeg / Mathf.Max(0.001f, dt);
 
                 _flickProgress = u;
+                // an overshooting flick runs to its end point (passing through the target on the way)
                 if (u >= 1f || (!_flickOvershoot && angularDist < 2.2f))
                 {
                     _flickActive = false;
+                    // B118: 71 % of human movements pause 60-140 ms before the corrective submovement
                     if (_flickCasual && Random.value < 0.71f) _lookHoldUntil = now + Random.Range(0.06f, 0.14f);
                 }
             }
             else
             {
+                // Tracking: follow the target with small corrective movements; the harder the hand moves, the more it shakes
                 float zeta = engaging ? 0.80f : 1f;
                 float yawErr = rawYawErr;
                 float pitchErr = rawPitchErr;
@@ -883,12 +890,13 @@ namespace LR2.AI
                     pitchErr *= Mathf.Clamp(compEfficiency * (1f - _sprayHeat * 0.15f), 0.60f, 0.96f);
                 }
 
+                // Shake grows with the size of the movement (Harris & Wolpert's signal-dependent noise); yaw wobbles about 1.5x more than pitch
                 float cmdMag = Mathf.Sqrt(yawErr * yawErr + pitchErr * pitchErr);
                 float sdnAmp = Mathf.Min(1.6f, cmdMag * 0.032f * (0.55f + _combatStress * 0.65f));
                 yawErr += Mathf.Sin(_sdnPhase * 1.37f + _noiseSeed) * sdnAmp * 1.15f;
                 pitchErr += Mathf.Cos(_sdnPhase * 1.71f + _noiseSeed) * sdnAmp * 0.74f;
 
-                if (now < _lookHoldUntil && !engaging) { yawErr = 0f; pitchErr = 0f; _yawVel = 0f; _pitchVel = 0f; }
+                if (now < _lookHoldUntil && !engaging) { yawErr = 0f; pitchErr = 0f; _yawVel = 0f; _pitchVel = 0f; } // the dwell
                 _yawVel += (w * w * yawErr - 2f * zeta * w * _yawVel) * dt;
                 _pitchVel += (w * w * pitchErr - 2f * zeta * w * _pitchVel) * dt;
                 _yawVel = Mathf.Clamp(_yawVel, -900f, 900f);
@@ -981,12 +989,14 @@ namespace LR2.AI
                      bb.TimeSinceSeen < 0.85f && bb.ammo01 > 0.35f && d != null && d.aggression > 0.45f &&
                      now >= _burstPauseUntil && Vector3.Angle(Soldier.AimDirection, (bb.targetLastKnown + Vector3.up * 1.3f) - Soldier.AimOrigin) < 8f)
             {
+                // Brief suppressive burst on the corner where the target just ducked into cover
                 if (_burstShotsLeft <= 0) _burstShotsLeft = 2;
                 fire = true;
             }
             else if (!dumb && !visible && _intent.allowFire && gun != null && !gun.IsReloading && d != null && d.preFireChance > 0f
                      && bb.ammo01 > 0.3f && now >= _burstPauseUntil && PreFireExpectedSpot(bb, d, now))
             {
+                // B89 corner pre-fire: a short burst at the spot where the target is expected, as that spot comes into view
                 if (_burstShotsLeft <= 0) _burstShotsLeft = Random.Range(2, 4);
                 fire = true;
             }
@@ -1008,6 +1018,7 @@ namespace LR2.AI
             bool wantProne = _intent.prone;
 
             // Combat strafing (ADAD) and Tactical Micro peek styles.
+            // Combat strafing (ADAD) and range keeping.
             if (_intent.goal == BotGoal.Engage && visible)
             {
                 if (_intent.peekStyle == BotPeekStyle.Jiggle)

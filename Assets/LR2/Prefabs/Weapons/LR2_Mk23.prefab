@@ -520,7 +520,7 @@ MonoBehaviour:
   - attachments:
     - {fileID: 2660157611918459829}
   kinemationAttachments: 1
-  gateWallTuckInAds: 0
+  gateWallTuckInAds: 1
   primaryBodyRenderer: {fileID: 0}
   ironSightsMesh: {fileID: 0}
   scopedNoIronsMesh: {fileID: 0}

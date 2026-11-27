@@ -52,6 +52,11 @@ namespace LR2.Weapons
         [Header("Recoil")]
         [SerializeField] private FPSAnimationAsset fireClip;
         [SerializeField] private RecoilAnimData recoilData;
+        [Tooltip("Player only: scale of Kinemation's per-shot backward push (demo rifles push 5 cm). In ADS the camera sits on the " +
+                 "sight, so the full push moved the optic 2-5 cm behind the eye while firing (11-26).")]
+        [SerializeField, Range(0f, 1f)] private float playerPushScale = 0.15f;
+        [Tooltip("Player only: scale of Kinemation's backward kick while aiming down sights (its aimLoc.z).")]
+        [SerializeField, Range(0f, 1f)] private float playerAdsKickbackScale = 0.3f;
         [SerializeField] private RecoilPatternSettings recoilPatternSettings;
         [SerializeField] private FPSCameraShake cameraShake;
         [Min(0f)] [SerializeField] private float fireRate = 600f;
@@ -128,9 +133,8 @@ namespace LR2.Weapons
         /// <summary>The sight the gun is aimed through (null = iron sights / default aim point).</summary>
         public ScopeAttachment ActiveScope => !_usingIronSights && scopeGroups.Count > 0 ? scopeGroups[_scopeIndex].GetActiveAttachment() : null;
         public bool UsesKinemationAttachments => kinemationAttachments;
+        /// <summary>The sight Kinemation's ADS layer is aligning to the camera right now (iron sight or the fitted optic).</summary>
         public Transform ActiveAimPointTransform => _entity != null ? _entity.defaultAimPoint : null;
-        public bool IsSightLockEligible => Owner != null && Owner.IsLocalPlayer && !Owner.IsDead && !IsReloading;
-        public RecoilAnimation LiveRecoilAnimation => _recoilAnimation;
         public bool HasUnifiedScopes => scopeGroups != null && scopeGroups.Count > 0 && scopeGroups[0].attachments != null && scopeGroups[0].attachments.Count >= 2 && (ironAimPoint != null || scopedNoIronsMesh != null);
         public int CurrentScopeChoice => _currentScopeChoice;
         public bool IsUsingIronSights => _usingIronSights;
@@ -348,7 +352,7 @@ namespace LR2.Weapons
                 gripAttachments.Initialize(_fpsAnimator);
             }
 
-            if (_recoilAnimation != null) _recoilAnimation.Init(recoilData, Rpm, _fireMode);
+            if (_recoilAnimation != null) _recoilAnimation.Init(RecoilDataFor(Owner), Rpm, _fireMode);
             if (_recoilPattern != null) _recoilPattern.Init(RuntimePattern());
             // B125: the owner's own copy of the motion (its curves are evaluated on animation worker threads)
             if (_fpsAnimator != null) _fpsAnimator.LinkAnimatorLayer(Owner != null ? Owner.OwnMotion(equipMotion) : equipMotion);
@@ -781,6 +785,27 @@ namespace LR2.Weapons
             }
         }
 
+        private RecoilAnimData _playerRecoilData;
+
+        /// <summary>
+        /// The recoil animation data for this owner. The local player gets a copy with less backward travel (see
+        /// playerPushScale / playerAdsKickbackScale); bots, seen only from outside, keep Kinemation's demo data.
+        /// </summary>
+        private RecoilAnimData RecoilDataFor(SoldierController owner)
+        {
+            if (recoilData == null || owner == null || !owner.IsLocalPlayer) return recoilData;
+            if (_playerRecoilData == null)
+            {
+                _playerRecoilData = Instantiate(recoilData);
+                _playerRecoilData.name = recoilData.name + " (LR2 player)";
+                _playerRecoilData.pushAmount *= playerPushScale;
+                var adsLoc = _playerRecoilData.aimLoc;
+                adsLoc.z *= playerAdsKickbackScale;
+                _playerRecoilData.aimLoc = adsLoc;
+            }
+            return _playerRecoilData;
+        }
+
         /// <summary>Per-gun copy of the Kinemation recoil pattern, so per-weapon and ADS scaling never touch the shared demo asset.</summary>
         private RecoilPatternSettings RuntimePattern()
         {
@@ -934,17 +959,14 @@ namespace LR2.Weapons
                 _weaponAnimator.speed = 1f;
                 _weaponAnimator.Play("Fire", 0, 0f);
             }
-            bool isBot = combatant == null || !combatant.IsLocalPlayer;
+            // Bots take the same recoil as the player (fair fights, and the human-likeness study compares like with like).
+            // BotController pulls a climbing burst back down; errors above ~4 deg get its full correction.
             if (_cameraController != null) _cameraController.PlayCameraShake(cameraShake);
             if (fireClip != null && _playables != null) _playables.PlayAnimation(fireClip);
-            if (_recoilAnimation != null && recoilData != null)
-            {
-                if (isBot) _recoilAnimation.isAiming = true;
-                _recoilAnimation.Play();
-            }
+            if (_recoilAnimation != null && recoilData != null) _recoilAnimation.Play();
             if (_recoilPattern != null)
             {
-                ScalePatternForShot(owner.IsAiming, true, isBot ? 0.16f : 1f);
+                ScalePatternForShot(owner.IsAiming, true);
                 _recoilPattern.OnFireStart();
             }
             else
@@ -958,7 +980,7 @@ namespace LR2.Weapons
 
             if (definition != null)
             {
-                Vector2 kick = definition.cameraKick * (owner.IsAiming ? definition.adsKickMultiplier : 1f) * (isBot ? 0.20f : 1f);
+                Vector2 kick = definition.cameraKick * (owner.IsAiming ? definition.adsKickMultiplier : 1f);
                 owner.AddViewKick(new Vector2(kick.y * Mathf.Clamp(_sprayWeaveNow * 2f, -1f, 1f), -kick.x)); // B47: side follows the weave
             }
 

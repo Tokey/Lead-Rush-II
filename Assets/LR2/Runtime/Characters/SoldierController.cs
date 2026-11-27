@@ -473,6 +473,7 @@ namespace LR2.Characters
             }
 
             UpdateLook();
+            UpdateAim(); // before the gun ticks: a shot fired this frame must use this frame's look, not last frame's
             UpdateActions();
             UpdateWeaponSwitch();
             if (ActiveItem != null) ActiveItem.Tick(Time.deltaTime);
@@ -495,16 +496,24 @@ namespace LR2.Characters
             AimBlend = Mathf.MoveTowards(AimBlend, _isAiming ? 1f : 0f, Time.deltaTime / adsTime);
             Movement.IsAimingSlowdown = _isAiming;
 
-            Quaternion view = Quaternion.Euler(_pitch, transform.eulerAngles.y, 0f);
-            AimDirection = view * Vector3.forward;
-            AimOrigin = IsLocalPlayer && ViewCamera != null && ViewCamera.isActiveAndEnabled ? ViewCamera.transform.position : EyeTransform.position;
-            if (Combatant != null) Combatant.ViewDirection = AimDirection;
-
             LastMoveInput = _input.move;
             LastLeanInput = _input.lean;
             LastFireInput = _input.fire;
             InteractTriggeredFrame = _input.interact;
             _input.ResetOneShots();
+        }
+
+        /// <summary>
+        /// Shot ray for this frame: from the eye (the camera, as it was last rendered; in ADS that is the sight) along the
+        /// look direction the camera will render this frame. Bullets therefore land on the screen centre, which is where
+        /// Kinemation's ADS layer puts the sight.
+        /// </summary>
+        private void UpdateAim()
+        {
+            Quaternion view = Quaternion.Euler(_pitch, transform.eulerAngles.y, 0f);
+            AimDirection = view * Vector3.forward;
+            AimOrigin = IsLocalPlayer && ViewCamera != null && ViewCamera.isActiveAndEnabled ? ViewCamera.transform.position : EyeTransform.position;
+            if (Combatant != null) Combatant.ViewDirection = AimDirection;
         }
 
         private void UpdateLook()
@@ -1173,9 +1182,42 @@ namespace LR2.Characters
             cam.SetParent(_camParent, false);
             cam.localPosition = _camLocalPos;
             cam.localRotation = _camLocalRot;
-            if (CameraController != null) CameraController.ResetCameraState();
+            ClearCameraPlayback(CameraController);
             var bodycam = ViewCamera.GetComponent<BodycamRig>();
             if (bodycam != null) bodycam.ResetState();
+        }
+
+        private static FieldInfo[] _cameraPlaybackFields;
+
+        /// <summary>
+        /// FPSAnimator is disabled while dead, so a camera shake or reload camera animation that was playing at the moment
+        /// of death freezes and would finish playing after respawn. Kinemation's FPSCameraController has no public reset,
+        /// so its protected playback state is cleared here (the vendor code treats a null shake or animation as idle).
+        /// </summary>
+        private static void ClearCameraPlayback(FPSCameraController controller)
+        {
+            if (controller == null) return;
+            if (_cameraPlaybackFields == null)
+            {
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                var type = typeof(FPSCameraController);
+                _cameraPlaybackFields = new[]
+                {
+                    type.GetField("_activeShake", flags), type.GetField("_cameraShake", flags),
+                    type.GetField("_cameraShakeTarget", flags), type.GetField("_cameraShakePlayback", flags),
+                    type.GetField("_cameraAnimationAsset", flags), type.GetField("_activeCameraAnimation", flags),
+                    type.GetField("_cachedCameraAnimation", flags), type.GetField("_animationPlayback", flags),
+                    type.GetField("_animationLength", flags),
+                };
+            }
+            foreach (var field in _cameraPlaybackFields)
+            {
+                if (field == null) continue;
+                object idle = field.FieldType == typeof(KINEMATION.Shared.KAnimationCore.Runtime.Core.KTransform)
+                    ? KINEMATION.Shared.KAnimationCore.Runtime.Core.KTransform.Identity
+                    : field.FieldType.IsValueType ? Activator.CreateInstance(field.FieldType) : null;
+                field.SetValue(controller, idle);
+            }
         }
 
         public void Teleport(Vector3 position, float yaw)

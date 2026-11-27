@@ -35,7 +35,12 @@ namespace LR2.EditorTools
             public float railTopY;
             public Vector2 scopeZRange;
             public float mountZ;
+            // Iron-sight eye point (camera position in ADS) in the weapon-root frame. Heights come from the older Lead Rush
+            // project, whose iron sights lined up (rear aperture and front post centred); the AK-74N uses Kinemation's own
+            // DefaultAimPoint height. A low eye looks over the hand into the bottom of the rear sight.
             public Vector3 ironAimPos;
+            // Path (under the weapon root) of a rear sight to show only with iron sights, when the gun mesh has none.
+            public string ironRearSightSource;
             // Sight post removal boxes in weapon-root rest space: (zMin, zMax, yCut) within |x| < xHalfWidth
             public float removeHalfX;
             public float frontZMin, frontZMax, frontYCut;
@@ -53,7 +58,8 @@ namespace LR2.EditorTools
                 railTopY = 0.0400f,
                 scopeZRange = new Vector2(-0.10f, 0.24f),
                 mountZ = 0.015f,
-                ironAimPos = new Vector3(0f, 0.0672f, -0.175f),
+                ironAimPos = new Vector3(0f, 0.0700f, -0.175f),
+                ironRearSightSource = "Trijicon/rearsight",
                 removeHalfX = 0.022f,
                 frontZMin = 0.260f, frontZMax = 0.345f, frontYCut = 0.0385f,
                 rearZMin = 0f, rearZMax = -1f, rearYCut = 9f, // Mk18_Core already omits rear flip-up sight
@@ -66,7 +72,7 @@ namespace LR2.EditorTools
                 railTopY = 0.0445f,
                 scopeZRange = new Vector2(-0.08f, 0.22f),
                 mountZ = 0.015f,
-                ironAimPos = new Vector3(0f, 0.0568f, -0.183f),
+                ironAimPos = new Vector3(0f, 0.0570f, -0.183f),
                 removeHalfX = 0.022f,
                 frontZMin = 0.275f, frontZMax = 0.355f, frontYCut = 0.0435f,
                 rearZMin = -0.175f, rearZMax = -0.090f, rearYCut = 0.0438f,
@@ -79,7 +85,7 @@ namespace LR2.EditorTools
                 railTopY = 0.0455f,
                 scopeZRange = new Vector2(-0.16f, 0.14f),
                 mountZ = -0.020f,
-                ironAimPos = new Vector3(0f, 0.0498f, -0.190f),
+                ironAimPos = new Vector3(0f, 0.0520f, -0.190f),
                 removeHalfX = 0.022f,
                 frontZMin = 0.430f, frontZMax = 0.515f, frontYCut = 0.0260f,
                 rearZMin = 0.020f, rearZMax = 0.170f, rearYCut = 0.0440f,
@@ -93,7 +99,7 @@ namespace LR2.EditorTools
                 railTopY = 0.0325f,
                 scopeZRange = new Vector2(-0.09f, 0.18f),
                 mountZ = 0.020f,
-                ironAimPos = new Vector3(0f, 0.0462f, -0.218f),
+                ironAimPos = new Vector3(0f, 0.0480f, -0.218f),
                 removeHalfX = 0.022f,
                 frontZMin = 0.380f, frontZMax = 0.455f, frontYCut = 0.0310f,
                 rearZMin = -0.165f, rearZMax = -0.100f, rearYCut = 0.0315f,
@@ -320,6 +326,35 @@ namespace LR2.EditorTools
                     ironAp.position = spec.ironAimPos;
                     ironAp.rotation = Quaternion.identity;
 
+                    // The MK18's flip-up rear sight only exists inside Kinemation's Trijicon (ACOG) attachment, which is off
+                    // with iron sights, so the iron view had no rear aperture (11-26). Copy it onto the gun as an iron-only part.
+                    var ironOnly = new List<GameObject>();
+                    var oldIronRear = contents.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t != null && t.name == "LR2_IronRearSight");
+                    if (oldIronRear != null) UnityEngine.Object.DestroyImmediate(oldIronRear.gameObject);
+                    if (!string.IsNullOrEmpty(spec.ironRearSightSource))
+                    {
+                        var src = contents.transform.Find(spec.ironRearSightSource);
+                        if (src == null) Debug.LogError($"[LR2ScopeBuilder] {spec.id}: rear sight '{spec.ironRearSightSource}' not found; iron view has no rear aperture.");
+                        else
+                        {
+                            var rear = UnityEngine.Object.Instantiate(src.gameObject, attachParent, true);
+                            rear.name = "LR2_IronRearSight";
+                            rear.SetActive(true);
+                            foreach (var c in rear.GetComponentsInChildren<Collider>(true)) UnityEngine.Object.DestroyImmediate(c);
+                            // It is the ACOG's backup sight, built to sit on top of the scope. Seat it on the iron sight line:
+                            // centred on the barrel axis, aperture (just under the top of the post) at the iron eye height.
+                            var parts = rear.GetComponentsInChildren<Renderer>(true);
+                            if (parts.Length > 0)
+                            {
+                                Bounds b = parts[0].bounds;
+                                foreach (var r in parts) b.Encapsulate(r.bounds);
+                                const float apertureBelowTop = 0.0026f;
+                                rear.transform.position += new Vector3(-b.center.x, spec.ironAimPos.y + apertureBelowTop - b.max.y, 0f);
+                            }
+                            ironOnly.Add(rear);
+                        }
+                    }
+
                     // Create optional Picatinny rail bridge for AK74N / FAL
                     var oldRail = contents.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t != null && t.name == "LR2_TopRailBridge");
                     if (oldRail != null) UnityEngine.Object.DestroyImmediate(oldRail.gameObject);
@@ -502,6 +537,12 @@ namespace LR2.EditorTools
                     SetMatArray("ironSightsMaterials", ironMats);
                     SetMatArray("scopedNoIronsMaterials", scopedMats);
                     fso.FindProperty("ironAimPoint").objectReferenceValue = ironAp;
+                    var ironOnlyProp = fso.FindProperty("ironSightOnlyObjects");
+                    if (ironOnlyProp != null)
+                    {
+                        ironOnlyProp.arraySize = ironOnly.Count;
+                        for (int k = 0; k < ironOnly.Count; k++) ironOnlyProp.GetArrayElementAtIndex(k).objectReferenceValue = ironOnly[k];
+                    }
 
                     var sgProp = fso.FindProperty("scopeGroups");
                     sgProp.ClearArray();
@@ -573,7 +614,7 @@ namespace LR2.EditorTools
             {
                 "AK12" => "Assets/KinemationDemo/Meshes/Weapons/AK12/W_AK12_ReloadEmpty.fbx",
                 "AK74N" => "Assets/KinemationDemo/Meshes/Weapons/AK74N/AKS-74N.fbx",
-                "FAL" => "Assets/KinemationDemo/Meshes/Weapons/FAL/W_FAL_ReloadEmpty.fbx",
+                "FAL" => "Assets/KinemationDemo/Animations/Weapons/FAL/W_FAL_ReloadEmpty.fbx", // the FAL body mesh lives with its animations
                 _ => null
             };
             if (!string.IsNullOrEmpty(fbxPath))
@@ -581,6 +622,9 @@ namespace LR2.EditorTools
                 var found = AssetDatabase.LoadAllAssetsAtPath(fbxPath).OfType<Mesh>()
                     .OrderByDescending(m => m.vertexCount).FirstOrDefault();
                 if (found != null) return found;
+                // The fallback is the renderer's current mesh, which after one build is the sight-less scoped copy:
+                // using it silently stored a gun without iron sights as the iron-sight mesh (FAL, 11-24).
+                Debug.LogError($"[LR2ScopeBuilder] {weaponId}: source mesh not found at {fbxPath}; iron-sight mesh left unchanged.");
             }
             return fallback;
         }

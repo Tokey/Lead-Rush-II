@@ -497,25 +497,36 @@ namespace LR2.Game
             UnityEngine.SceneManagement.SceneManager.LoadScene(LR2Session.CurrentMapScene);
         }
 
+        /// <summary>Quit an experiment from the pause menu: end the session and go back to the main menu.</summary>
         public static void AbortSession()
         {
+            // Telemetry is written when a match ends, so the match that was quit has no data; say so.
             if (IsSessionActive)
-                JustCompletedSummary = $"EXPERIMENT ENDED EARLY ({CurrentQueueIndex}/{MatchOrder.Length})  ·  DATA SAVED TO {SessionDirPath}";
+                JustCompletedSummary = $"EXPERIMENT ENDED EARLY ({CurrentQueueIndex}/{MatchOrder.Length})  ·  FINISHED MATCHES SAVED TO {SessionDirPath}  ·  THE QUIT MATCH WAS NOT RECORDED";
             FinishSessionAndReturnToMenu();
         }
 
-        private static void FinishSessionAndReturnToMenu()
+        /// <summary>
+        /// Clears any session and its overrides without loading a scene. Skirmish START calls this: going through
+        /// AbortSession there queued a main-menu reload in the same frame as the map load and the match never started.
+        /// </summary>
+        public static void ClearSessionState()
         {
             IsSessionActive = false;
             SkirmishSetup.BlindMode = false;
             SkirmishSetup.Active = false;
             LLMCommanderConfig.ExperimentModeOverride = null;
+            LR2Session.ActiveSettings = null;
+            ClearCachedTemplates();
+        }
+
+        private static void FinishSessionAndReturnToMenu()
+        {
+            ClearSessionState();
             Time.timeScale = 1f;
             AudioListener.pause = false;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
-            LR2Session.ActiveSettings = null;
-            ClearCachedTemplates();
             if (Application.CanStreamedLevelBeLoaded(LR2Session.MenuScene))
                 UnityEngine.SceneManagement.SceneManager.LoadScene(LR2Session.MenuScene);
         }

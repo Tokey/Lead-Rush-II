@@ -102,8 +102,28 @@ namespace LR2.AI.LLM
             return null;
         }
 
-        public static bool CanSendNow => !Busy && Time.realtimeSinceStartup >= _blockedUntil
-                                          && Time.realtimeSinceStartup - _lastRequestAt >= MinGapSeconds;
+        public static bool CanSendNow
+        {
+            get
+            {
+                // A request cannot outlive its 15 s timeout. If Busy is still set long after that, the coroutine that owned it
+                // died with its scene (Unity drops a destroyed host's coroutines without running their finally blocks), and
+                // without this every later request would wait forever.
+                if (Busy && Time.realtimeSinceStartup - _lastRequestAt > RequestTimeoutSeconds + 5f) Busy = false;
+                return !Busy && Time.realtimeSinceStartup >= _blockedUntil && Time.realtimeSinceStartup - _lastRequestAt >= MinGapSeconds;
+            }
+        }
+
+        private const int RequestTimeoutSeconds = 15;
+
+        /// <summary>Play mode without a domain reload keeps statics: start every session idle.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics()
+        {
+            Busy = false;
+            _blockedUntil = 0f;
+            _lastRequestAt = -999f;
+        }
 
         /// <summary>One chat completion. Calls <paramref name="done"/> exactly once.</summary>
         public static IEnumerator Chat(string model, string system, string user, int maxTokens, float temperature, bool jsonMode,
@@ -119,6 +139,9 @@ namespace LR2.AI.LLM
                 .Append(temperature.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))
                 .Append(",\"max_tokens\":").Append(maxTokens);
             if (jsonMode) body.Append(",\"response_format\":{\"type\":\"json_object\"}");
+            // gpt-oss models reason before answering; at the default effort the reasoning used up max_tokens and the JSON
+            // came back cut off ("Failed to validate JSON" on 45 of 92 bench calls, 11-23).
+            if (model.Contains("gpt-oss")) body.Append(",\"reasoning_effort\":\"low\"");
             body.Append(",\"messages\":[{\"role\":\"system\",\"content\":\"").Append(Esc(system))
                 .Append("\"},{\"role\":\"user\",\"content\":\"").Append(Esc(user)).Append("\"}]}");
 
@@ -132,7 +155,7 @@ namespace LR2.AI.LLM
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
                 req.SetRequestHeader("Authorization", "Bearer " + key);
-                req.timeout = 15;
+                req.timeout = RequestTimeoutSeconds;
                 yield return req.SendWebRequest();
 
                 r.seconds = Time.realtimeSinceStartup - t0;

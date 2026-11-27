@@ -17,7 +17,7 @@ namespace LR2.Characters
     /// </list>
     /// Stops on death so the SWAT ragdoll takes over.
     /// </summary>
-    [DefaultExecutionOrder(250)] // after WeaponAntiClip (200) and FPSAnimator.LateUpdate, before bodycam (1100)
+    [DefaultExecutionOrder(250)] // legacy humanoid SWAT proxy, unused on the robot soldier; after BodycamRig (120), WeaponAntiClip (200) and FPSAnimator.LateUpdate
     public class RetargetProxy : MonoBehaviour
     {
         [SerializeField] private Animator driver;

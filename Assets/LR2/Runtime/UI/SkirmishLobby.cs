@@ -540,7 +540,7 @@ namespace LR2.UI
         private void Start_()
         {
             if (!_startButton.interactable) return;
-            ExperimentSessionRunner.AbortSession();
+            ExperimentSessionRunner.ClearSessionState();
             SkirmishSetup.PlayerSpectates = false;
             SkirmishSetup.BlindMode = false;
             SaveRules();

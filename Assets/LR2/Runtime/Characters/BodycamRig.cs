@@ -7,17 +7,20 @@ namespace LR2.Characters
     /// <summary>
     /// Bodycam-style camera motion layered on top of the Kinemation camera: a chest-mounted camera that bounces with
     /// every stride, rolls into strafes and turns, tilts with acceleration, breathes, shakes when hit and dips on
-    /// landings. Runs after Kinemation's camera update (which resets the camera every frame), before ADS sight locking.
-    /// At full ADS, bodycam offsets damp cleanly to zero so ViewCamera stays optical-axis locked onto the reticle.
+    /// landings. Runs after Kinemation's camera update (which resets the camera every frame), so it never accumulates.
+    /// It only moves the rendered view, and it fades out while aiming down sights: Kinemation puts the camera on the
+    /// sight in ADS, and any bodycam offset there would move the picture off the line the bullets fly along.
     /// </summary>
     [DefaultExecutionOrder(120)]
     public class BodycamRig : MonoBehaviour
     {
         [Header("Global")]
-        [Tooltip("Overall strength (0 = disabled, uses crisp Kinemation FPSCameraController directly). Also scaled by the BODYCAM MOTION setting.")]
+        [Tooltip("Overall strength (0 = disabled, uses crisp Kinemation FPSCameraController directly). Also scaled by the BODYCAM MOTION setting. Fades out completely while aiming down sights.")]
         [SerializeField, Range(0f, 2f)] private float intensity = 1f;
-        [Tooltip("How much motion is removed in ADS (1 = zero offset at full ADS).")]
-        [SerializeField, Range(0f, 1f)] private float adsDamping = 1f;
+
+        // Past this aim blend the sight must sit exactly on the camera axis, so the bodycam adds nothing.
+        private const float FullAdsBlend = 0.985f;
+        private const float MinStrength = 0.0005f;
 
         [Header("Stride bob")]
         [SerializeField] private float strideLength = 1.55f;
@@ -107,8 +110,8 @@ namespace LR2.Characters
             if (dt <= 0f) return;
             float adsT = Mathf.SmoothStep(0f, 1f, _soldier.AimBlend);
             float k = intensity * LR2Settings.BodycamMotion * (1f - adsT);
-            if (_soldier.AimBlend >= 0.985f) k = 0f;
-            if (k <= 0.0005f) return;
+            if (_soldier.AimBlend >= FullAdsBlend) k = 0f;
+            if (k <= MinStrength) return;
 
             var move = _soldier.Movement;
             float speed = move.IsGrounded ? move.Speed : 0f;

@@ -89,7 +89,7 @@ Appended when **Prompt Human Rating** is enabled in the Experiments tab (`8` col
 | 39–41 | `ammo_mag, hp, armor` | int, pts, pts | Current magazine rounds, health, and body armour |
 | 42 | `has_visible_enemy` | `0\|1` | `1` if any hostile has unobstructed line-of-sight inside torso/eye cone |
 | 43 | `nearest_enemy_dist` | `m` | Euclidean distance to nearest visible (or tracked) hostile |
-| 44–46 | `err_yaw_deg, err_pitch_deg, err_total_deg` | `deg` | Crosshair angular offset from nearest visible enemy head/chest (`err_yaw > 0` right of target, `err_pitch < 0` above target) |
+| 44–46 | `err_yaw_deg, err_pitch_deg, err_total_deg` | `deg` | Crosshair angular offset from nearest visible enemy head/chest (`err_yaw > 0` right of target, `err_pitch > 0` above target; corrected 11-26, the code has always used this sign) |
 | 47 | `enemy_vel_lat` | `m/s` | Signed lateral screen-plane speed of target relative to shooter gaze |
 | 48 | `near_cover_dist` | `m` | Distance to nearest tagged `CoverPoint` (`2.5 m` cover-proximity threshold) |
 | 49–50 | `bot_goal, bot_order` | enum | `TacticalBotBrain` active goal (`Engage`, `SeekCover`, `Flank`, `Resupply`, …) and active LLM `BotOrder` |

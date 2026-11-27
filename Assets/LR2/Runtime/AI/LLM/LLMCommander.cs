@@ -725,19 +725,44 @@ namespace LR2.AI.LLM
             return s.Length > 140 ? s.Substring(0, 140) : s;
         }
 
+        /// <summary>Text escaped for a JSON string value, cut at <paramref name="max"/> characters.</summary>
+        private static string JsonText(string s, int max)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            if (s.Length > max) s = s.Substring(0, max);
+            var sb = new StringBuilder(s.Length + 16);
+            foreach (char c in s)
+            {
+                switch (c)
+                {
+                    case '"': sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < ' ') sb.Append("\\u").Append(((int)c).ToString("x4"));
+                        else sb.Append(c);
+                        break;
+                }
+            }
+            return sb.ToString();
+        }
+
         private void Log(float sentAt, string state, GroqClient.Result r, int issued, int rejected, string note)
         {
             if (string.IsNullOrEmpty(_logPath)) return;
             try
             {
                 var inv = CultureInfo.InvariantCulture;
-                string reply = r != null && r.content != null ? Clean(r.content.Length > 1500 ? r.content.Substring(0, 1500) : r.content) : "";
+                // The whole reply goes into the log (the study counts orders from it); Clean() is the 140-char chat version.
+                string reply = r != null && r.content != null ? JsonText(r.content, 4000) : "";
                 string line = "{\"t\":" + sentAt.ToString("0.0", inv) + ",\"team\":\"" + Team + "\",\"model\":\"" + Model +
                               "\",\"status\":" + (r != null ? r.status : 0) + ",\"ok\":" + (r != null && r.ok ? "true" : "false") +
                               ",\"seconds\":" + (r != null ? r.seconds.ToString("0.00", inv) : "0") +
                               ",\"promptTokens\":" + (r != null ? r.promptTokens : 0) + ",\"completionTokens\":" + (r != null ? r.completionTokens : 0) +
                               ",\"remainingRequests\":\"" + (r?.remainingRequests ?? "") + "\",\"remainingTokens\":\"" + (r?.remainingTokens ?? "") +
-                              "\",\"issued\":" + issued + ",\"rejected\":" + rejected + ",\"note\":\"" + Clean(note) +
+                              "\",\"issued\":" + issued + ",\"rejected\":" + rejected + ",\"note\":\"" + JsonText(note, 1000) +
                               "\",\"reply\":\"" + reply + "\",\"state\":" + state + "}";
                 File.AppendAllText(_logPath, line + "\n");
             }

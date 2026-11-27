@@ -159,6 +159,15 @@ namespace LR2.World
             public int difficulty;
             public TeamId team;
 
+            // Object.name allocates a new string on every read; read it again only when the held item changes.
+            private Component _nameOf;
+            private string _itemName = "";
+            public string ItemName(Component item)
+            {
+                if (item != _nameOf) { _nameOf = item; _itemName = item != null ? item.name : ""; }
+                return _itemName;
+            }
+
             // Per-frame lossless delta accumulators flushed each telemetry sample
             public Vector2 accRawLook;
             public Vector2 accRecoil;
@@ -413,9 +422,9 @@ namespace LR2.World
                     Vector3 aimPt = nearest.ChestPosition;
                     Vector3 dir = aimPt - sc.AimOrigin;
                     Vector2 targetYawPitch = LR2Math.DirectionToYawPitch(dir);
-                    errYaw = Mathf.DeltaAngle(targetYawPitch.x, curYaw);   // positive = right of target
-                    errPitch = targetYawPitch.y - curPitch;               // positive = looking below target (wait Pitch down is +, so dir pitch - curPitch)
-                    // Normalize consistently: desired.y - _aimPitch = how high/low crosshair sits relative to chest
+                    // Pitch grows downward, so errPitch > 0 means the crosshair is above the target's chest; errYaw > 0 means right of it.
+                    errYaw = Mathf.DeltaAngle(targetYawPitch.x, curYaw);
+                    errPitch = targetYawPitch.y - curPitch;
                     Vector3 fwd = Quaternion.Euler(curPitch, curYaw, 0f) * Vector3.forward;
                     errTotal = Vector3.Angle(fwd, dir);
                     Vector3 nDir = dir.sqrMagnitude > 0.001f ? dir.normalized : Vector3.forward;
@@ -503,7 +512,7 @@ namespace LR2.World
                     lean = sc.LastLeanInput,
                     firing = tr.accFire,
                     reloading = sc.IsReloading,
-                    weapon = sc.ActiveItem != null ? sc.ActiveItem.name : "",
+                    weapon = tr.ItemName(sc.ActiveItem),
                     ammoMag = sc.ActiveFirearm != null ? sc.ActiveFirearm.AmmoInMagazine : 0,
                     hp = c.Health != null ? c.Health.Current : 0f,
                     armor = c.Health != null ? c.Health.Armor : 0f,
@@ -715,10 +724,25 @@ namespace LR2.World
         private void StartSavingAsync()
         {
             _isSaving = true;
+            _asyncDoneFlag = false;
             _saveProgress = 0.05f;
             _saveStage = $"SNAPSHOT {_ticks.Count:N0} TICKS · PREPARING CSV BUFFERS...";
             _overlayShownAt = Time.unscaledTime;
             EnsureSavingOverlay();
+            try
+            {
+                BeginSave();
+            }
+            catch (Exception ex)
+            {
+                // The end-of-match screen waits for the save; never leave it waiting on a save that never started.
+                Debug.LogError($"[LR2] Telemetry save could not start: {ex}");
+                _asyncDoneFlag = true;
+            }
+        }
+
+        private void BeginSave()
+        {
 
             // Resolve session identity & InvasionFramerate-style Data/ output directory
             bool isSess = ExperimentSessionRunner.IsSessionActive;
@@ -730,7 +754,18 @@ namespace LR2.World
             string condTag = expSpec != null ? ExperimentSessionRunner.ConditionTagOf(expSpec) : (SkirmishSetup.Active ? "skirmish" : "quickplay");
             string idTag = isCli ? $"cli_m{matchIdx:00}" : $"{sessNumId}_{runId}_m{matchIdx:00}";
 
-            string outDir = ResolveMatchOutputDir(runId, out string sessionLogPath);
+            string outDir, sessionLogPath;
+            try
+            {
+                outDir = ResolveMatchOutputDir(runId, out sessionLogPath);
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                // Read-only install folder or a full disk: keep the data in the user's profile instead.
+                outDir = Path.Combine(Application.persistentDataPath, "Data", "Logs", $"adhoc_{runId}", "match_01_adhoc");
+                sessionLogPath = "";
+                Debug.LogWarning($"[LR2] Telemetry folder not writable ({ex.Message}); saving to {outDir}");
+            }
             var inv = CultureInfo.InvariantCulture;
             var ticksSnap = new List<TickSample>(_ticks);
             var eventsSnap = new List<TelemetryEvent>(_events);
@@ -793,21 +828,11 @@ namespace LR2.World
                 }
                 finally
                 {
-                    MarkSaveFinishedOnThread();
+                    _asyncDoneFlag = true; // this runs on a worker thread; Update() hides the overlay on the main thread
                 }
             });
         }
 
-        private void MarkSaveFinishedOnThread()
-        {
-            StartCoroutineOnMain();
-        }
-
-        private void StartCoroutineOnMain()
-        {
-            // Poll in Update instead since Task.Run executes off main thread
-            _asyncDoneFlag = true;
-        }
         private volatile bool _asyncDoneFlag;
 
         private void Update()

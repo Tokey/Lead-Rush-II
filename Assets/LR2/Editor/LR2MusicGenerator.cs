@@ -253,6 +253,7 @@ namespace LR2.EditorTools
 
             AddWarTornOrchestralBed(L, R, 0f, brassWeight: 0.24f, gritDrive: 1.45f, withArtillery: true);
             AddCircularStereoEcho(L, R, Mathf.RoundToInt(0.375f * SampleRate), 0.32f);
+            AddFocusLayer(L, R, 0f, 909, amount: 0.9f, drums: true);
             FinalizeStem(L, R, targetRms: 0.125f, maxPeak: 0.74f);
             WriteWav(path, L, R);
         }
@@ -293,7 +294,8 @@ namespace LR2.EditorTools
 
             AddCircularStereoEcho(L, R, Mathf.RoundToInt(0.375f * SampleRate), 0.26f);
             MixProgressiveGuitar(L, R, GuitarIntensity.CleanCalm, shift);
-            FinalizeStem(L, R, targetRms: 0.055f, maxPeak: 0.62f);
+            AddFocusLayer(L, R, shift, theme.Seed, amount: 1.0f, drums: true);
+            FinalizeStem(L, R, targetRms: 0.07f, maxPeak: 0.66f);
             WriteWav(path, L, R);
         }
 
@@ -350,6 +352,7 @@ namespace LR2.EditorTools
             AddWarTornOrchestralBed(L, R, shift, brassWeight: 0.28f, gritDrive: 1.75f, withArtillery: true);
             AddCircularStereoEcho(L, R, Mathf.RoundToInt(0.25f * SampleRate), 0.18f);
             MixProgressiveGuitar(L, R, GuitarIntensity.OverdriveTension, shift);
+            AddFocusLayer(L, R, shift, theme.Seed + 1, amount: 0.55f, drums: false);
             FinalizeStem(L, R, targetRms: 0.145f, maxPeak: 0.80f);
             WriteWav(path, L, R);
         }
@@ -715,6 +718,205 @@ namespace LR2.EditorTools
                 L[i] += SoftLowpass(ref hornLpL, brassL, bCut) + art;
                 R[i] += SoftLowpass(ref hornLpR, brassR, bCut) + art;
             }
+        }
+
+        // ------------------------------------------------------------------ focus layer (11-26)
+        // The developer: the soundtrack is "nice, just too robotic/simplish"; it should be music that helps people lock in.
+        // Study-music conventions: a steady unhurried pulse, warm low-information harmony, a sparse melody that never
+        // demands attention, and nothing perfectly on the grid. This layer adds that on top of the menu, calm and tension
+        // stems: electric-piano chords strummed by hand, a quiet answering melody that sometimes rests, a soft swung kit,
+        // tape wobble, a faint vinyl bed and a small room. Everything is seeded (the same build gives the same music) and
+        // written around the loop point, so the 16 s stems still loop without a seam.
+
+        private static readonly int[][] MelodyA = { new[] { 0, 2 }, new[] { 3, 3 }, new[] { 5, 1 } };             // (eighth, arp index)
+        private static readonly int[][] MelodyB = { new[] { 1, 4 }, new[] { 4, 2 }, new[] { 6, 3 } };
+
+        private static void AddFocusLayer(float[] L, float[] R, float semitoneShift, int seed, float amount, bool drums)
+        {
+            int n = L.Length;
+            var fL = new float[n];
+            var fR = new float[n];
+            var rng = new System.Random(seed * 7919 + 17);
+            float Jitter(float ms) => (float)(rng.NextDouble() * 2.0 - 1.0) * ms / 1000f;
+            float Vel(float lo, float hi) => lo + (float)rng.NextDouble() * (hi - lo);
+            const float beat = 0.5f, eighth = 0.25f, swing = 0.035f; // offbeat eighths land 35 ms late
+
+            for (int bar = 0; bar < Bars; bar++)
+            {
+                float barStart = bar * 2f;
+                var chord = PadChords[bar];
+                bool restrike = bar % 2 == 1;
+
+                // Electric-piano chord, strummed low to high, with a softer comp on beat 3 every other bar.
+                for (int hit = 0; hit < (restrike ? 2 : 1); hit++)
+                {
+                    float hitTime = barStart + hit * 2f * beat + Jitter(8f);
+                    float hitVel = hit == 0 ? Vel(0.62f, 0.82f) : Vel(0.38f, 0.52f);
+                    float length = (hit == 0 && restrike ? 2f * beat : 2f) + 0.35f;
+                    float strum = 0f;
+                    for (int v = 0; v < chord.Length; v++)
+                    {
+                        strum += 0.008f + (float)rng.NextDouble() * 0.012f;
+                        float pan = 0.5f + (v - 1.5f) * 0.18f;
+                        AddNote(fL, fR, hitTime + strum, length, MidiToHz(chord[v] + semitoneShift), hitVel * (v == 0 ? 0.8f : 1f) * 0.085f, pan, EPianoSample);
+                    }
+                }
+
+                // Melody: call (bars 0-3) and answer (bars 4-7); a quarter of the notes rest, the last bar resolves long.
+                var motif = bar < 4 ? MelodyA : MelodyB;
+                for (int k = 0; k < motif.Length; k++)
+                {
+                    if (rng.NextDouble() < 0.25 && !(bar == Bars - 1 && k == motif.Length - 1)) continue;
+                    float midi = ArpNotes[bar][motif[k][1]] + semitoneShift;
+                    while (midi < 67f) midi += 12f;
+                    float time = barStart + motif[k][0] * eighth + (motif[k][0] % 2 == 1 ? swing : 0f) + Jitter(12f);
+                    float length = bar == Bars - 1 && k == motif.Length - 1 ? 1.6f : Vel(0.55f, 0.9f);
+                    AddNote(fL, fR, time, length, MidiToHz(midi), Vel(0.55f, 0.85f) * 0.05f, 0.5f + Jitter(250f), GlassSample);
+                }
+
+                if (!drums) continue;
+                for (int e = 0; e < 8; e++)
+                {
+                    float time = barStart + e * eighth + (e % 2 == 1 ? swing : 0f) + Jitter(6f);
+                    bool kick = e == 0 || e == 3 || (bar % 2 == 1 && e == 4);
+                    if (kick) AddNote(fL, fR, time, 0.45f, 0f, Vel(0.75f, 0.95f) * 0.20f, 0.5f, KickSample);
+                    if (e == 2 || e == 6) AddNote(fL, fR, time, 0.25f, 0f, Vel(0.6f, 0.8f) * 0.07f, 0.55f, RimSample);
+                    AddNote(fL, fR, time, 0.12f, 0f, (e % 2 == 0 ? Vel(0.6f, 0.8f) : Vel(0.3f, 0.5f)) * 0.035f, 0.62f, HatSample);
+                }
+            }
+
+            // Faint vinyl/tape bed: low-passed noise with the odd crackle.
+            float bedLp = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float white = (float)(rng.NextDouble() * 2.0 - 1.0);
+                float bed = SoftLowpass(ref bedLp, white, 2400f) * 0.010f + (rng.NextDouble() < 0.00012 ? white * 0.03f : 0f);
+                fL[i] += bed;
+                fR[i] += bed * 0.9f;
+            }
+
+            AddCircularRoom(fL, fR, 0.22f);
+            for (int i = 0; i < n; i++)
+            {
+                L[i] += fL[i] * amount;
+                R[i] += fR[i] * amount;
+            }
+        }
+
+        private delegate float NoteVoice(float t, float hz, float length, int noiseSeed);
+
+        /// <summary>Adds one note, wrapping around the loop so a tail that runs past the end continues at the start.</summary>
+        private static void AddNote(float[] L, float[] R, float start, float length, float hz, float gain, float pan, NoteVoice voice)
+        {
+            int n = L.Length;
+            int s0 = Mathf.RoundToInt(start * SampleRate);
+            int count = Mathf.RoundToInt((length + 0.25f) * SampleRate);
+            float gl = gain * Mathf.Sqrt(1f - Mathf.Clamp01(pan)), gr = gain * Mathf.Sqrt(Mathf.Clamp01(pan));
+            int noiseSeed = s0;
+            for (int k = 0; k < count; k++)
+            {
+                float t = k / (float)SampleRate;
+                float release = t > length ? Mathf.Clamp01(1f - (t - length) / 0.25f) : 1f;
+                float x = voice(t, hz, length, noiseSeed + k) * release;
+                int idx = ((s0 + k) % n + n) % n;
+                L[idx] += x * gl;
+                R[idx] += x * gr;
+            }
+        }
+
+        private static float Wow(float t) => 1f + 0.0016f * Mathf.Sin(2f * Mathf.PI * 0.33f * t) + 0.0007f * Mathf.Sin(2f * Mathf.PI * 1.7f * t);
+
+        /// <summary>Soft Rhodes-like tone: a sine carrier with a decaying bell modulation, a short tine, gentle tape wobble.</summary>
+        private static float EPianoSample(float t, float hz, float length, int noiseSeed)
+        {
+            float f = hz * Wow(t);
+            float attack = Mathf.Clamp01(t / 0.004f);
+            float index = 1.3f * Mathf.Exp(-t * 5.5f);
+            float tone = Mathf.Sin(2f * Mathf.PI * f * t + index * Mathf.Sin(2f * Mathf.PI * f * t));
+            float tine = Mathf.Sin(2f * Mathf.PI * f * 4.01f * t) * 0.07f * Mathf.Exp(-t * 14f);
+            return (tone * Mathf.Exp(-t * 0.85f) + tine) * attack;
+        }
+
+        /// <summary>Quiet glassy lead: sine plus a little octave, slow attack, long soft decay.</summary>
+        private static float GlassSample(float t, float hz, float length, int noiseSeed)
+        {
+            float f = hz * Wow(t);
+            float attack = Mathf.Clamp01(t / 0.012f);
+            return (Mathf.Sin(2f * Mathf.PI * f * t) + 0.18f * Mathf.Sin(4f * Mathf.PI * f * t)) * Mathf.Exp(-t * 2.1f) * attack;
+        }
+
+        private static float KickSample(float t, float hz, float length, int noiseSeed)
+        {
+            float f = Mathf.Lerp(105f, 46f, Mathf.Clamp01(t * 14f));
+            return Mathf.Sin(2f * Mathf.PI * f * t) * Mathf.Exp(-t * 9f) * Mathf.Clamp01(t / 0.002f);
+        }
+
+        private static float Noise(int seed)
+        {
+            unchecked
+            {
+                uint x = (uint)seed * 747796405u + 2891336453u;
+                x = ((x >> (int)((x >> 28) + 4u)) ^ x) * 277803737u;
+                return ((x >> 22) ^ x) / (float)uint.MaxValue * 2f - 1f;
+            }
+        }
+
+        private static float RimSample(float t, float hz, float length, int noiseSeed) =>
+            (Noise(noiseSeed) * 0.6f + Mathf.Sin(2f * Mathf.PI * 190f * t) * 0.5f) * Mathf.Exp(-t * 22f);
+
+        private static float HatSample(float t, float hz, float length, int noiseSeed) =>
+            (Noise(noiseSeed) - Noise(noiseSeed - 1)) * 0.5f * Mathf.Exp(-t * 48f);
+
+        /// <summary>
+        /// Small stereo room (four combs and two all-passes per side). It runs over the loop twice and keeps the second pass,
+        /// so the tail at the end of the loop is already sounding at its start: no click or gap at the loop point.
+        /// </summary>
+        private static void AddCircularRoom(float[] L, float[] R, float wet)
+        {
+            int n = L.Length;
+            var outL = Room(L, new[] { 1557, 1617, 1491, 1422 }, new[] { 225, 556 }, n);
+            var outR = Room(R, new[] { 1580, 1640, 1514, 1445 }, new[] { 248, 579 }, n);
+            for (int i = 0; i < n; i++)
+            {
+                L[i] += outL[i] * wet;
+                R[i] += outR[i] * wet;
+            }
+        }
+
+        private static float[] Room(float[] input, int[] combs, int[] allpasses, int n)
+        {
+            var output = new float[n];
+            var combBuf = new float[combs.Length][];
+            var combIdx = new int[combs.Length];
+            var combLp = new float[combs.Length];
+            for (int c = 0; c < combs.Length; c++) combBuf[c] = new float[combs[c]];
+            var apBuf = new float[allpasses.Length][];
+            var apIdx = new int[allpasses.Length];
+            for (int a = 0; a < allpasses.Length; a++) apBuf[a] = new float[allpasses[a]];
+            for (int pass = 0; pass < 2; pass++)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    float x = input[i] * 0.25f, sum = 0f;
+                    for (int c = 0; c < combs.Length; c++)
+                    {
+                        float y = combBuf[c][combIdx[c]];
+                        combLp[c] = y * 0.72f + combLp[c] * 0.28f; // damping: the room is soft, not metallic
+                        combBuf[c][combIdx[c]] = x + combLp[c] * 0.80f;
+                        combIdx[c] = (combIdx[c] + 1) % combs[c];
+                        sum += y;
+                    }
+                    for (int a = 0; a < allpasses.Length; a++)
+                    {
+                        float b = apBuf[a][apIdx[a]];
+                        apBuf[a][apIdx[a]] = sum + b * 0.5f;
+                        apIdx[a] = (apIdx[a] + 1) % allpasses[a];
+                        sum = b - sum;
+                    }
+                    if (pass == 1) output[i] = sum;
+                }
+            }
+            return output;
         }
 
         private static void AddCircularStereoEcho(float[] L, float[] R, int delaySamples, float feedbackGain)
