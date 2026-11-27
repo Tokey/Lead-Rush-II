@@ -155,8 +155,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c0d616d3d571b464e95187a7e939281e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: LR2.Runtime::LR2.FX.Tracer
-  speed: 280
-  length: 10.5
+  speed: 720
+  length: 15
   width: 0.032
   tailWidthFactor: 0.45
   ignitionDistance: 0.45

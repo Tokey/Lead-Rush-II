@@ -135,6 +135,8 @@ namespace LR2.Weapons
         public bool UsesKinemationAttachments => kinemationAttachments;
         /// <summary>The sight Kinemation's ADS layer is aligning to the camera right now (iron sight or the fitted optic).</summary>
         public Transform ActiveAimPointTransform => _entity != null ? _entity.defaultAimPoint : null;
+        /// <summary>The recoil animation's current kick, applied by Kinemation in the weapon bone's own space (identity at rest).</summary>
+        public Quaternion RecoilKickRotation => _recoilAnimation != null ? _recoilAnimation.OutRot : Quaternion.identity;
         public bool HasUnifiedScopes => scopeGroups != null && scopeGroups.Count > 0 && scopeGroups[0].attachments != null && scopeGroups[0].attachments.Count >= 2 && (ironAimPoint != null || scopedNoIronsMesh != null);
         public int CurrentScopeChoice => _currentScopeChoice;
         public bool IsUsingIronSights => _usingIronSights;
@@ -944,7 +946,7 @@ namespace LR2.Weapons
             for (int i = 0; i < pellets; i++)
             {
                 Vector3 dir = LR2Math.RandomInCone(aimDir, spread);
-                var shot = Ballistics.Fire(combatant, definition, origin, dir, Muzzle.position, tracer && i == 0, gameObject);
+                var shot = Ballistics.Fire(combatant, definition, origin, dir, Muzzle.position, tracer && i == 0, gameObject, Muzzle);
                 if (i == 0) { firstEnd = shot.endPoint; haveEnd = true; }
             }
 

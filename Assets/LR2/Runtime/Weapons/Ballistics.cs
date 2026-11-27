@@ -24,8 +24,9 @@ namespace LR2.Weapons
         private static readonly RaycastHit[] Hits = new RaycastHit[48];
         private const float NearMissRadius = 4.2f;
 
+        /// <param name="muzzleTransform">Optional: the tracer follows this muzzle while it flies, so it stays with a moving shooter.</param>
         public static ShotResult Fire(Combatant shooter, WeaponDefinition def, Vector3 origin, Vector3 direction,
-            Vector3 visualMuzzle, bool spawnTracer, GameObject source)
+            Vector3 visualMuzzle, bool spawnTracer, GameObject source, Transform muzzleTransform = null)
         {
             var result = new ShotResult();
             direction.Normalize();
@@ -169,7 +170,7 @@ namespace LR2.Weapons
             {
                 Combatant local = Combatant.FindLocalPlayer();
                 bool friendlyTracer = shooter == null || shooter.IsLocalPlayer || (local != null && !TeamUtil.AreHostile(local, shooter));
-                TracerSystem.Spawn(visualMuzzle, result.endPoint, friendlyTracer);
+                TracerSystem.Spawn(visualMuzzle, result.endPoint, friendlyTracer, muzzleTransform);
             }
             return result;
         }

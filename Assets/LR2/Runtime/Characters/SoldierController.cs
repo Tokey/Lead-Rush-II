@@ -513,7 +513,34 @@ namespace LR2.Characters
             Quaternion view = Quaternion.Euler(_pitch, transform.eulerAngles.y, 0f);
             AimDirection = view * Vector3.forward;
             AimOrigin = IsLocalPlayer && ViewCamera != null && ViewCamera.isActiveAndEnabled ? ViewCamera.transform.position : EyeTransform.position;
+            // SoldierMovement moves the body after this (default order), so the eye is still where last frame left it:
+            // at a 5 m/s strafe that put the shot about 8 cm behind the rendered crosshair. Shoot from where it will be.
+            if (Movement != null) AimOrigin += Movement.Velocity * Time.deltaTime;
+            if (IsLocalPlayer && AimBlend > 0.01f) AimDirection = FollowSight(view, AimDirection);
             if (Combatant != null) Combatant.ViewDirection = AimDirection;
+        }
+
+        private const float MaxSightFollowDegrees = 6f;
+
+        /// <summary>
+        /// In ADS the shot goes where the sight points. Strafing sways the gun 1.5-2 deg off the screen centre (32-47 px at
+        /// 1080p, measured 11-26); with shots at the centre the developer saw them "lag behind" the red dot. The sight's
+        /// offset from the camera (last frame's final pose) is applied to this frame's look direction. The recoil
+        /// animation's kick is taken out first: the recoil pattern already moves the aim, and counting the kick as well
+        /// would double the recoil. Capped so a gun in a wall tuck or mid-animation cannot throw the shot wide.
+        /// </summary>
+        private Vector3 FollowSight(Quaternion view, Vector3 centre)
+        {
+            var gun = ActiveFirearm;
+            var sight = gun != null ? gun.ActiveAimPointTransform : null;
+            var weaponBone = gun != null ? gun.transform.parent : null;
+            if (sight == null || weaponBone == null || ViewCamera == null) return centre;
+            Quaternion bone = weaponBone.rotation;
+            Vector3 sightDir = bone * Quaternion.Inverse(gun.RecoilKickRotation) * Quaternion.Inverse(bone) * sight.forward;
+            Vector3 offset = Quaternion.Inverse(ViewCamera.transform.rotation) * sightDir;
+            float angle = Vector3.Angle(Vector3.forward, offset);
+            if (angle > MaxSightFollowDegrees) offset = Vector3.Slerp(Vector3.forward, offset, MaxSightFollowDegrees / angle);
+            return Vector3.Slerp(centre, view * offset, Mathf.Clamp01(AimBlend)).normalized;
         }
 
         private void UpdateLook()

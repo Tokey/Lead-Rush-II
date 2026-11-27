@@ -13,8 +13,9 @@ namespace LR2.EditorTools
     ///   rebuild-all                       full content + all maps (LR2 > Build Everything)
     ///   rebuild-chars                     FX, audio, weapons, soldiers only (fast)
     ///   play [scenePath] [seconds]        robot playtest in the editor, screenshots + Logs/LR2_SmokeTest.txt
-    ///   aim-audit [tag] [force] [motion]  ADS sight vs bullet, hand slip and thumb check per gun and sight (LR2AimGripAudit);
+    ///   aim-audit [tag] [force] [motion|strafe] ADS sight vs bullet, hand slip and thumb check per gun and sight (LR2AimGripAudit);
     ///                                     "force" discards unsaved scene changes (use only after the agent's own rebuild)
+    ///   build-fx / build-music            rebuild only the FX prefabs (tracers) / only the music stems
     ///   stop                              leave play mode
     ///   refresh                           AssetDatabase.Refresh + script compile (no user focus needed)
     /// </summary>
@@ -95,8 +96,16 @@ namespace LR2.EditorTools
                     case "aim-audit":
                         bool force = parts.Length > 2 && parts[2] == "force";
                         bool motion = Array.LastIndexOf(parts, "motion") >= 2; // options come after the tag
-                        string auditError = LR2AimGripAudit.RunFromBridge(parts.Length > 1 ? parts[1] : "editor", force, motion);
+                        bool strafe = Array.LastIndexOf(parts, "strafe") >= 2;
+                        string auditError = LR2AimGripAudit.RunFromBridge(parts.Length > 1 ? parts[1] : "editor", force, motion, strafe);
                         Result(auditError == null ? "aim-audit started (report -> Logs/LR2_AimGrip/<tag>/report.txt)" : "aim-audit not started: " + auditError);
+                        break;
+                    case "build-fx":
+                        // BuildFx recreates the surface library; BuildAudio puts its impact and footstep clips back.
+                        LR2ContentBuilder.BuildFx();
+                        LR2ContentBuilder.BuildAudio();
+                        AssetDatabase.SaveAssets();
+                        Result("build-fx OK (FX + audio wiring)");
                         break;
                     case "build-music":
                         LR2MusicGenerator.EnsureGenerated(true);

@@ -122,3 +122,5 @@ D120,2026-11-26 19:59,agent,Claude,claude-opus-5-5,review,GroqClient.Busy stayed
 D121,2026-11-26 19:59,agent,Claude,claude-opus-5-5,review,"LLM study log cut every reply to 140 chars, biasing the order statistics in LLM_BOT_STUDY",B127,Claude,claude-opus-5-5,high,fixed
 D122,2026-11-26 19:59,agent,Claude,claude-opus-5-5,review,DATA_COLUMNS documented err_pitch with the wrong sign (code: > 0 = above the target),B155,Gemini,orchestrator-neon,high,fixed
 D123,2026-11-26 19:59,agent,Claude,claude-opus-5-5,review,gpt-oss calls failed JSON validation on 45 of 92 bench calls (reasoning used up max_tokens; no reasoning_effort),B151,Gemini,orchestrator-neon,medium,fixed
+D124,2026-11-26 20:26,user,,,escaped,Tracers trailed a strafing shooter: fixed world path from the shot-time muzzle at 280 m/s,B136a,Gemini,orchestrator-neon,high,fixed
+D125,2026-11-26 20:26,user,,,escaped,"In ADS strafing the sight swung 17-47 px while shots went to the screen centre, and shots left from last frame's eye position",B136,Claude+Gemini,claude-opus-5-5/orchestrator-neon,medium,fixed

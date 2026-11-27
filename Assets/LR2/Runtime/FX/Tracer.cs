@@ -4,17 +4,21 @@ using UnityEngine;
 namespace LR2.FX
 {
     /// <summary>
-    /// B136a (user 11-22: "The tracers are quite invisible now, make them way more visible"): keeps a sleek 2.8 cm core
-    /// (not a fat rod), fixes the head/tail UV fade + low luminance in HDRP daylight, adds a 2.6 px minimum screen floor
-    /// so TAA never erases rounds mid-flight, and slows the streak to 360 m/s over 8.5 m so multiple consecutive frames read clearly.
+    /// A streak of light from the muzzle to where the (hitscan) bullet hit. It keeps a thin core with a screen-size floor so
+    /// HDRP's TAA does not erase it (B136a), and since 11-26 it flies at a rifle-like speed and rides with the gun.
+    /// The developer: "while strafing, the bullets get too lagged behind". The streak used to fly a fixed world path from
+    /// where the muzzle was at the shot, at 280 m/s: strafing at 5 m/s moved the gun about 0.45 m away from a 25 m streak
+    /// before it landed, so it trailed behind. Now it is drawn from the muzzle's current position every frame (after the
+    /// gun's final pose) to the impact point, like a round that carries the shooter's motion, and it is 2.5x faster.
     /// </summary>
     [RequireComponent(typeof(LineRenderer))]
+    [DefaultExecutionOrder(900)] // after Kinemation (0), WeaponAntiClip (200) and GenericBoneMirror (550): the gun is in its final pose
     public class Tracer : MonoBehaviour
     {
-        [Tooltip("Streak speed (m/s). 280 m/s keeps rounds crisp across 3-5 frames instead of skipping past in 1 frame.")]
-        [SerializeField] private float speed = 280f;
+        [Tooltip("Streak speed (m/s). Fast enough to stay with a strafing shooter; the longer streak keeps it visible for a few frames.")]
+        [SerializeField] private float speed = 720f;
         [Tooltip("Visible streak length (m).")]
-        [SerializeField] private float length = 10.5f;
+        [SerializeField] private float length = 15f;
         [Tooltip("Core width at the head (m).")]
         [SerializeField] private float width = 0.032f;
         [SerializeField, Range(0.05f, 1f)] private float tailWidthFactor = 0.45f;
@@ -40,10 +44,16 @@ namespace LR2.FX
         private float _travelled, _total;
         private Color _start, _end;
         private float _flicker = 1f;
+        private Transform _muzzle;
 
-        public void Launch(Vector3 from, Vector3 to, bool? isFriendlyTeam = null)
+        /// <summary>
+        /// Fires the streak from <paramref name="from"/> to <paramref name="to"/>. With <paramref name="muzzle"/> set, the
+        /// streak starts from that transform's current position every frame, so it moves with the shooter.
+        /// </summary>
+        public void Launch(Vector3 from, Vector3 to, bool? isFriendlyTeam = null, Transform muzzle = null)
         {
             if (_line == null) _line = GetComponent<LineRenderer>();
+            _muzzle = muzzle;
             _from = from;
             _to = to;
             _total = Vector3.Distance(from, to);
@@ -94,9 +104,19 @@ namespace LR2.FX
             }
         }
 
-        private void Update()
+        private void LateUpdate()
         {
             if (_line == null) return;
+            if (_muzzle != null)
+            {
+                if (_muzzle.gameObject.activeInHierarchy)
+                {
+                    _from = _muzzle.position;
+                    _total = Vector3.Distance(_from, _to);
+                    _dir = _total > 0.001f ? (_to - _from) / _total : _dir;
+                }
+                else _muzzle = null; // weapon switched or shooter died: finish on the last path
+            }
             float dt = Mathf.Min(Time.deltaTime, 0.05f);
             _travelled += speed * dt;
             if (_travelled - length > _total)

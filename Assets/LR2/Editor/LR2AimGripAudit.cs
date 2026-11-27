@@ -35,7 +35,7 @@ namespace LR2.EditorTools
     {
         private const string KeyActive = "LR2AimGrip.Active", KeyDone = "LR2AimGrip.Done", KeyTag = "LR2AimGrip.Tag";
         private const string KeyExit = "LR2AimGrip.Exit", KeyCode = "LR2AimGrip.Code", KeyPrevScene = "LR2AimGrip.PrevScene";
-        private const string KeyMotion = "LR2AimGrip.Motion";
+        private const string KeyMotion = "LR2AimGrip.Motion", KeyStrafe = "LR2AimGrip.Strafe";
         private const string Scene = "Assets/LR2/Scenes/LR2_TestRange.unity";
         private static bool _hosted;
 
@@ -58,12 +58,13 @@ namespace LR2.EditorTools
         /// Started by LR2AgentBridge in the developer's open editor. Returns an error text, or null when started.
         /// <paramref name="discardSceneChanges"/> lets an agent proceed when its own rebuild marked the open scene dirty.
         /// </summary>
-        public static string RunFromBridge(string tag, bool discardSceneChanges = false, bool motion = false) =>
-            Begin(string.IsNullOrEmpty(tag) ? "editor" : tag, false, discardSceneChanges, motion);
+        public static string RunFromBridge(string tag, bool discardSceneChanges = false, bool motion = false, bool strafe = false) =>
+            Begin(string.IsNullOrEmpty(tag) ? "editor" : tag, false, discardSceneChanges, motion, strafe);
 
-        private static string Begin(string tag, bool exitWhenDone, bool discardSceneChanges = false, bool motion = false)
+        private static string Begin(string tag, bool exitWhenDone, bool discardSceneChanges = false, bool motion = false, bool strafe = false)
         {
             SessionState.SetBool(KeyMotion, motion);
+            SessionState.SetBool(KeyStrafe, strafe);
             if (EditorApplication.isPlayingOrWillChangePlaymode) return "already in play mode";
             for (int i = 0; i < SceneManager.sceneCount && !discardSceneChanges; i++)
                 if (SceneManager.GetSceneAt(i).isDirty)
@@ -96,6 +97,7 @@ namespace LR2.EditorTools
             var runner = host.AddComponent<Runner>();
             runner.Tag = SessionState.GetString(KeyTag, "run");
             runner.MotionOnly = SessionState.GetBool(KeyMotion, false);
+            runner.StrafeOnly = SessionState.GetBool(KeyStrafe, false);
         }
 
         private static void OnPlayModeChanged(PlayModeStateChange state)
@@ -145,7 +147,7 @@ namespace LR2.EditorTools
         private sealed class Runner : MonoBehaviour
         {
             public string Tag;
-            public bool MotionOnly;
+            public bool MotionOnly, StrafeOnly;
             private const float RangeM = 25f;
             private static readonly string[] Prefabs =
             {
@@ -200,6 +202,7 @@ namespace LR2.EditorTools
                 _atLateUpdate = null;
                 action?.Invoke();
                 if (_sampling) SampleStability();
+                if (_strafeSampling) SampleStrafe();
             }
 
             /// <summary>Runs <paramref name="action"/> at the end of this frame's LateUpdate chain and waits for it.</summary>
@@ -280,6 +283,14 @@ namespace LR2.EditorTools
                 }
                 Transform weaponBone = _player.ActiveItem.transform.parent;
                 Line($"weapon parent bone = {weaponBone.name}");
+
+                if (StrafeOnly)
+                {
+                    yield return StrafeFireCheck();
+                    Line($"Runtime errors during audit: {_errors}");
+                    Finish(0);
+                    yield break;
+                }
 
                 if (MotionOnly)
                 {
@@ -512,6 +523,69 @@ namespace LR2.EditorTools
                 if (leak) _motionFailures++;
                 Line($"  respawn after {name}: hip gun pose vs first life {dPos:0.00} cm / {dRot:0.00} deg {(leak ? "LEAK" : "ok")} " +
                      $"(aimBlend {_player.AimBlend:0.00}, sprinting {_player.IsSprinting}, prone {_player.IsProning})");
+            }
+
+            // ------------------------------------------------------------------ strafing and tracers (11-26)
+            private bool _strafeSampling;
+            private float _tracerLagMax, _originLagMax, _sightOffMaxPx, _bulletVsSightMaxPx;
+            private int _tracerSamples, _lastAmmoSeen = -1;
+            private float _lastShotSeen = -10f;
+
+            /// <summary>
+            /// Fires while strafing. Per frame: how far each live tracer's tail sits off the line from the gun's current muzzle
+            /// to the tracer's head (a trailing streak), and how far the shot origin is from where the camera is drawn.
+            /// </summary>
+            private IEnumerator StrafeFireCheck()
+            {
+                Line("--- strafe fire (tracer tail off the current muzzle line; shot origin vs rendered camera) ---");
+                _yaw = MostOpenYaw() + 90f; // strafing then runs along the open direction
+                var passes = new[] { ("hip_left", false, -1f, true), ("hip_right", false, 1f, true), ("ads_left", true, -1f, true), ("ads_right", true, 1f, true),
+                                     ("ads_left_nofire", true, -1f, false), ("ads_right_nofire", true, 1f, false) };
+                foreach (var (label, aim, side, fire) in passes)
+                {
+                    if (_player.ActiveFirearm != null) _player.ActiveFirearm.RefillAmmo();
+                    yield return Phase("settle_" + label, 0.5f, Cmd(aim: aim));
+                    _tracerLagMax = _originLagMax = _sightOffMaxPx = _bulletVsSightMaxPx = 0f;
+                    _tracerSamples = 0;
+                    _strafeSampling = true;
+                    yield return Phase("strafe_fire_" + label, 1.4f, Cmd(new Vector2(side, 0f), aim: aim, fire: fire));
+                    _strafeSampling = false;
+                    if (label == "ads_left") yield return Snapshot("strafe_fire_ads");
+                    Line($"  {label,-10} speed={_player.Movement.Velocity.magnitude:0.0} m/s  tracer tail off muzzle line: max {_tracerLagMax:0.0} cm over {_tracerSamples} samples  " +
+                         $"shot origin vs rendered camera: max {_originLagMax:0.0} cm  sight off screen centre (ADS): max {_sightOffMaxPx:0.0} px  bullet vs sight between shots (ADS): max {_bulletVsSightMaxPx:0.0} px");
+                }
+            }
+
+            private void SampleStrafe()
+            {
+                var gun = _player.ActiveFirearm;
+                var cam = _player.ViewCamera;
+                if (gun == null || cam == null) return;
+                Vector3 muzzle = gun.Muzzle.position;
+                _originLagMax = Mathf.Max(_originLagMax, Vector3.Distance(_player.AimOrigin, cam.transform.position) * 100f);
+                if (gun.AmmoInMagazine != _lastAmmoSeen) { _lastAmmoSeen = gun.AmmoInMagazine; _lastShotSeen = Time.time; }
+                var ap = gun.ActiveAimPointTransform;
+                if (ap != null && _player.AimBlend > 0.95f)
+                {
+                    Vector2 sightPx = ToPx(cam, ap.position + ap.forward * RangeM);
+                    _sightOffMaxPx = Mathf.Max(_sightOffMaxPx, sightPx.magnitude); // reticle vs screen centre
+                    // reticle vs where the bullet goes; the recoil kick is in the reticle but deliberately not in the bullet,
+                    // so this only counts frames without a fresh shot
+                    if (Time.time - _lastShotSeen > 0.12f)
+                        _bulletVsSightMaxPx = Mathf.Max(_bulletVsSightMaxPx, (ToPx(cam, _player.AimOrigin + _player.AimDirection * RangeM) - sightPx).magnitude);
+                }
+                foreach (var t in FindObjectsByType<LR2.FX.Tracer>())
+                {
+                    var lr = t.GetComponent<LineRenderer>();
+                    if (lr == null || !lr.enabled || lr.positionCount < 2) continue;
+                    Vector3 head = lr.GetPosition(0), tail = lr.GetPosition(1);
+                    Vector3 axis = head - muzzle;
+                    if (axis.sqrMagnitude < 0.01f) continue;
+                    Vector3 rel = tail - muzzle;
+                    float off = (rel - Vector3.Project(rel, axis.normalized)).magnitude * 100f;
+                    _tracerLagMax = Mathf.Max(_tracerLagMax, off);
+                    _tracerSamples++;
+                }
             }
 
             /// <summary>The yaw with the most free space ahead and behind (chest-height raycasts in 16 directions).</summary>
