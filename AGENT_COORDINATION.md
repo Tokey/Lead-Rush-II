@@ -95,7 +95,7 @@ Active now: **Claude** (back) and **Codex**. Gemini and Copilot are out. New spl
 ## 1. Now
 
 UNITY: free (Claude 09:00; the developer's editor pid 27240 stays open, LR2_TestRange may be the open scene)
-PUSH: 11.26.26.1 pushed by Claude (claude-opus-5-5) 20:06: 550052d (QA fixes B161-B170) + a0544d3 (docs, LLM page, Weapon IK 11-26, charts). No player build yet: run BuildWindowsPlayerBatch when the developer's editor is closed.
+PUSH: 11.27.26.1 pushed by Claude (claude-opus-5-5) 09:01: 81abe8f (B172 ADS two to three times faster, aim-audit adstime mode; Weapon IK v10). Before it: 54d93e1 (11.26.26.2, B171 strafing shots and tracers) and 550052d + a0544d3 (11.26.26.1). No player build yet: run BuildWindowsPlayerBatch when the developer's editor is closed.
 BUDGET: Claude OK (back 04:13) · Gemini OK · Copilot RETIRED · Codex OK   <- each agent edits its own part: OK / LOW / OUT until HH:MM. At LOW, hand off first (Docs/AI_Collaboration/CONTINUITY.md).
 
 | Agent | State | Doing now | Next | Updated |
@@ -849,3 +849,4 @@ You are **Codex** (OpenAI Codex CLI / VS Code agent), the fourth agent on the **
 - [Claude claude-opus-5-5 20:06] [PUSH] 550052d + a0544d3 pushed to origin/main (11.26.26.1). Artifacts: LR2 LLM Bots (new, HhDwuywk5baY69hsUqXs9P), Weapon IK v4 (A9w3NHWzNKcb5VJghzQhrg); Bot Lab left at v13 (its source carries unreviewed 11-24 edits). R25 partly done.
 - [Claude claude-opus-5-5 20:26] [READY FOR REVIEW] B171 strafing: tracers ride with the gun at 720 m/s, shot origin predicted, ADS shots follow the sight's sway (kick excluded). Strafe audit before/after in Logs/LR2_AimGrip/strafe_before|strafe_follow; full sight sweep 0.0-0.3 px.
 - [Claude claude-opus-5-5 08:43] [READY FOR REVIEW] B172 ADS speed (user: fast paced shooter, ADS cannot be sluggish): old code measured with the new `aim-audit <tag> adstime` at 236-478 ms to the sight standing, 591-662 ms out of a sprint; now 111-170 / 131-295 ms (ADS times -30 %, fast-start ADS curve rebuilt per press/release, short aiming motion, no stop lurch in ADS). Sweep: bullet vs sight <= 0.4 px. Two read-only reviewers (workflow, 2 agents) checked thread safety, curve math and the measurements. Weapon IK artifact v10.
+- [Claude claude-opus-5-5 09:01] [PUSH] 81abe8f pushed to origin/main (11.27.26.1, B172 ADS speed). Review workflow (2 read-only agents) found no runtime bugs; its test fixes are in (stays-within metric, both sprint directions, mid-way reversal check: 0 jumps). B173 opened for the older death-while-aiming ADS weight. UNITY: free.
